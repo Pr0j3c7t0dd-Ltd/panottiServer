@@ -1,1 +1,151 @@
 # panottiServer
+
+A FastAPI-based server for handling recording events with secure API endpoints for starting and ending recording sessions.
+
+## Features
+
+- Secure API endpoints for recording events
+- Token-based authentication
+- Structured JSON logging
+- Swagger documentation
+- Comprehensive test suite
+
+## Requirements
+
+- Python 3.8+
+- Rust (required for FastAPI's Pydantic V2)
+- Other dependencies listed in `requirements.txt`
+
+## Installation
+
+1. Install Rust (required for Pydantic V2's performance optimizations):
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env  # Add Rust to your current shell session
+```
+
+2. Clone the repository:
+```bash
+git clone https://github.com/yourusername/panottiServer.git
+cd panottiServer
+```
+
+3. Create and activate a virtual environment:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .\venv\Scripts\activate
+```
+
+4. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+5. Create a `.env` file based on `.env.example`:
+```bash
+cp .env.example .env
+```
+Then edit `.env` with your actual configuration values.
+
+## Usage
+
+### Starting the Server
+
+There are two recommended ways to start the server:
+
+1. Using the Python script:
+```bash
+python run_server.py
+```
+
+2. Using the shell script:
+```bash
+./start_server.sh
+```
+
+Both methods will read the port configuration from your `.env` file. The default port is 8001 if not specified.
+
+Note: Using `uvicorn app.main:app --reload` directly will use port 8000 by default and won't read from the `.env` file.
+
+#### Development
+Run the server using uvicorn:
+```bash
+uvicorn app.main:app --reload
+```
+
+#### Production
+For production deployment, use Gunicorn with Uvicorn workers:
+```bash
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+```
+
+The server will start at `http://localhost:8000`
+
+### Stopping the Server
+
+To stop the server, you can use one of these methods:
+
+1. If running in the foreground, press `Ctrl+C`
+2. If running in the background or if `Ctrl+C` doesn't work, use:
+```bash
+pkill -f uvicorn
+```
+
+### API Documentation
+
+Once the server is running, you can access:
+- Swagger UI documentation at `http://localhost:8000/docs`
+- ReDoc documentation at `http://localhost:8000/redoc`
+
+### API Endpoints
+
+#### Start Recording
+```http
+POST /start-recording
+Header: X-API-Key: your_api_key
+Content-Type: application/json
+
+{
+    "session_id": "unique_session_id",
+    "timestamp": "2023-12-09T20:00:00Z"
+}
+```
+
+#### End Recording
+```http
+POST /end-recording
+Header: X-API-Key: your_api_key
+Content-Type: application/json
+
+{
+    "session_id": "unique_session_id",
+    "timestamp": "2023-12-09T20:10:00Z"
+}
+```
+
+## Testing
+
+Run the test suite:
+```bash
+pytest app/tests/
+```
+
+For test coverage:
+```bash
+pytest --cov=app app/tests/
+```
+
+## Logging
+
+Logs are stored in both:
+- Console output (for development)
+- `logs/app.log` file (JSON formatted)
+
+## Performance Notes
+
+This implementation uses FastAPI with Pydantic V2, which requires Rust for its high-performance validation and serialization features. The Rust requirement enables:
+
+- 5-50x faster validation compared to Pydantic V1
+- Improved memory usage
+- Better CPU utilization
+- Enhanced type safety
