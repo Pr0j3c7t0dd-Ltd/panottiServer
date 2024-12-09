@@ -15,10 +15,15 @@ class JSONFormatter(logging.Formatter):
         }
         
         # Add extra fields if they exist
-        if hasattr(record, "extra"):
-            log_record.update(record.extra)
+        if hasattr(record, 'extra'):
+            for key, value in record.extra.items():
+                log_record[key] = value
+                
+        # Add exception info if present
+        if record.exc_info:
+            log_record['exc_info'] = self.formatException(record.exc_info)
             
-        return json.dumps(log_record)
+        return json.dumps(log_record, indent=2, default=str)
 
 def setup_logging():
     """
@@ -30,6 +35,9 @@ def setup_logging():
     # Configure root logger
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
+    
+    # Remove existing handlers
+    logger.handlers = []
     
     # Create console handler
     console_handler = logging.StreamHandler()

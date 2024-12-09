@@ -70,86 +70,125 @@ async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
         detail="Invalid API Key"
     )
 
-# Store active sessions in memory (replace with proper database in production)
-active_sessions: Dict[str, datetime] = {}
+# Store active recordings in memory (replace with proper database in production)
+active_recordings: Dict[str, datetime] = {}
 
-@app.post("/start-recording")
-async def start_recording(
-    event: RecordingEvent,
+@app.post("/api/recording-started")
+async def recording_started(
+    request: Request,
+    event: RecordingStartRequest,
     api_key: str = Depends(get_api_key)
 ):
     """
-    Start a recording session.
+    Handle a recording started event.
     
     Args:
-        event: Recording event details including session_id and timestamp
+        request: Raw request object
+        event: Recording started event details
         api_key: API key for authentication
     
     Returns:
-        dict: Success message with session details
+        dict: Success message with recording details
     """
-    if event.session_id in active_sessions:
+    # Log raw request body
+    body = await request.body()
+    logger.info(
+        f"Incoming recording started request with body: {body.decode()}"
+    )
+
+    if event.recordingId in active_recordings:
         raise HTTPException(
             status_code=400,
-            detail=f"Session {event.session_id} is already active"
+            detail=f"Recording {event.recordingId} is already active"
         )
     
-    active_sessions[event.session_id] = event.timestamp
+    # Store recording start time
+    active_recordings[event.recordingId] = datetime.fromisoformat(event.timestamp.replace('Z', '+00:00'))
     
     logger.info(
         "Recording started",
         extra={
-            "session_id": event.session_id,
-            "timestamp": event.timestamp.isoformat(),
+            "recording_id": event.recordingId,
+            "timestamp": event.timestamp,
         }
     )
     
     return {
         "status": "success",
-        "message": f"Recording started for session {event.session_id}",
-        "timestamp": event.timestamp
+        "message": f"Recording {event.recordingId} started",
+        "data": {
+            "recordingId": event.recordingId,
+            "timestamp": event.timestamp
+        }
     }
 
-@app.post("/end-recording")
-async def end_recording(
-    event: RecordingEvent,
+@app.post("/api/recording-ended")
+async def recording_ended(
+    request: Request,
+    event: RecordingEndRequest,
     api_key: str = Depends(get_api_key)
 ):
     """
-    End a recording session.
+    Handle a recording ended event.
     
     Args:
-        event: Recording event details including session_id and timestamp
+        request: Raw request object
+        event: Recording ended event details
         api_key: API key for authentication
     
     Returns:
-        dict: Success message with session details
+        dict: Success message with recording details
     """
-    if event.session_id not in active_sessions:
+    # Log raw request body
+    body = await request.body()
+    logger.info(
+        f"Incoming recording ended request with body: {body.decode()}"
+    )
+
+    if event.recordingId not in active_recordings:
         raise HTTPException(
             status_code=400,
-            detail=f"Session {event.session_id} is not active"
+            detail=f"Recording {event.recordingId} is not active"
         )
     
-    start_time = active_sessions.pop(event.session_id)
-    duration = (event.timestamp - start_time).total_seconds()
+    # Get recording duration
+    start_time = active_recordings[event.recordingId]
+    end_time = datetime.fromisoformat(event.timestamp.replace('Z', '+00:00'))
+    duration = (end_time - start_time).total_seconds()
+    
+    # Remove from active recordings
+    del active_recordings[event.recordingId]
     
     logger.info(
         "Recording ended",
         extra={
-            "session_id": event.session_id,
-            "timestamp": event.timestamp.isoformat(),
-            "duration_seconds": duration
+            "recording_id": event.recordingId,
+            "timestamp": event.timestamp,
+            "duration_seconds": duration,
+            "system_audio_path": event.systemAudioPath,
+            "microphone_audio_path": event.MicrophoneAudioPath
         }
     )
     
     return {
         "status": "success",
-        "message": f"Recording ended for session {event.session_id}",
-        "timestamp": event.timestamp,
-        "duration_seconds": duration
+        "message": f"Recording {event.recordingId} ended",
+        "data": {
+            "recordingId": event.recordingId,
+            "timestamp": event.timestamp,
+            "duration_seconds": duration,
+            "systemAudioPath": event.systemAudioPath,
+            "MicrophoneAudioPath": event.MicrophoneAudioPath
+        }
     }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=PORT, reload=True)
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=PORT,
+        reload=True,
+        ssl_keyfile="ssl/key.pem",
+        ssl_certfile="ssl/cert.pem"
+    )

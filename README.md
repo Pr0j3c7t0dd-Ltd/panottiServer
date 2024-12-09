@@ -47,6 +47,19 @@ cp .env.example .env
 ```
 Then edit `.env` with your actual configuration values.
 
+6. Set up HTTPS (optional):
+```bash
+# Create SSL directory
+mkdir -p ssl
+
+# Generate self-signed certificates
+cd ssl
+openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365 -subj "/CN=localhost"
+cd ..
+```
+
+Note: When using self-signed certificates in development, your browser will show a security warning. This is normal. For production, use certificates from a trusted certificate authority.
+
 ## Usage
 
 ### Starting the Server
