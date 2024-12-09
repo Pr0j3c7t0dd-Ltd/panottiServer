@@ -1,0 +1,1 @@
+Update or add any documenation if necessary in the architecture folder or the .cursorrules file
