@@ -1,0 +1,125 @@
+# Python Best Practices for Enterprise-Grade Applications
+
+This document outlines best practices, coding standards, and recommendations for professional Python applications, including tools for testing, monitoring, logging, observability, and file structure.
+
+## General Guidelines
+
+### Description
+Ensure adherence to clean code principles, maintainability, and scalability.
+
+### Best Practices
+- Follow **PEP 8** standards for code style and formatting
+- Use **type hints** for function signatures and variables (e.g., `typing` or `pydantic`)
+- Enforce strict linting with tools like **flake8**, **pylint**, or **ruff**
+- Adopt auto-formatting tools like **black** for consistent formatting
+- Use **isort** to organize imports alphabetically and separate standard, third-party, and local imports
+
+## File Structure
+
+### Description
+Use a modular and scalable structure for the project.
+
+### Recommended Layout
+```
+project_name/
+├── src/
+│   ├── module1/
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── services.py
+│   │   ├── routes.py
+│   │   └── tests/
+│   │       ├── __init__.py
+│   │       └── test_module1.py
+│   ├── common/
+│   │   ├── logging_config.py
+│   │   ├── utils.py
+│   │   └── config.py
+│   └── tests/
+│       ├── conftest.py
+│       ├── test_integration/
+│       └── test_unit/
+├── scripts/
+│   ├── migrations/
+│   └── data_processing.py
+├── Dockerfile
+├── requirements.txt
+├── pyproject.toml
+├── README.md
+└── .env
+```
+
+## Testing
+
+### Description
+Ensure thorough testing with a preference for automation.
+
+### Best Practices
+- Use **pytest** for testing, and integrate plugins like:
+  - `pytest-cov` for coverage reporting
+  - `pytest-mock` for mocking
+- Follow the **Test Pyramid** approach: prioritize unit tests, followed by integration and end-to-end (E2E) tests
+- Use `conftest.py` for shared test configurations
+- Generate test data with **factory_boy** or **pytest-factoryboy**
+- Write fixtures for reusable setup logic
+- Integrate tests with CI pipelines using **GitHub Actions**, **CircleCI**, or **GitLab CI/CD**
+
+## Logging
+
+### Description
+Establish centralized, structured, and easily configurable logging.
+
+### Best Practices
+- Use **structlog** for structured and JSON-based logging
+- Configure logging settings in a `logging_config.py` file and manage log levels with environment variables
+- Aggregate logs using:
+  - ELK stack (Elasticsearch, Logstash, Kibana)
+  - SaaS providers like **Datadog** or **Sentry**
+- Use **correlation IDs** to trace requests across services
+
+## Observability
+
+### Description
+Integrate monitoring, tracing, and metrics collection.
+
+### Best Practices
+- Use **OpenTelemetry** for distributed tracing and instrumentation
+- Export telemetry data to:
+  - **Prometheus/Grafana**
+  - SaaS platforms like **Datadog**, **New Relic**, or **Honeycomb**
+- Monitor application performance with APM tools like **Elastic APM** or **Datadog**
+- Collect and visualize metrics for business and system indicators
+
+## Dependency Management
+
+### Description
+Ensure dependency stability and consistency.
+
+### Best Practices
+- Use **poetry** or **pip-tools** for dependency management
+- Pin dependencies in `pyproject.toml` or `requirements.txt`
+- Regularly audit dependencies for vulnerabilities using:
+  - **safety**
+  - **dependabot**
+
+## Security
+
+### Description
+Adopt secure coding practices and tools.
+
+### Best Practices
+- Use **Bandit** for static analysis of security vulnerabilities
+- Scan dependencies for known vulnerabilities using tools like **Snyk** or **pip-audit**
+- Follow OWASP best practices for input validation and authentication
+
+## Frameworks
+
+### Description
+Leverage modern frameworks for web and API development.
+
+### Recommendations
+- Use **FastAPI** for API development due to its performance, developer experience, and Pydantic integration
+- For full-stack applications, consider:
+  - **Django** for its batteries-included approach
+  - **Flask** for lightweight applications with extensions as needed
+- Use **SQLAlchemy** or **Tortoise-ORM** for database interactions
