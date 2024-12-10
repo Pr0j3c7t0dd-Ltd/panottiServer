@@ -151,6 +151,18 @@ async def recording_ended(
             detail=f"Recording {event.recordingId} is not active"
         )
     
+    # Extract timestamp from recording ID (format: YYYYMMDDHHMMSS_XXXXXXXX)
+    recording_start_time = event.recordingId.split('_')[0]
+    
+    # Validate that file paths use the same timestamp as the recording ID
+    expected_prefix = recording_start_time
+    if not (event.systemAudioPath.endswith(f"{event.recordingId}_system_audio.wav") and 
+            event.MicrophoneAudioPath.endswith(f"{event.recordingId}_microphone.wav")):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File paths must use the recording ID {event.recordingId} in their names"
+        )
+    
     # Get recording duration
     start_time = active_recordings[event.recordingId]
     end_time = datetime.fromisoformat(event.timestamp.replace('Z', '+00:00'))
