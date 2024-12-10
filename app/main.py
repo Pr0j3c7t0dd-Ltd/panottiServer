@@ -166,7 +166,6 @@ async def recording_ended(
     # Get recording duration
     start_time = active_recordings[event.recordingId]
     end_time = datetime.fromisoformat(event.timestamp.replace('Z', '+00:00'))
-    duration = (end_time - start_time).total_seconds()
     
     # Remove from active recordings
     del active_recordings[event.recordingId]
@@ -176,7 +175,6 @@ async def recording_ended(
         extra={
             "recording_id": event.recordingId,
             "timestamp": event.timestamp,
-            "duration_seconds": duration,
             "system_audio_path": event.systemAudioPath,
             "microphone_audio_path": event.MicrophoneAudioPath
         }
@@ -188,7 +186,6 @@ async def recording_ended(
         "data": {
             "recordingId": event.recordingId,
             "timestamp": event.timestamp,
-            "duration_seconds": duration,
             "systemAudioPath": event.systemAudioPath,
             "MicrophoneAudioPath": event.MicrophoneAudioPath
         }

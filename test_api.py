@@ -23,13 +23,18 @@ if not SSL_VERIFY:
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+def generate_recording_id():
+    """Generate a recording ID with timestamp and random hex"""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    random_hex = os.urandom(4).hex()[:8].upper()
+    return f"{timestamp}_{random_hex}"
+
 def test_recording_flow():
-    # Generate a unique recording ID
-    recording_id = str(uuid.uuid4())
+    # Generate a recording ID with timestamp
+    recording_id = generate_recording_id()
+    start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     
     # Start recording
-    start_time = "2024-12-09T22:17:07Z"  # Using example timestamp
-    
     start_response = requests.post(
         f"{BASE_URL}/api/recording-started",
         headers=HEADERS,
@@ -43,8 +48,8 @@ def test_recording_flow():
     print("\nStart Recording Response:", start_response.json())
     assert start_response.status_code == 200, f"Start recording failed: {start_response.text}"
     
-    # End recording
-    end_time = "2024-12-09T22:18:07Z"  # Using example timestamp
+    # End recording (using same recording ID)
+    end_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     system_audio_path = f"/recordings/{recording_id}_system_audio.wav"
     microphone_audio_path = f"/recordings/{recording_id}_microphone.wav"
     
@@ -65,8 +70,8 @@ def test_recording_flow():
 
 def test_invalid_recording_flow():
     # Test starting an already active recording
-    recording_id = str(uuid.uuid4())
-    start_time = "2024-12-09T22:17:07Z"
+    recording_id = generate_recording_id()
+    start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     
     # First start - should succeed
     start_response1 = requests.post(
@@ -96,13 +101,13 @@ def test_invalid_recording_flow():
     assert start_response2.status_code == 400, "Second start should fail"
     
     # Test ending a non-existent recording
-    non_existent_id = str(uuid.uuid4())
+    non_existent_id = generate_recording_id()
     end_response = requests.post(
         f"{BASE_URL}/api/recording-ended",
         headers=HEADERS,
         json={
             "event": "Recording Ended",
-            "timestamp": "2024-12-09T22:18:07Z",
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "recordingId": non_existent_id,
             "systemAudioPath": f"/recordings/{non_existent_id}_system_audio.wav",
             "MicrophoneAudioPath": f"/recordings/{non_existent_id}_microphone.wav"
@@ -117,4 +122,4 @@ if __name__ == "__main__":
     test_recording_flow()
     print("\nTesting invalid recording flows...")
     test_invalid_recording_flow()
-    print("\nAll tests completed!")
+    print("\nAll tests completed successfully!")
