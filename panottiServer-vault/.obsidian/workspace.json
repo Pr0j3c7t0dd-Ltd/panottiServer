@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "product-requirements/basic-product-requirements.md",
+                "file": "product-requirements/plugin-architecture-requirements.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "basic-product-requirements"
+              "title": "plugin-architecture-requirements"
             }
           }
         ]
@@ -167,8 +167,9 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
-    "panottiServer Roadmap Board.md",
     "product-requirements/basic-product-requirements.md",
+    "product-requirements/plugin-architecture-requirements.md",
+    "panottiServer Roadmap Board.md",
     "Welcome.md",
     "architecture",
     "default-prompts/run-codebase-analysis.md",

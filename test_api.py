@@ -115,7 +115,7 @@ def test_invalid_recording_flow():
         verify=SSL_VERIFY
     )
     print("\nNon-existent Recording End Response:", end_response.json())
-    assert end_response.status_code == 400, "Ending non-existent recording should fail"
+    assert end_response.status_code == 404, "Ending non-existent recording should return 404 Not Found"
 
 if __name__ == "__main__":
     print("Testing normal recording flow...")

@@ -10,7 +10,9 @@ from typing import Dict
 import asyncio
 
 from .models.event import RecordingEvent, RecordingStartRequest, RecordingEndRequest
+from .models.database import get_db
 from .utils.logging_config import setup_logging
+from .plugins.manager import plugin_manager
 
 # Load environment variables
 load_dotenv()
@@ -18,6 +20,9 @@ load_dotenv()
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Setup plugin system
+plugin_manager.setup()
 
 # Get configuration from environment
 PORT = int(os.getenv("API_PORT", "8001"))
@@ -41,8 +46,31 @@ app.add_middleware(
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize application resources"""
+    # Initialize the database
+    get_db()
+    logger.info("Database initialized")
+    
+    # Initialize plugins
+    await plugin_manager.call_hook("on_startup", app=app)
+    logger.info("Plugins initialized")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup application resources"""
+    # Close database connections
+    get_db().close_connections()
+    logger.info("Database connections closed")
+    
+    # Cleanup plugins
+    await plugin_manager.call_hook("on_shutdown", app=app)
+    logger.info("Plugins unloaded")
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    """Middleware to log requests."""
     # Log request details
     body = await request.body()
     logger.debug(
@@ -62,6 +90,20 @@ async def log_requests(request: Request, call_next):
     # Return response
     return response
 
+@app.middleware("http")
+async def plugin_middleware(request: Request, call_next):
+    """Middleware to run plugin hooks before and after requests."""
+    # Run before_request hooks
+    await plugin_manager.call_hook("before_request", request=request)
+    
+    # Process the request
+    response = await call_next(request)
+    
+    # Run after_request hooks
+    await plugin_manager.call_hook("after_request", response=response)
+    
+    return response
+
 async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
     if api_key_header == os.getenv("API_KEY"):
         return api_key_header
@@ -70,126 +112,61 @@ async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
         detail="Invalid API Key"
     )
 
-# Store active recordings in memory (replace with proper database in production)
-active_recordings: Dict[str, datetime] = {}
+async def get_active_recordings():
+    """Get all active recordings from the database"""
+    with get_db().get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT json_extract(data, '$.recordingId') as recording_id,
+                   json_extract(data, '$.timestamp') as timestamp
+            FROM events 
+            WHERE type = 'Recording Started'
+            AND recording_id NOT IN (
+                SELECT DISTINCT json_extract(data, '$.recordingId')
+                FROM events
+                WHERE type = 'Recording Ended'
+            )
+        ''')
+        return {row['recording_id']: datetime.fromisoformat(row['timestamp']) 
+                for row in cursor.fetchall()}
 
-@app.post("/api/recording-started")
+@app.post("/recording/started")
 async def recording_started(
     request: Request,
     event: RecordingStartRequest,
     api_key: str = Depends(get_api_key)
 ):
-    """
-    Handle a recording started event.
-    
-    Args:
-        request: Raw request object
-        event: Recording started event details
-        api_key: API key for authentication
-    
-    Returns:
-        dict: Success message with recording details
-    """
-    # Log raw request body
-    body = await request.body()
-    logger.info(
-        f"Incoming recording started request with body: {body.decode()}"
-    )
+    """Handle a recording started event."""
+    try:
+        # Save event to database
+        event.save()
+        
+        # Run plugin hooks
+        await plugin_manager.call_hook("before_recording_start", recording_id=event.recordingId)
+        
+        return {"status": "success", "message": "Recording started"}
+    except Exception as e:
+        logger.error(f"Error processing recording start: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if event.recordingId in active_recordings:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Recording {event.recordingId} is already active"
-        )
-    
-    # Store recording start time
-    active_recordings[event.recordingId] = datetime.fromisoformat(event.timestamp.replace('Z', '+00:00'))
-    
-    logger.info(
-        "Recording started",
-        extra={
-            "recording_id": event.recordingId,
-            "timestamp": event.timestamp,
-        }
-    )
-    
-    return {
-        "status": "success",
-        "message": f"Recording {event.recordingId} started",
-        "data": {
-            "recordingId": event.recordingId,
-            "timestamp": event.timestamp
-        }
-    }
-
-@app.post("/api/recording-ended")
+@app.post("/recording/ended")
 async def recording_ended(
     request: Request,
     event: RecordingEndRequest,
     api_key: str = Depends(get_api_key)
 ):
-    """
-    Handle a recording ended event.
-    
-    Args:
-        request: Raw request object
-        event: Recording ended event details
-        api_key: API key for authentication
-    
-    Returns:
-        dict: Success message with recording details
-    """
-    # Log raw request body
-    body = await request.body()
-    logger.info(
-        f"Incoming recording ended request with body: {body.decode()}"
-    )
-
-    if event.recordingId not in active_recordings:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Recording {event.recordingId} is not active"
-        )
-    
-    # Extract timestamp from recording ID (format: YYYYMMDDHHMMSS_XXXXXXXX)
-    recording_start_time = event.recordingId.split('_')[0]
-    
-    # Validate that file paths use the same timestamp as the recording ID
-    expected_prefix = recording_start_time
-    if not (event.systemAudioPath.endswith(f"{event.recordingId}_system_audio.wav") and 
-            event.MicrophoneAudioPath.endswith(f"{event.recordingId}_microphone.wav")):
-        raise HTTPException(
-            status_code=400,
-            detail=f"File paths must use the recording ID {event.recordingId} in their names"
-        )
-    
-    # Get recording duration
-    start_time = active_recordings[event.recordingId]
-    end_time = datetime.fromisoformat(event.timestamp.replace('Z', '+00:00'))
-    
-    # Remove from active recordings
-    del active_recordings[event.recordingId]
-    
-    logger.info(
-        "Recording ended",
-        extra={
-            "recording_id": event.recordingId,
-            "timestamp": event.timestamp,
-            "system_audio_path": event.systemAudioPath,
-            "microphone_audio_path": event.MicrophoneAudioPath
-        }
-    )
-    
-    return {
-        "status": "success",
-        "message": f"Recording {event.recordingId} ended",
-        "data": {
-            "recordingId": event.recordingId,
-            "timestamp": event.timestamp,
-            "systemAudioPath": event.systemAudioPath,
-            "MicrophoneAudioPath": event.MicrophoneAudioPath
-        }
-    }
+    """Handle a recording ended event."""
+    try:
+        # Save event to database
+        event.save()
+        
+        # Run plugin hooks
+        await plugin_manager.call_hook("after_recording_end", recording_id=event.recordingId)
+        
+        return {"status": "success", "message": "Recording ended"}
+    except Exception as e:
+        logger.error(f"Error processing recording end: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
