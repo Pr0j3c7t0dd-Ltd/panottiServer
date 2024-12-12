@@ -47,7 +47,14 @@ class RecordingStartRequest(RecordingEvent):
 class RecordingEndRequest(RecordingEvent):
     """
     Request model for ending a recording session.
+    
+    Attributes:
+        event: Type of recording event (must be "Recording Ended")
+        timestamp: ISO8601 formatted timestamp of the event
+        recordingId: Unique identifier for the recording session
+        systemAudioPath: Path to the system audio recording file
+        microphoneAudioPath: Path to the microphone audio recording file
     """
     event: Literal["Recording Ended"]
     systemAudioPath: str
-    MicrophoneAudioPath: str
+    microphoneAudioPath: str

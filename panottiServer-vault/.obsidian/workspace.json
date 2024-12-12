@@ -11,14 +11,20 @@
             "id": "5e4aefd4e6d2c38c",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "kanban",
               "state": {
-                "file": "product-requirements/plugin-architecture-requirements.md",
-                "mode": "source",
-                "source": false
+                "file": "panottiServer Roadmap Board.md",
+                "kanbanViewState": {
+                  "kanban-plugin": "board",
+                  "list-collapse": [
+                    false,
+                    false,
+                    false
+                  ]
+                }
               },
-              "icon": "lucide-file",
-              "title": "plugin-architecture-requirements"
+              "icon": "lucide-trello",
+              "title": "panottiServer Roadmap Board"
             }
           }
         ]
@@ -167,8 +173,8 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
-    "product-requirements/basic-product-requirements.md",
     "product-requirements/plugin-architecture-requirements.md",
+    "product-requirements/basic-product-requirements.md",
     "panottiServer Roadmap Board.md",
     "Welcome.md",
     "architecture",

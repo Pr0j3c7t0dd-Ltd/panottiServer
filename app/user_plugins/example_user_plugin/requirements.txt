@@ -1,4 +1,0 @@
-# Add any plugin-specific dependencies here
-# For example:
-# requests>=2.31.0
-# pillow>=10.1.0

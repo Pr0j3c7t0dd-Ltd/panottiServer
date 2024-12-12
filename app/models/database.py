@@ -50,6 +50,24 @@ class DatabaseManager:
             # Add any other tables as needed
             conn.commit()
 
+    def get_active_recordings(self):
+        """Get all active recordings (started but not ended)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT DISTINCT json_extract(data, '$.recordingId') as recording_id,
+                       json_extract(data, '$.timestamp') as timestamp
+                FROM events 
+                WHERE type = 'Recording Started'
+                AND recording_id NOT IN (
+                    SELECT DISTINCT json_extract(data, '$.recordingId')
+                    FROM events
+                    WHERE type = 'Recording Ended'
+                )
+            ''')
+            return {row['recording_id']: row['timestamp'] 
+                    for row in cursor.fetchall()}
+
     @contextmanager
     def get_connection(self):
         """Thread-safe connection management"""

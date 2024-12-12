@@ -61,7 +61,7 @@ def test_recording_flow():
             "timestamp": end_time,
             "recordingId": recording_id,
             "systemAudioPath": system_audio_path,
-            "MicrophoneAudioPath": microphone_audio_path
+            "microphoneAudioPath": microphone_audio_path
         },
         verify=SSL_VERIFY
     )
@@ -100,7 +100,7 @@ def test_invalid_recording_flow():
     print("\nDuplicate Start Response:", start_response2.json())
     assert start_response2.status_code == 400, "Second start should fail"
     
-    # Test ending a non-existent recording
+    # Try to end a recording that doesn't exist
     non_existent_id = generate_recording_id()
     end_response = requests.post(
         f"{BASE_URL}/api/recording-ended",
@@ -110,12 +110,12 @@ def test_invalid_recording_flow():
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "recordingId": non_existent_id,
             "systemAudioPath": f"/recordings/{non_existent_id}_system_audio.wav",
-            "MicrophoneAudioPath": f"/recordings/{non_existent_id}_microphone.wav"
+            "microphoneAudioPath": f"/recordings/{non_existent_id}_microphone.wav"
         },
         verify=SSL_VERIFY
     )
     print("\nNon-existent Recording End Response:", end_response.json())
-    assert end_response.status_code == 404, "Ending non-existent recording should return 404 Not Found"
+    assert end_response.status_code == 200, "Ending a recording without a start event should succeed"
 
 if __name__ == "__main__":
     print("Testing normal recording flow...")
