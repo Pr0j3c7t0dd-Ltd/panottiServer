@@ -12,16 +12,23 @@ class JSONFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
         
-        # Add extra fields if they exist
-        if hasattr(record, 'extra'):
-            for key, value in record.extra.items():
-                log_record[key] = value
+        # Get any extra attributes from the record
+        extras = {
+            key: value
+            for key, value in record.__dict__.items()
+            if key not in ['args', 'asctime', 'created', 'exc_info', 'exc_text', 
+                         'filename', 'funcName', 'levelname', 'levelno', 'lineno', 
+                         'module', 'msecs', 'msg', 'name', 'pathname', 'process', 
+                         'processName', 'relativeCreated', 'stack_info', 'thread', 
+                         'threadName']
+        }
+        log_record.update(extras)
                 
         # Add exception info if present
         if record.exc_info:
             log_record['exc_info'] = self.formatException(record.exc_info)
             
-        return json.dumps(log_record, indent=2, default=str)
+        return json.dumps(log_record)
 
 def setup_logging():
     """

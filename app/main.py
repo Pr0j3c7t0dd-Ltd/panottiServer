@@ -68,7 +68,7 @@ async def log_requests(request: Request, call_next):
             "method": request.method,
             "url": str(request.url),
             "headers": dict(request.headers),
-            "payload": body.decode() if body else None,
+            "body": body.decode() if body else None,
             "client_host": request.client.host if request.client else None,
         }
     )
@@ -110,10 +110,7 @@ async def recording_started(
         logger.log(
             logger.getEffectiveLevel(),
             "Recording start request received",
-            extra={
-                "endpoint": "/api/recording-started",
-                "payload": event.dict()
-            }
+            extra={"request_payload": event.dict()}
         )
 
         # Check if recording already exists
@@ -131,11 +128,7 @@ async def recording_started(
         logger.log(
             logger.getEffectiveLevel(),
             "Recording started",
-            extra={
-                "recording_id": event.recordingId,
-                "event_type": "Recording Started",
-                "payload": event.dict()
-            }
+            extra={"request_payload": event.dict()}
         )
         
         return {"status": "success", "message": "Recording started"}
@@ -157,10 +150,7 @@ async def recording_ended(
         logger.log(
             logger.getEffectiveLevel(),
             "Recording end request received",
-            extra={
-                "endpoint": "/api/recording-ended",
-                "payload": event.dict()
-            }
+            extra={"request_payload": event.dict()}
         )
 
         # Check if recording has already been ended
@@ -178,11 +168,7 @@ async def recording_ended(
         logger.log(
             logger.getEffectiveLevel(),
             "Recording ended",
-            extra={
-                "recording_id": event.recordingId,
-                "event_type": "Recording Ended",
-                "payload": event.dict()
-            }
+            extra={"request_payload": event.dict()}
         )
         
         return {"status": "success", "message": "Recording ended"}
