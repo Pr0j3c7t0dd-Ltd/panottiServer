@@ -66,7 +66,7 @@ def setup_logging():
         log_file,
         when="midnight",
         interval=1,  # Rotate daily
-        backupCount=retention_days if retention_days > 0 else None,  # Keep X days of logs, None for infinite
+        backupCount=retention_days if retention_days > 0 else 0,  # Keep X days of logs, 0 for infinite
         encoding="utf-8"
     )
     file_handler.setFormatter(JSONFormatter())
