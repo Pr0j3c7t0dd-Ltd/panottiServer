@@ -1,11 +1,34 @@
 from datetime import datetime
-from typing import Optional, Literal, Union
+from typing import Optional, Literal, Union, List
 from pydantic import BaseModel, Field
 import json
 from .database import get_db
 import logging
 
 logger = logging.getLogger(__name__)
+
+class EventMetadata(BaseModel):
+    """Model for event metadata.
+    
+    Attributes:
+        recordingDateTime: ISO8601 formatted timestamp of when the recording was made
+        eventTitle: Optional title of the event
+        eventProviderId: Optional provider-specific event ID
+        eventProvider: Optional name of the event provider
+        eventAttendees: Optional list of event attendees
+    """
+    recordingDateTime: str
+    eventTitle: Optional[str] = None
+    eventProviderId: Optional[str] = None
+    eventProvider: Optional[str] = None
+    eventAttendees: Optional[List[str]] = None
+
+    def to_db_format(self) -> dict:
+        """Convert the model to a format suitable for database storage"""
+        data = self.model_dump(exclude_none=True)
+        if self.eventAttendees is not None:
+            data['eventAttendees'] = json.dumps(self.eventAttendees)
+        return data
 
 class RecordingEvent(BaseModel):
     """Base model for recording events.
@@ -49,50 +72,20 @@ class RecordingEvent(BaseModel):
                 'SELECT * FROM events WHERE json_extract(data, "$.recordingId") = ? ORDER BY timestamp',
                 (recording_id,)
             )
-            results = [cls(**json.loads(row['data'])) for row in cursor.fetchall()]
-            
-            logger.log(
-                logger.getEffectiveLevel(),
-                "Retrieved events from database",
-                extra={
-                    "recording_id": recording_id,
-                    "event_count": len(results),
-                    "events": [result.model_dump() for result in results]
-                }
-            )
-            return results
-
-class RecordingMetadata(BaseModel):
-    """
-    Model for recording metadata.
-    
-    Attributes:
-        recordingDateTime: ISO8601 formatted timestamp of when the recording was made
-        systemAudioPath: Path to the system audio recording file
-        microphoneAudioPath: Path to the microphone audio recording file
-    """
-    recordingDateTime: str
-    systemAudioPath: str
-    microphoneAudioPath: str
+            return [json.loads(row[3]) for row in cursor.fetchall()]
 
 class RecordingStartRequest(BaseModel):
-    """
-    Request model for starting a recording session.
-    """
+    """Request model for starting a recording session."""
     event: Literal["Recording Started"] = Field(default="Recording Started")
     timestamp: str
     recordingId: str
 
-    def to_event(self) -> RecordingEvent:
-        return RecordingEvent(
-            event=self.event,
-            timestamp=self.timestamp,
-            recordingId=self.recordingId
-        )
+    def to_event(self):
+        """Convert request to RecordingEvent"""
+        return RecordingEvent(**self.model_dump())
 
 class RecordingEndRequest(BaseModel):
-    """
-    Request model for ending a recording session.
+    """Request model for ending a recording session.
     
     Attributes:
         event: Type of recording event (always "Recording Ended")
@@ -103,11 +96,10 @@ class RecordingEndRequest(BaseModel):
     event: Literal["Recording Ended"] = Field(default="Recording Ended")
     timestamp: str
     recordingId: str
-    metadata: RecordingMetadata
+    metadata: EventMetadata
 
-    def to_event(self) -> RecordingEvent:
-        return RecordingEvent(
-            event=self.event,
-            timestamp=self.timestamp,
-            recordingId=self.recordingId
-        )
+    def to_event(self):
+        """Convert request to RecordingEvent"""
+        data = self.model_dump()
+        data['metadata'] = self.metadata.to_db_format()
+        return RecordingEvent(**data)

@@ -29,8 +29,8 @@ def generate_recording_id():
     random_hex = os.urandom(4).hex()[:8].upper()
     return f"{timestamp}_{random_hex}"
 
-def test_recording_flow():
-    # Generate a recording ID with timestamp
+def test_basic_recording_flow():
+    """Test recording flow with basic metadata"""
     recording_id = generate_recording_id()
     start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     
@@ -48,10 +48,8 @@ def test_recording_flow():
     print("\nStart Recording Response:", start_response.json())
     assert start_response.status_code == 200, f"Start recording failed: {start_response.text}"
     
-    # End recording (using same recording ID)
+    # End recording with basic metadata
     end_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    system_audio_path = f"/recordings/{recording_id}_system_audio.wav"
-    microphone_audio_path = f"/recordings/{recording_id}_microphone.wav"
     
     end_response = requests.post(
         f"{BASE_URL}/api/recording-ended",
@@ -61,9 +59,52 @@ def test_recording_flow():
             "timestamp": end_time,
             "recordingId": recording_id,
             "metadata": {
-                "recordingDateTime": end_time,
-                "systemAudioPath": system_audio_path,
-                "microphoneAudioPath": microphone_audio_path
+                "recordingDateTime": end_time
+            }
+        },
+        verify=SSL_VERIFY
+    )
+    print("\nEnd Recording Response:", end_response.json())
+    assert end_response.status_code == 200, f"End recording failed: {end_response.text}"
+
+def test_calendar_event_recording_flow():
+    """Test recording flow with calendar event metadata"""
+    recording_id = generate_recording_id()
+    start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    # Start recording
+    start_response = requests.post(
+        f"{BASE_URL}/api/recording-started",
+        headers=HEADERS,
+        json={
+            "event": "Recording Started",
+            "timestamp": start_time,
+            "recordingId": recording_id
+        },
+        verify=SSL_VERIFY
+    )
+    print("\nStart Recording Response:", start_response.json())
+    assert start_response.status_code == 200, f"Start recording failed: {start_response.text}"
+    
+    # End recording with calendar event metadata
+    end_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    end_response = requests.post(
+        f"{BASE_URL}/api/recording-ended",
+        headers=HEADERS,
+        json={
+            "event": "Recording Ended",
+            "timestamp": end_time,
+            "recordingId": recording_id,
+            "metadata": {
+                "eventTitle": "Pr0j3c7todd Companies house docs due",
+                "eventProviderId": "2j11l4q826f3bfivj21gvfs3gp_20250501T070000Z",
+                "eventProvider": "Google Calendar",
+                "eventAttendees": [
+                    "todd@bluecliff.net",
+                    "todd@pr0j3c7t0dd.com"
+                ],
+                "recordingDateTime": end_time
             }
         },
         verify=SSL_VERIFY
@@ -72,6 +113,7 @@ def test_recording_flow():
     assert end_response.status_code == 200, f"End recording failed: {end_response.text}"
 
 def test_invalid_recording_flow():
+    """Test invalid recording scenarios"""
     # Test starting an already active recording
     recording_id = generate_recording_id()
     start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -100,32 +142,30 @@ def test_invalid_recording_flow():
         },
         verify=SSL_VERIFY
     )
-    print("\nDuplicate Start Response:", start_response2.json())
     assert start_response2.status_code == 400, "Second start should fail"
     
-    # Try to end a recording that doesn't exist
+    # Test ending a non-existent recording
     non_existent_id = generate_recording_id()
     end_response = requests.post(
         f"{BASE_URL}/api/recording-ended",
         headers=HEADERS,
         json={
             "event": "Recording Ended",
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": start_time,
             "recordingId": non_existent_id,
             "metadata": {
-                "recordingDateTime": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "systemAudioPath": f"/recordings/{non_existent_id}_system_audio.wav",
-                "microphoneAudioPath": f"/recordings/{non_existent_id}_microphone.wav"
+                "recordingDateTime": start_time
             }
         },
         verify=SSL_VERIFY
     )
-    print("\nNon-existent Recording End Response:", end_response.json())
-    assert end_response.status_code == 200, "Ending a recording without a start event should succeed"
+    assert end_response.status_code == 404, "Ending non-existent recording should fail"
 
 if __name__ == "__main__":
-    print("Testing normal recording flow...")
-    test_recording_flow()
+    print("Testing basic recording flow...")
+    test_basic_recording_flow()
+    print("\nTesting calendar event recording flow...")
+    test_calendar_event_recording_flow()
     print("\nTesting invalid recording flows...")
     test_invalid_recording_flow()
-    print("\nAll tests completed successfully!")
+    print("\nAll tests completed!")
