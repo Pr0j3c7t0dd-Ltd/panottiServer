@@ -61,7 +61,8 @@ async def log_requests(request: Request, call_next):
     """Middleware to log requests."""
     # Log request details
     body = await request.body()
-    logger.debug(
+    logger.log(
+        logger.getEffectiveLevel(),
         "Incoming request",
         extra={
             "method": request.method,
@@ -105,6 +106,16 @@ async def recording_started(
 ):
     """Handle a recording started event."""
     try:
+        # Log incoming payload
+        logger.log(
+            logger.getEffectiveLevel(),
+            "Recording start request received",
+            extra={
+                "endpoint": "/api/recording-started",
+                "payload": event.dict()
+            }
+        )
+
         # Check if recording already exists
         existing_events = RecordingEvent.get_by_recording_id(event.recordingId)
         if any(e.event == "Recording Started" for e in existing_events):
@@ -115,6 +126,17 @@ async def recording_started(
         
         # Save event to database
         event.save()
+        
+        # Log successful recording start using configured level
+        logger.log(
+            logger.getEffectiveLevel(),
+            "Recording started",
+            extra={
+                "recording_id": event.recordingId,
+                "event_type": "Recording Started",
+                "payload": event.dict()
+            }
+        )
         
         return {"status": "success", "message": "Recording started"}
     except HTTPException as he:
@@ -131,6 +153,16 @@ async def recording_ended(
 ):
     """Handle a recording ended event."""
     try:
+        # Log incoming payload
+        logger.log(
+            logger.getEffectiveLevel(),
+            "Recording end request received",
+            extra={
+                "endpoint": "/api/recording-ended",
+                "payload": event.dict()
+            }
+        )
+
         # Check if recording has already been ended
         existing_events = RecordingEvent.get_by_recording_id(event.recordingId)
         if any(e.event == "Recording Ended" for e in existing_events):
@@ -141,6 +173,17 @@ async def recording_ended(
         
         # Save event to database
         event.save()
+        
+        # Log successful recording end using configured level
+        logger.log(
+            logger.getEffectiveLevel(),
+            "Recording ended",
+            extra={
+                "recording_id": event.recordingId,
+                "event_type": "Recording Ended",
+                "payload": event.dict()
+            }
+        )
         
         return {"status": "success", "message": "Recording ended"}
     except HTTPException as he:
