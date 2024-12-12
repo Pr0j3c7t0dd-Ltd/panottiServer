@@ -1,13 +1,12 @@
 from datetime import datetime
 from typing import Optional, Literal
-from pydantic import BaseModel
 import json
 from .database import get_db
 import logging
 
 logger = logging.getLogger(__name__)
 
-class RecordingEvent(BaseModel):
+class RecordingEvent:
     """
     Base model for recording events.
     
@@ -16,13 +15,14 @@ class RecordingEvent(BaseModel):
         timestamp: ISO8601 formatted timestamp of the event
         recordingId: Unique identifier for the recording session
     """
-    event: str
-    timestamp: str
-    recordingId: str
+    def __init__(self, event: Literal["Recording Started", "Recording Ended"], timestamp: str, recordingId: str):
+        self.event = event
+        self.timestamp = timestamp
+        self.recordingId = recordingId
 
     def save(self):
         """Save the event to the database"""
-        data = self.dict()
+        data = self.__dict__
         logger.log(
             logger.getEffectiveLevel(),
             "Saving event to database",
@@ -58,25 +58,27 @@ class RecordingEvent(BaseModel):
                 extra={
                     "recording_id": recording_id,
                     "event_count": len(results),
-                    "events": [result.dict() for result in results]
+                    "events": [result.__dict__ for result in results]
                 }
             )
             return results
 
-class RecordingMetadata(BaseModel):
+class RecordingMetadata:
     """
     Model for recording metadata.
     
     Attributes:
         recordingDateTime: ISO8601 formatted timestamp of when the recording was made
     """
-    recordingDateTime: str
+    def __init__(self, recordingDateTime: str):
+        self.recordingDateTime = recordingDateTime
 
 class RecordingStartRequest(RecordingEvent):
     """
     Request model for starting a recording session.
     """
-    event: Literal["Recording Started"]
+    def __init__(self, timestamp: str, recordingId: str):
+        super().__init__("Recording Started", timestamp, recordingId)
 
 class RecordingEndRequest(RecordingEvent):
     """
@@ -88,5 +90,6 @@ class RecordingEndRequest(RecordingEvent):
         recordingId: Unique identifier for the recording session
         metadata: Additional metadata about the recording
     """
-    event: Literal["Recording Ended"]
-    metadata: RecordingMetadata
+    def __init__(self, timestamp: str, recordingId: str, metadata: RecordingMetadata):
+        super().__init__("Recording Ended", timestamp, recordingId)
+        self.metadata = metadata
