@@ -1,28 +1,27 @@
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
+from pydantic import BaseModel, Field
 import json
 from .database import get_db
 import logging
 
 logger = logging.getLogger(__name__)
 
-class RecordingEvent:
-    """
-    Base model for recording events.
+class RecordingEvent(BaseModel):
+    """Base model for recording events.
     
     Attributes:
         event: Type of recording event
         timestamp: ISO8601 formatted timestamp of the event
         recordingId: Unique identifier for the recording session
     """
-    def __init__(self, event: Literal["Recording Started", "Recording Ended"], timestamp: str, recordingId: str):
-        self.event = event
-        self.timestamp = timestamp
-        self.recordingId = recordingId
+    event: Union[Literal["Recording Started"], Literal["Recording Ended"]]
+    timestamp: str
+    recordingId: str
 
     def save(self):
         """Save the event to the database"""
-        data = self.__dict__
+        data = self.model_dump()
         logger.log(
             logger.getEffectiveLevel(),
             "Saving event to database",
@@ -58,29 +57,40 @@ class RecordingEvent:
                 extra={
                     "recording_id": recording_id,
                     "event_count": len(results),
-                    "events": [result.__dict__ for result in results]
+                    "events": [result.model_dump() for result in results]
                 }
             )
             return results
 
-class RecordingMetadata:
+class RecordingMetadata(BaseModel):
     """
     Model for recording metadata.
     
     Attributes:
         recordingDateTime: ISO8601 formatted timestamp of when the recording was made
+        systemAudioPath: Path to the system audio recording file
+        microphoneAudioPath: Path to the microphone audio recording file
     """
-    def __init__(self, recordingDateTime: str):
-        self.recordingDateTime = recordingDateTime
+    recordingDateTime: str
+    systemAudioPath: str
+    microphoneAudioPath: str
 
-class RecordingStartRequest(RecordingEvent):
+class RecordingStartRequest(BaseModel):
     """
     Request model for starting a recording session.
     """
-    def __init__(self, timestamp: str, recordingId: str):
-        super().__init__("Recording Started", timestamp, recordingId)
+    event: Literal["Recording Started"] = Field(default="Recording Started")
+    timestamp: str
+    recordingId: str
 
-class RecordingEndRequest(RecordingEvent):
+    def to_event(self) -> RecordingEvent:
+        return RecordingEvent(
+            event=self.event,
+            timestamp=self.timestamp,
+            recordingId=self.recordingId
+        )
+
+class RecordingEndRequest(BaseModel):
     """
     Request model for ending a recording session.
     
@@ -90,6 +100,14 @@ class RecordingEndRequest(RecordingEvent):
         recordingId: Unique identifier for the recording session
         metadata: Additional metadata about the recording
     """
-    def __init__(self, timestamp: str, recordingId: str, metadata: RecordingMetadata):
-        super().__init__("Recording Ended", timestamp, recordingId)
-        self.metadata = metadata
+    event: Literal["Recording Ended"] = Field(default="Recording Ended")
+    timestamp: str
+    recordingId: str
+    metadata: RecordingMetadata
+
+    def to_event(self) -> RecordingEvent:
+        return RecordingEvent(
+            event=self.event,
+            timestamp=self.timestamp,
+            recordingId=self.recordingId
+        )

@@ -101,81 +101,31 @@ async def get_active_recordings():
 @app.post("/api/recording-started")
 async def recording_started(
     request: Request,
-    event: RecordingStartRequest,
+    event_request: RecordingStartRequest,
     api_key: str = Depends(get_api_key)
 ):
     """Handle a recording started event."""
     try:
-        # Log incoming payload
-        logger.log(
-            logger.getEffectiveLevel(),
-            "Recording start request received",
-            extra={"request_payload": event.dict()}
-        )
-
-        # Check if recording already exists
-        existing_events = RecordingEvent.get_by_recording_id(event.recordingId)
-        if any(e.event == "Recording Started" for e in existing_events):
-            raise HTTPException(
-                status_code=400,
-                detail="Recording already started with this ID"
-            )
-        
-        # Save event to database
+        event = event_request.to_event()
         event.save()
-        
-        # Log successful recording start using configured level
-        logger.log(
-            logger.getEffectiveLevel(),
-            "Recording started",
-            extra={"request_payload": event.dict()}
-        )
-        
-        return {"status": "success", "message": "Recording started"}
-    except HTTPException as he:
-        raise he
+        return {"status": "success", "event": event.model_dump()}
     except Exception as e:
-        logger.error(f"Error processing recording start: {str(e)}")
+        logger.error(f"Error processing recording started event: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/recording-ended")
 async def recording_ended(
     request: Request,
-    event: RecordingEndRequest,
+    event_request: RecordingEndRequest,
     api_key: str = Depends(get_api_key)
 ):
     """Handle a recording ended event."""
     try:
-        # Log incoming payload
-        logger.log(
-            logger.getEffectiveLevel(),
-            "Recording end request received",
-            extra={"request_payload": event.dict()}
-        )
-
-        # Check if recording has already been ended
-        existing_events = RecordingEvent.get_by_recording_id(event.recordingId)
-        if any(e.event == "Recording Ended" for e in existing_events):
-            raise HTTPException(
-                status_code=400,
-                detail="Recording already ended"
-            )
-        
-        # Save event to database
+        event = event_request.to_event()
         event.save()
-        
-        # Log successful recording end using configured level
-        logger.log(
-            logger.getEffectiveLevel(),
-            "Recording ended",
-            extra={"request_payload": event.dict()}
-        )
-        
-        return {"status": "success", "message": "Recording ended"}
-    except HTTPException as he:
-        raise he
+        return {"status": "success", "event": event.model_dump()}
     except Exception as e:
-        logger.error(f"Error processing recording end: {str(e)}")
+        logger.error(f"Error processing recording ended event: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

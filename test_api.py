@@ -60,8 +60,11 @@ def test_recording_flow():
             "event": "Recording Ended",
             "timestamp": end_time,
             "recordingId": recording_id,
-            "systemAudioPath": system_audio_path,
-            "microphoneAudioPath": microphone_audio_path
+            "metadata": {
+                "recordingDateTime": end_time,
+                "systemAudioPath": system_audio_path,
+                "microphoneAudioPath": microphone_audio_path
+            }
         },
         verify=SSL_VERIFY
     )
@@ -109,8 +112,11 @@ def test_invalid_recording_flow():
             "event": "Recording Ended",
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "recordingId": non_existent_id,
-            "systemAudioPath": f"/recordings/{non_existent_id}_system_audio.wav",
-            "microphoneAudioPath": f"/recordings/{non_existent_id}_microphone.wav"
+            "metadata": {
+                "recordingDateTime": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "systemAudioPath": f"/recordings/{non_existent_id}_system_audio.wav",
+                "microphoneAudioPath": f"/recordings/{non_existent_id}_microphone.wav"
+            }
         },
         verify=SSL_VERIFY
     )
