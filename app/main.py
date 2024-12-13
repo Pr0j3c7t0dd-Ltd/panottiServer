@@ -75,9 +75,6 @@ async def log_requests(request: Request, call_next):
         if header in sanitized_headers:
             sanitized_headers[header] = '[REDACTED]'
     
-    # Print headers to console for debugging
-    print("Incoming request headers:", sanitized_headers)
-    
     # Log the request with headers
     logger.info(
         "Incoming request",
