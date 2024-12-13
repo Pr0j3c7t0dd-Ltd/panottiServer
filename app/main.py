@@ -10,7 +10,7 @@ from typing import Dict
 import asyncio
 
 from .models.event import RecordingEvent, RecordingStartRequest, RecordingEndRequest
-from .models.database import get_db
+from .models.database import get_db, DatabaseManager
 from .utils.logging_config import setup_logging
 
 # Load environment variables
@@ -53,7 +53,7 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup application resources"""
     # Close database connections
-    get_db().close_connections()
+    DatabaseManager.get_instance().close_connections()
     logger.info("Database connections closed")
 
 @app.middleware("http")
@@ -92,7 +92,8 @@ async def get_active_recordings():
     """Get all active recordings from the database"""
     try:
         # Query database for active recordings
-        recordings = get_db().get_active_recordings()
+        with get_db() as db:
+            recordings = db.get_active_recordings()
         return {"status": "success", "recordings": recordings}
     except Exception as e:
         logger.error(f"Error retrieving active recordings: {str(e)}")

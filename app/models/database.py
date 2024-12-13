@@ -23,6 +23,14 @@ class DatabaseManager:
         self.db_path = str(data_dir / 'panotti.db')
         self._init_db()
 
+    def __enter__(self):
+        return self.get_connection()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if hasattr(self._local, 'connection'):
+            self._local.connection.close()
+            del self._local.connection
+
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
@@ -33,7 +41,7 @@ class DatabaseManager:
 
     def _init_db(self):
         """Initialize the database schema"""
-        with self.get_connection() as conn:
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
             # Create events table
@@ -42,7 +50,13 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     type TEXT NOT NULL,
                     timestamp DATETIME NOT NULL,
-                    data TEXT,
+                    recording_id TEXT NOT NULL,
+                    recording_datetime TEXT,
+                    event_title TEXT,
+                    event_provider_id TEXT,
+                    event_provider TEXT,
+                    event_attendees TEXT,  -- JSON array
+                    metadata_json TEXT,    -- Full JSON payload
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -68,20 +82,11 @@ class DatabaseManager:
             return {row['recording_id']: row['timestamp'] 
                     for row in cursor.fetchall()}
 
-    @contextmanager
     def get_connection(self):
-        """Thread-safe connection management"""
         if not hasattr(self._local, 'connection'):
             self._local.connection = sqlite3.connect(self.db_path)
             self._local.connection.row_factory = sqlite3.Row
-        
-        try:
-            yield self._local.connection
-        except Exception as e:
-            self._local.connection.rollback()
-            raise e
-        else:
-            self._local.connection.commit()
+        return self._local.connection
 
     def close_connections(self):
         """Close all connections - useful for cleanup"""
@@ -89,6 +94,12 @@ class DatabaseManager:
             self._local.connection.close()
             del self._local.connection
 
-# Global accessor function
+@contextmanager
 def get_db():
-    return DatabaseManager.get_instance()
+    db = DatabaseManager.get_instance()
+    try:
+        yield db
+    finally:
+        if hasattr(db._local, 'connection'):
+            db._local.connection.close()
+            del db._local.connection

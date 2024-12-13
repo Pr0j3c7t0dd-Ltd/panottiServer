@@ -45,34 +45,60 @@ class RecordingEvent(BaseModel):
     def save(self):
         """Save the event to the database"""
         data = self.model_dump()
-        logger.log(
-            logger.getEffectiveLevel(),
-            "Saving event to database",
-            extra={
-                "event_type": self.event,
-                "recording_id": self.recordingId,
-                "data": data
-            }
-        )
+        metadata = {}
         
-        with get_db().get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                'INSERT INTO events (type, timestamp, data) VALUES (?, ?, ?)',
-                (self.event, self.timestamp, json.dumps(data))
+        # For RecordingEndRequest, extract metadata
+        if isinstance(self, RecordingEndRequest):
+            metadata = self.metadata.model_dump(exclude_none=True)
+        
+        with get_db() as db:
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO events (
+                        type, 
+                        timestamp, 
+                        recording_id,
+                        recording_datetime,
+                        event_title,
+                        event_provider_id,
+                        event_provider,
+                        event_attendees,
+                        metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    self.event,
+                    self.timestamp,
+                    self.recordingId,
+                    metadata.get('recordingDateTime'),
+                    metadata.get('eventTitle'),
+                    metadata.get('eventProviderId'),
+                    metadata.get('eventProvider'),
+                    json.dumps(metadata.get('eventAttendees')) if metadata.get('eventAttendees') else None,
+                    json.dumps(data)
+                ))
+                conn.commit()
+                
+            logger.info(
+                "Event saved to database",
+                extra={
+                    "event_type": self.event,
+                    "recording_id": self.recordingId,
+                    "timestamp": self.timestamp
+                }
             )
-            return cursor.lastrowid
 
     @classmethod
     def get_by_recording_id(cls, recording_id: str):
         """Retrieve all events for a specific recording"""
-        with get_db().get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                'SELECT * FROM events WHERE json_extract(data, "$.recordingId") = ? ORDER BY timestamp',
-                (recording_id,)
-            )
-            return [json.loads(row[3]) for row in cursor.fetchall()]
+        with get_db() as db:
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT * FROM events WHERE json_extract(data, "$.recordingId") = ? ORDER BY timestamp',
+                    (recording_id,)
+                )
+                return [json.loads(row[3]) for row in cursor.fetchall()]
 
 class RecordingStartRequest(BaseModel):
     """Request model for starting a recording session."""
