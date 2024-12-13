@@ -1,34 +1,47 @@
 import logging
 import json
 import os
+import uuid
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
+        # Create the base log record
         log_record = {
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
+            "logger": record.name,
+            "request_id": getattr(record, 'req_id', str(uuid.uuid4()))
         }
-        
-        # Get any extra attributes from the record
-        extras = {
-            key: value
-            for key, value in record.__dict__.items()
-            if key not in ['args', 'asctime', 'created', 'exc_info', 'exc_text', 
-                         'filename', 'funcName', 'levelname', 'levelno', 'lineno', 
-                         'module', 'msecs', 'msg', 'name', 'pathname', 'process', 
-                         'processName', 'relativeCreated', 'stack_info', 'thread', 
-                         'threadName']
-        }
-        log_record.update(extras)
-                
-        # Add exception info if present
+
+        # Add our custom request fields
+        custom_fields = ['req_headers', 'req_method', 'req_path', 'req_task']
+        for field in custom_fields:
+            if hasattr(record, field):
+                # Remove the 'req_' prefix in the output
+                log_key = field[4:] if field.startswith('req_') else field
+                log_record[log_key] = getattr(record, field)
+
+        # Add any additional extra attributes that might be present
+        for key, value in record.__dict__.items():
+            if (key not in log_record and 
+                key not in ['args', 'exc_info', 'exc_text', 'stack_info', 'lineno', 
+                           'funcName', 'created', 'msecs', 'relativeCreated', 'levelno', 
+                           'pathname', 'filename', 'module', 'processName', 'threadName', 
+                           'thread', 'process', 'msg', 'name']):
+                log_record[key] = value
+
+        # Add exception information if present
         if record.exc_info:
             log_record['exc_info'] = self.formatException(record.exc_info)
-            
+
         return json.dumps(log_record)
+
+def generate_request_id():
+    """Generate a unique request ID"""
+    return str(uuid.uuid4())
 
 def setup_logging():
     """
@@ -45,20 +58,21 @@ def setup_logging():
 
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
-    
+
     # Configure root logger
     logger = logging.getLogger()
     log_level = os.getenv("LOG_LEVEL", "DEBUG")
+    print(f"Setting log level to: {log_level}")
     logger.setLevel(getattr(logging, log_level.upper(), logging.DEBUG))
-    
+
     # Remove existing handlers
     logger.handlers = []
-    
+
     # Create console handler
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(JSONFormatter())
     logger.addHandler(console_handler)
-    
+
     # Create rotating file handler
     log_file = "logs/app.log"
     retention_days = int(os.getenv("LOG_RETENTION_DAYS", "30"))
@@ -71,3 +85,17 @@ def setup_logging():
     )
     file_handler.setFormatter(JSONFormatter())
     logger.addHandler(file_handler)
+
+# Example usage
+if __name__ == "__main__":
+    setup_logging()
+    logger = logging.getLogger()
+
+    # Simulate an HTTP request with headers
+    request_headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer token",
+    }
+
+    # Log with headers
+    logger.info("Processing request", extra={"req_headers": request_headers})

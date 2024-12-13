@@ -16,9 +16,9 @@ class EventMetadata(BaseModel):
         eventProvider: Name of the event provider
         recordingDateTime: ISO8601 formatted timestamp of when the recording was made
     """
-    eventProviderId: str
-    eventTitle: str
-    eventProvider: str
+    eventProviderId: Optional[str] = None
+    eventTitle: Optional[str] = None
+    eventProvider: Optional[str] = None
     recordingDateTime: str
     eventAttendees: Optional[List[str]] = None
 
@@ -183,7 +183,7 @@ class RecordingStartRequest(BaseModel):
         if self.metadata:
             try:
                 logger.debug(f"Processing metadata: {self.metadata}")
-                metadata_dict = self.metadata
+                metadata_dict = self.metadata if isinstance(self.metadata, dict) else self.metadata.dict() if hasattr(self.metadata, 'dict') else dict(self.metadata)
                 try:
                     metadata_model = EventMetadata(**metadata_dict)
                     data['metadata'] = metadata_model.model_dump(exclude_none=True)
@@ -224,7 +224,7 @@ class RecordingEndRequest(BaseModel):
         if self.metadata:
             try:
                 logger.debug(f"Processing metadata: {self.metadata}")
-                metadata_dict = self.metadata
+                metadata_dict = self.metadata if isinstance(self.metadata, dict) else self.metadata.dict() if hasattr(self.metadata, 'dict') else dict(self.metadata)
                 try:
                     metadata_model = EventMetadata(**metadata_dict)
                     data['metadata'] = metadata_model.model_dump(exclude_none=True)

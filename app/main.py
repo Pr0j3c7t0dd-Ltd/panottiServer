@@ -8,6 +8,7 @@ import logging
 import json
 from typing import Dict
 import asyncio
+import uuid
 
 from .models.event import RecordingEvent, RecordingStartRequest, RecordingEndRequest
 from .models.database import get_db, DatabaseManager
@@ -56,27 +57,81 @@ async def shutdown_event():
     DatabaseManager.get_instance().close_connections()
     logger.info("Database connections closed")
 
+def generate_request_id():
+    return str(uuid.uuid4())
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Middleware to log requests."""
-    # Log request details
-    body = await request.body()
-    logger.log(
-        logger.getEffectiveLevel(),
+    """Middleware to log requests with detailed header information."""
+    print(f"=== log_requests middleware called === URL: {request.url.scheme}://{request.url.netloc}{request.url.path}")  # Debug print with protocol
+    request_id = request.headers.get('X-Request-ID') or generate_request_id()
+    logger_context = logging.LoggerAdapter(logger, {'request_id': request_id})
+    
+    # Extract and format headers
+    headers = dict(request.headers)
+    sanitized_headers = headers.copy()
+    sensitive_headers = ['authorization', 'x-api-key', 'cookie']
+    for header in sensitive_headers:
+        if header in sanitized_headers:
+            sanitized_headers[header] = '[REDACTED]'
+    
+    # Print headers to console for debugging
+    print("Incoming request headers:", sanitized_headers)
+    
+    # Log the request with headers
+    logger.info(
         "Incoming request",
         extra={
-            "method": request.method,
-            "url": str(request.url),
-            "headers": dict(request.headers),
-            "body": body.decode() if body else None,
-            "client_host": request.client.host if request.client else None,
+            'req_headers': sanitized_headers,
+            'req_method': request.method,
+            'req_path': request.url.path,
+            'req_task': "http_middleware",
+            'req_id': request_id
         }
     )
     
-    # Process the request
-    response = await call_next(request)
+    # Get request body
+    body = await request.body()
+    body_content = None
     
-    # Return response
+    if body:
+        try:
+            body_content = json.loads(body)
+        except json.JSONDecodeError:
+            try:
+                body_content = body.decode()
+            except UnicodeDecodeError:
+                body_content = "[BINARY DATA]"
+    
+    # Process the request
+    start_time = datetime.utcnow()
+    response = await call_next(request)
+    duration = (datetime.utcnow() - start_time).total_seconds()
+    
+    # Add request ID to response headers
+    response.headers['X-Request-ID'] = request_id
+    
+    # Get response headers
+    response_headers = dict(response.headers)
+    for header in sensitive_headers:
+        if header in response_headers:
+            response_headers[header] = '[REDACTED]'
+    
+    # Log response
+    logger.info(
+        "Request completed",
+        extra={
+            "http": {
+                "response": {
+                    "status_code": response.status_code,
+                    "headers": response_headers,
+                    "duration_seconds": duration
+                }
+            },
+            'request_id': request_id
+        }
+    )
+    
     return response
 
 async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
