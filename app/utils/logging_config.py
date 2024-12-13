@@ -48,8 +48,8 @@ def setup_logging():
     
     # Configure root logger
     logger = logging.getLogger()
-    log_level = os.getenv("LOG_LEVEL", "INFO")
-    logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    log_level = os.getenv("LOG_LEVEL", "DEBUG")
+    logger.setLevel(getattr(logging, log_level.upper(), logging.DEBUG))
     
     # Remove existing handlers
     logger.handlers = []

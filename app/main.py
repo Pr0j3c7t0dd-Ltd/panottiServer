@@ -107,8 +107,28 @@ async def recording_started(
 ):
     """Handle a recording started event."""
     try:
+        # Log raw request body
+        body = await request.body()
+        logger.info(
+            "Received recording started request",
+            extra={
+                "raw_body": body.decode(),
+                "parsed_request": event_request.model_dump(),
+            }
+        )
+        
+        # Convert to event
         event = event_request.to_event()
+        logger.info(
+            "Converted request to event",
+            extra={
+                "event_data": event.model_dump()
+            }
+        )
+        
+        # Save event
         event.save()
+        
         return {"status": "success", "event": event.model_dump()}
     except Exception as e:
         logger.error(f"Error processing recording started event: {str(e)}")
@@ -122,8 +142,28 @@ async def recording_ended(
 ):
     """Handle a recording ended event."""
     try:
+        # Log raw request body
+        body = await request.body()
+        logger.info(
+            "Received recording ended request",
+            extra={
+                "raw_body": body.decode(),
+                "parsed_request": event_request.model_dump(),
+            }
+        )
+        
+        # Convert to event
         event = event_request.to_event()
+        logger.info(
+            "Converted request to event",
+            extra={
+                "event_data": event.model_dump()
+            }
+        )
+        
+        # Save event
         event.save()
+        
         return {"status": "success", "event": event.model_dump()}
     except Exception as e:
         logger.error(f"Error processing recording ended event: {str(e)}")
