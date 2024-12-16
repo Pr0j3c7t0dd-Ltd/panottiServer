@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "product-requirements/plugin-architecture-requirements.md",
+                "file": "architecture/utils.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "plugin-architecture-requirements"
+              "title": "utils"
             }
           }
         ]
@@ -167,8 +167,14 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
-    "product-requirements/plugin-requirements-example-cdoe.md",
+    "architecture/security_and_configuration.md",
+    "architecture/plugins.md",
+    "architecture/models.md",
+    "architecture/deployment_and_middleware.md",
+    "architecture/architecture_overview.md",
     "product-requirements/plugin-architecture-requirements.md",
+    "architecture/utils.md",
+    "product-requirements/plugin-requirements-example-cdoe.md",
     "default-prompts/run-codebase-analysis.md",
     "panottiServer Roadmap Board.md",
     "product-requirements/basic-product-requirements.md",
