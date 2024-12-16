@@ -103,6 +103,10 @@ class RecordingEvent(BaseModel):
                 logger.error(f"Error processing metadata: {e}")
                 metadata = {}
         
+        # Handle empty string for systemAudioPath and microphoneAudioPath
+        system_audio_path = self.systemAudioPath if self.systemAudioPath != "" else None
+        microphone_audio_path = self.microphoneAudioPath if self.microphoneAudioPath != "" else None
+
         with get_db() as db:
             with db.get_connection() as conn:
                 cursor = conn.cursor()
@@ -112,8 +116,8 @@ class RecordingEvent(BaseModel):
                     self.event,
                     self.timestamp,
                     self.recordingId,
-                    self.systemAudioPath,
-                    self.microphoneAudioPath,
+                    system_audio_path,
+                    microphone_audio_path,
                     metadata.get('recordingDateTime'),
                     metadata.get('eventTitle'),
                     metadata.get('eventProviderId'),
