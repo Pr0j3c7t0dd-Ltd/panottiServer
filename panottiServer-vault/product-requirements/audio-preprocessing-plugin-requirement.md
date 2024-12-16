@@ -1,0 +1,1 @@
+I want to create a plugin using the plugin architecture in the app that will pre-process audio files to remove the noise from the microphone.  The 

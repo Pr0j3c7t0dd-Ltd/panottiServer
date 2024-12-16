@@ -33,14 +33,14 @@ class RecordingEvent(BaseModel):
         timestamp: ISO8601 formatted timestamp of the event
         recordingId: Unique identifier for the recording session
         systemAudioPath: Optional path to the system audio recording file
-        MicrophoneAudioPath: Optional path to the microphone audio recording file
+        microphoneAudioPath: Optional path to the microphone audio recording file
         event: Type of recording event
         metadata: Additional metadata about the recording
     """
     timestamp: str
     recordingId: str
     systemAudioPath: Optional[str] = None
-    MicrophoneAudioPath: Optional[str] = None
+    microphoneAudioPath: Optional[str] = None
     event: Union[Literal["Recording Started"], Literal["Recording Ended"]]
     metadata: Optional[Union[dict, EventMetadata]] = None
 
@@ -172,7 +172,7 @@ class RecordingStartRequest(BaseModel):
     event: Literal["Recording Started"] = Field(default="Recording Started")
     metadata: Optional[dict] = None
     systemAudioPath: Optional[str] = None
-    MicrophoneAudioPath: Optional[str] = None
+    microphoneAudioPath: Optional[str] = None
 
     def to_event(self):
         """Convert request to RecordingEvent"""
@@ -206,12 +206,12 @@ class RecordingEndRequest(BaseModel):
         event: Type of recording event (always "Recording Ended")
         metadata: Metadata about the recording
         systemAudioPath: Path to system audio file
-        MicrophoneAudioPath: Path to microphone audio file
+        microphoneAudioPath: Path to microphone audio file
     """
     timestamp: str
     recordingId: str
     systemAudioPath: str
-    MicrophoneAudioPath: str
+    microphoneAudioPath: str
     event: Literal["Recording Ended"] = Field(default="Recording Ended")
     metadata: dict
 
