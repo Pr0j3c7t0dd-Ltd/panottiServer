@@ -86,10 +86,22 @@ def setup_logging():
     file_handler.setFormatter(JSONFormatter())
     logger.addHandler(file_handler)
 
+def get_logger(name: str) -> logging.Logger:
+    """
+    Get a logger instance with the specified name.
+    
+    Args:
+        name: The name of the logger, typically __name__ of the module
+        
+    Returns:
+        logging.Logger: Configured logger instance
+    """
+    return logging.getLogger(name)
+
 # Example usage
 if __name__ == "__main__":
     setup_logging()
-    logger = logging.getLogger()
+    logger = get_logger(__name__)
 
     # Simulate an HTTP request with headers
     request_headers = {

@@ -1,242 +1,296 @@
-# Pluggy FastAPI Integration PRD
+# Plugin and Event Architecture System PRD
+Version 1.0.0 | Last Updated: December 16, 2024
 
 ## 1. Overview
 
-### 1.1 Goal
-The goal is to implement a robust, extensible plugin architecture in the existing FastAPI application using Pluggy. The plugin system should allow new features to be added or modified without changing the core code, encourage a modular design, and enable easy discovery, configuration, and execution of plugins.
+### 1.1 Purpose
+The Plugin and Event Architecture System provides a flexible, extensible framework for adding modular functionality to the Panotti server through plugins while enabling real-time communication and data flow through an event-driven architecture.
 
-### 1.2 Objectives
-- Extensibility: Allow integration of third-party features as plugins that can hook into predefined application events and processes.
-- Maintainability: Use a standardized framework (Pluggy) that the development community widely supports, ensuring clean abstractions and fewer architectural pitfalls.
-- Asynchronous Compatibility: Ensure that the plugin system can handle both synchronous and asynchronous hooks, aligning with FastAPI's async-first model.
-- Concurrency & Multi-threading: Support safe execution of CPU-bound or blocking plugin tasks in parallel where necessary, leveraging Python's modern concurrency tools.
-- Discoverability: Automatically discover and load plugins from installed Python packages using importlib.metadata entry points.
-- Testing & Quality Assurance: Provide a testing strategy using pytest (already included in the requirements), ensuring that plugins and their integration can be validated easily.
+### 1.2 Scope
+This system will provide:
+- A plugin framework for extending server functionality
+- An event system for inter-plugin communication
+- Plugin lifecycle management
+- Event persistence and replay capabilities
+- Security and access control
+- Configuration management
+- Error handling and recovery
 
-## 2. Stakeholders and Users
-- Developers: The primary users who will create and maintain plugins. They need a simple, well-documented API to add hooks.
-- Operators / DevOps: They may enable or disable plugins via environment variables or configuration files without code changes.
-- QA / Testers: Require a straightforward testing setup to validate that plugins integrate well and that no regressions occur in the main application.
+### 1.3 Target Users
+- Plugin Developers
+- System Administrators
+- DevOps Engineers
+- Application Developers
+
+## 2. System Architecture
+
+### 2.1 Plugin System
+
+#### 2.1.1 Core Components
+- Plugin Base Class
+- Plugin Manager
+- Configuration Manager
+- State Manager
+- Error Handler
+- Security Manager
+
+#### 2.1.2 Plugin Lifecycle
+1. Discovery
+   - Auto-discovery of plugins in designated directories
+   - Plugin validation and compatibility checks
+   - Configuration loading
+
+2. Initialization
+   - Dependency resolution
+   - Resource allocation
+   - Database schema creation
+   - Event handler registration
+
+3. Operation
+   - State management
+   - Event processing
+   - API endpoint handling
+   - Resource management
+
+4. Shutdown
+   - Resource cleanup
+   - State persistence
+   - Event queue draining
+   - Database connection cleanup
+
+### 2.2 Event System
+
+#### 2.2.1 Core Components
+- Event Bus
+- Event Store
+- Event Replay Manager
+- Event Router
+- Event Monitor
+
+#### 2.2.2 Event Flow
+1. Event Creation
+   - Event type validation
+   - Context enrichment
+   - Priority assignment
+
+2. Event Processing
+   - Persistence
+   - Handler routing
+   - Error handling
+   - Retry logic
+
+3. Event Replay
+   - Failed event recovery
+   - Ordered replay
+   - Batch processing
+   - Error tracking
 
 ## 3. Functional Requirements
 
-### 3.1 Plugin Hook Specifications
+### 3.1 Plugin Management
 
-#### Hooks Definition
-The core application will define a set of hook specifications (e.g., on_startup, on_shutdown, before_request, after_request, authentication_hook, etc.).
+#### 3.1.1 Plugin Discovery and Loading
+- **Required:** Auto-discovery of plugins in designated directories
+- **Required:** Version compatibility checking
+- **Required:** Dependency resolution
+- **Optional:** Hot-reloading capabilities
 
-#### Hook Types
-- Synchronous hooks: For simple, fast operations.
-- Asynchronous hooks: For I/O-bound tasks that integrate with FastAPI's event loop.
+#### 3.1.2 Plugin Configuration
+- **Required:** YAML-based configuration files
+- **Required:** Environment variable support
+- **Required:** Runtime configuration updates
+- **Required:** Configuration validation
 
-#### Parameter & Return Types
-Each hook specification should define clear input parameters and expected return types. For example:
+#### 3.1.3 Plugin State Management
+- **Required:** State transition validation
+- **Required:** State history tracking
+- **Required:** State-based operation control
+- **Optional:** State persistence
 
-```python
-# In a hookspec file (e.g., hookspec.py)
-import pluggy
+### 3.2 Event System
 
-hookspec = pluggy.HookspecMarker("myapp")
+#### 3.2.1 Event Processing
+- **Required:** Asynchronous event processing
+- **Required:** Priority-based handling
+- **Required:** Error handling and retry logic
+- **Required:** Event correlation tracking
 
-class MyAppSpecs:
-    @hookspec
-    async def on_startup(app) -> None:
-        """Run any startup logic, given the FastAPI app instance."""
+#### 3.2.2 Event Persistence
+- **Required:** Durable event storage
+- **Required:** Failed event tracking
+- **Required:** Event replay capabilities
+- **Required:** Event status monitoring
 
-    @hookspec
-    async def before_request(request) -> None:
-        """Run logic before a request is processed."""
+#### 3.2.3 Event Routing
+- **Required:** Topic-based routing
+- **Required:** Handler registration
+- **Optional:** Content-based routing
+- **Optional:** Event filtering
 
-    @hookspec
-    async def after_request(response) -> None:
-        """Run logic after a request is processed."""
+### 3.3 Security
 
-    @hookspec
-    async def on_shutdown(app) -> None:
-        """Run cleanup logic during shutdown."""
-```
+#### 3.3.1 Authentication and Authorization
+- **Required:** API key authentication
+- **Required:** Permission-based access control
+- **Required:** Audit logging
+- **Optional:** Role-based access control
 
-### 3.2 Plugin Registration and Discovery
+#### 3.3.2 Data Security
+- **Required:** Sensitive data handling
+- **Required:** Event payload encryption
+- **Required:** Secure configuration storage
+- **Required:** Access logging
 
-#### Entry Points
-Plugins will register themselves using Python entry points in their pyproject.toml or setup.cfg. For example:
-
-```toml
-[project.entry-points."myapp"]
-myplugin = "myplugin_package:MyPlugin"
-```
-
-#### Dynamic Loading
-On application startup, use importlib.metadata.entry_points() to load all entry points under the myapp group. Instantiate and register them with a Pluggy PluginManager.
-
-### 3.3 Plugin Manager Setup
-
-#### Plugin Manager Initialization
-The application will create a single PluginManager instance at startup:
-
-```python
-import pluggy
-from myapp.hookspec import MyAppSpecs
-
-pm = pluggy.PluginManager("myapp")
-pm.add_hookspecs(MyAppSpecs)
-```
-
-#### Plugin Registration
-The application will discover and register plugins:
-
-```python
-from importlib.metadata import entry_points
-
-for entry_point in entry_points(group="myapp"):
-    plugin = entry_point.load()
-    pm.register(plugin)
-```
-
-### 3.4 Hook Invocation
-
-#### Invoking Hooks
-Whenever the main application triggers a lifecycle event or a request-related event, it calls the corresponding hooks:
-
-```python
-await pm.hook.on_startup(app=app)
-# ... handle requests ...
-await pm.hook.before_request(request=request)
-response = await handler(request)
-await pm.hook.after_request(response=response)
-```
-
-#### Async Support
-Hooks can be async. The pm.hook.* calls will need to be awaited if the hooks are async functions. Pluggy can handle async by using an async wrapper or custom calling logic. Consider using anyio or asyncio features to parallelize async hooks if needed.
-
-### 3.5 Concurrency and Multi-Threading
-
-#### Context and Use Cases
-For CPU-bound plugin tasks (e.g., heavy computation), allow running hooks in a thread pool using concurrent.futures.ThreadPoolExecutor or asyncio.to_thread():
-
-```python
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-executor = ThreadPoolExecutor(max_workers=4)
-
-async def run_in_thread(fn, *args, **kwargs):
-    return await asyncio.to_thread(fn, *args, **kwargs)
-```
-
-#### Best Practices
-- Avoid global mutable state in plugins if they are run concurrently.
-- Document thread-safety or state management requirements for plugin developers.
-- If plugins need shared resources, provide thread-safe or async-friendly abstractions.
-
-### 3.6 Configuration and Enabling/Disabling Plugins
-
-#### Config Files / Env Vars
-Allow toggling plugins via environment variables or configuration files. For example, if a plugin's name is myplugin, you could have ENABLE_MYPLUGIN=false to skip its registration.
-
-#### Selective Loading
-Before calling pm.register(plugin), check configuration to decide if that plugin should be loaded.
-
-### 3.7 Error Handling and Logging
-
-#### Isolation of Failures
-If one plugin hook fails, it should log an error and not necessarily halt the entire application. The PluginManager can be configured to catch and report exceptions.
-
-#### Logging
-Log plugin loading, enabling, disabling, and hook execution timing to help diagnose issues.
-
-## 4. Non-Functional Requirements
+## 4. Technical Requirements
 
 ### 4.1 Performance
-- Hooks should execute quickly. If long-running tasks are needed, use async I/O, thread pools, or background tasks.
-- Loading and registering plugins at startup should not significantly delay the server boot time.
 
-### 4.2 Security
-- Evaluate plugin code trustworthiness. Consider running plugins in isolated processes if needed.
-- Validate plugin signatures if they provide sensitive logic, especially around authentication hooks.
+#### 4.1.1 Event Processing
+- Maximum event processing latency: 100ms
+- Minimum event throughput: 1000 events/second
+- Maximum event storage size: 1GB
+- Event retention period: 30 days
+
+#### 4.1.2 Plugin Operations
+- Maximum plugin load time: 2 seconds
+- Maximum API response time: 500ms
+- Maximum concurrent plugins: 50
+- Maximum memory usage per plugin: 256MB
+
+### 4.2 Reliability
+
+#### 4.2.1 Error Handling
+- Maximum retry attempts: 3
+- Retry backoff: Exponential
+- Error logging: Structured JSON
+- Error notification: Real-time
+
+#### 4.2.2 Data Persistence
+- Event data durability: ACID compliant
+- Backup frequency: Daily
+- Recovery point objective: 5 minutes
+- Recovery time objective: 1 hour
 
 ### 4.3 Scalability
-- The architecture should scale as more plugins are added. Use consistent naming and grouping to avoid conflicts.
-- Support horizontal scaling of the FastAPI app with Gunicorn workers. Each worker loads plugins independently.
+- Horizontal scaling support
+- Load balancing capabilities
+- Resource isolation
+- Distributed event processing support
 
-## 5. Technical Details
+## 5. API Specifications
 
-### 5.1 Tools and Libraries
-- Pluggy: For the core plugin architecture.
-- importlib.metadata: For plugin discovery via entry points.
-- asyncio / anyio: For async operations and concurrency.
-- concurrent.futures / asyncio.to_thread: For CPU-bound operations in thread pools.
-- pytest: For testing. Pytest already integrates well with Pluggy.
+### 5.1 Plugin API
 
-### 5.2 Directory Structure
-A suggested structure:
-
-```
-myapp/
-  __init__.py
-  main.py
-  hookspec.py       # Defines the hook specifications
-  plugin_manager.py # Setup and initialization of the plugin manager
-  plugins/          # Internal plugins can live here (optional)
-tests/
-  test_plugins.py    # Tests for plugin loading and hook execution
-```
-
-### 5.3 Example Plugin
-A minimal plugin might look like this:
-
+#### 5.1.1 Base Classes
 ```python
-# myplugin_package/__init__.py
-import pluggy
-
-hookimpl = pluggy.HookimplMarker("myapp")
-
-class MyPlugin:
-    @hookimpl
-    async def on_startup(self, app):
-        print("MyPlugin: on_startup hook called")
-
-    @hookimpl
-    async def before_request(self, request):
-        print("MyPlugin: before_request hook called")
+class PluginBase:
+    initialize()
+    shutdown()
+    emit_event()
+    handle_event()
+    get_state()
+    update_configuration()
 ```
 
-## 6. Testing Strategy
+#### 5.1.2 Event API
+```python
+class Event:
+    name: str
+    payload: Dict
+    context: EventContext
+    priority: EventPriority
+```
 
-### Unit Tests
-Test hook registration, invocation, async hook handling, and error handling.
+### 5.2 Management API
 
-### Integration Tests
-Run the FastAPI app with test plugins enabled. Use pytest and httpx to simulate requests, ensuring that hooks are called.
+#### 5.2.1 Plugin Management
+- GET /plugins - List all plugins
+- POST /plugins/{id}/enable - Enable plugin
+- POST /plugins/{id}/disable - Disable plugin
+- GET /plugins/{id}/status - Get plugin status
+- PUT /plugins/{id}/config - Update plugin configuration
 
-### Performance Tests
-Optional load testing with multiple plugins enabled to ensure performance is acceptable.
+#### 5.2.2 Event Management
+- GET /events - List events
+- POST /events/replay - Start event replay
+- GET /events/status - Get event system status
+- POST /events/filter - Create event filter
 
-## 7. Rollout and Deployment
+## 6. Implementation Guidelines
 
-### Phased Rollout
-Introduce the plugin system in a feature branch. Test thoroughly in a staging environment.
+### 6.1 Plugin Development
+- Use dependency injection
+- Implement error handling
+- Follow state management patterns
+- Provide configuration schema
+- Document API endpoints
+- Include usage examples
 
-### Documentation
-- Provide developer documentation and examples for writing plugins.
-- Update readmes and internal wikis to explain how to enable/disable and configure plugins.
+### 6.2 Event Handling
+- Use async/await patterns
+- Implement retry logic
+- Handle partial failures
+- Maintain event ordering
+- Implement idempotency
+- Provide event schemas
 
-### Monitoring & Logging
-- Monitor logs for plugin hook execution times and errors.
-- Consider exposing plugin states via a health endpoint.
+## 7. Success Metrics
 
-## 8. Maintenance and Future Work
+### 7.1 System Health
+- Plugin load success rate: >99%
+- Event processing success rate: >99.9%
+- System uptime: >99.9%
+- Error recovery rate: >95%
 
-### Lifecycle Management
-Add versioning for hooks. If a hook signature changes, maintain backward compatibility or provide migration paths.
+### 7.2 Performance Metrics
+- Event processing latency: <100ms
+- Plugin initialization time: <2s
+- API response time: <500ms
+- Resource utilization: <80%
 
-### Security Enhancements
-If untrusted plugins are a concern, consider sandboxing or restricting plugin capabilities.
+## 8. Future Considerations
 
-### Distribution
-Support plugin packages on private or public PyPI indexes.
+### 8.1 Planned Features
+- Distributed event processing
+- Plugin marketplace
+- Real-time monitoring dashboard
+- Advanced event routing
+- Plugin versioning system
+- Event schema registry
 
-## 9. Approval & Sign-off
-- Engineering Lead: Approved pending successful test results.
-- QA Lead: Approved with test coverage above a predetermined threshold (e.g., 85% coverage).
-- Product Management: Approved as it adds extensibility and reduces maintenance overhead for future features.
+### 8.2 Scalability Plans
+- Cluster support
+- Load balancing
+- Horizontal scaling
+- High availability setup
+
+## 9. Dependencies
+
+### 9.1 Required Libraries
+- FastAPI
+- SQLite
+- PyYAML
+- Pydantic
+- asyncio
+- aiohttp
+
+### 9.2 Optional Libraries
+- Redis (for caching)
+- Prometheus (for monitoring)
+- OpenTelemetry (for tracing)
+- SQLAlchemy (for ORM)
+
+## 10. Migration and Deployment
+
+### 10.1 Migration Strategy
+- Database schema updates
+- Configuration format changes
+- API version management
+- Plugin compatibility checks
+
+### 10.2 Deployment Requirements
+- Docker support
+- Environment configuration
+- Health checks
+- Monitoring setup
+- Backup procedures

@@ -9,3 +9,13 @@ httpx==0.26.0
 pytest-cov==4.1.0
 typing-extensions>=4.9.0
 requests==2.31.0
+
+# Plugin system dependencies
+pydantic>=2.5.3
+PyYAML>=6.0.1
+structlog>=24.1.0
+python-json-logger>=2.0.7
+aiosqlite>=0.19.0
+asyncio>=3.4.3
+watchdog>=3.0.0  # For plugin hot-reloading
+importlib-metadata>=7.0.1  # For plugin discovery
