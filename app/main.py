@@ -16,6 +16,7 @@ from .utils.logging_config import setup_logging
 from .plugins.manager import PluginManager
 from .plugins.events.bus import EventBus
 from .plugins.events.persistence import EventStore
+from .plugins.events.models import Event, EventContext, EventPriority
 
 # Load environment variables
 load_dotenv()
@@ -193,6 +194,14 @@ async def recording_started(
         
         # Save event
         event.save()
+
+        # Emit event using the event system
+        event_to_emit = Event(
+            name="recording_started",
+            payload=event.model_dump(),
+            context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api")
+        )
+        await event_bus.publish(event_to_emit)
         
         return {"status": "success", "event": event.model_dump()}
     except Exception as e:
@@ -228,6 +237,14 @@ async def recording_ended(
         
         # Save event
         event.save()
+
+        # Emit event using the event system
+        event_to_emit = Event(
+            name="recording_ended",
+            payload=event.model_dump(),
+            context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api")
+        )
+        await event_bus.publish(event_to_emit)
         
         return {"status": "success", "event": event.model_dump()}
     except Exception as e:
