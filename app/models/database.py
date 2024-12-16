@@ -57,6 +57,8 @@ class DatabaseManager:
                     event_provider TEXT,
                     event_attendees TEXT,  -- JSON array
                     metadata_json TEXT,    -- Full JSON payload
+                    system_audio_path TEXT,
+                    microphone_audio_path TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')

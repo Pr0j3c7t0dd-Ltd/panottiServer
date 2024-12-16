@@ -112,6 +112,8 @@ class RecordingEvent(BaseModel):
                     self.event,
                     self.timestamp,
                     self.recordingId,
+                    self.systemAudioPath,
+                    self.microphoneAudioPath,
                     metadata.get('recordingDateTime'),
                     metadata.get('eventTitle'),
                     metadata.get('eventProviderId'),
@@ -126,13 +128,15 @@ class RecordingEvent(BaseModel):
                         type, 
                         timestamp, 
                         recording_id,
+                        system_audio_path,
+                        microphone_audio_path,
                         recording_datetime,
                         event_title,
                         event_provider_id,
                         event_provider,
                         event_attendees,
                         metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', insert_values)
                 conn.commit()
                 
