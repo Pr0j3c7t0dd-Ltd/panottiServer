@@ -13,6 +13,9 @@ import uuid
 from .models.event import RecordingEvent, RecordingStartRequest, RecordingEndRequest
 from .models.database import get_db, DatabaseManager
 from .utils.logging_config import setup_logging
+from .plugins.manager import PluginManager
+from .plugins.events.bus import EventBus
+from .plugins.events.persistence import EventStore
 
 # Load environment variables
 load_dotenv()
@@ -23,6 +26,11 @@ logger = logging.getLogger(__name__)
 
 # Get configuration from environment
 PORT = int(os.getenv("API_PORT", "8001"))
+
+# Initialize event system
+event_store = EventStore()
+event_bus = EventBus(event_store)
+plugin_manager = PluginManager("app/plugins", event_bus=event_bus)
 
 app = FastAPI(
     title="Recording Events API",
@@ -49,6 +57,11 @@ async def startup_event():
     # Initialize the database
     get_db()
     logger.info("Database initialized")
+    
+    # Initialize plugins
+    await plugin_manager.discover_plugins()
+    await plugin_manager.initialize_plugins()
+    logger.info("Plugins initialized")
 
 @app.on_event("shutdown")
 async def shutdown_event():

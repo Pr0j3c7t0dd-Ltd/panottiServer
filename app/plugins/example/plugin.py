@@ -11,10 +11,11 @@ class Plugin(PluginBase):
         """Initialize plugin"""
         # Subscribe to events
         self.event_bus.subscribe("example.event", self.handle_event)
+        self.event_bus.subscribe("example.status", self.handle_status)
         self.logger.info(
             "Subscribed to events",
             extra={
-                "event_types": ["example.event"],
+                "event_types": ["example.event", "example.status"],
                 "check_interval": self.get_config("check_interval", 60)
             }
         )
@@ -26,9 +27,10 @@ class Plugin(PluginBase):
         """Shutdown plugin"""
         # Unsubscribe from events
         self.event_bus.unsubscribe("example.event", self.handle_event)
+        self.event_bus.unsubscribe("example.status", self.handle_status)
         self.logger.info(
             "Unsubscribed from events",
-            extra={"event_types": ["example.event"]}
+            extra={"event_types": ["example.event", "example.status"]}
         )
         
     async def handle_event(self, event: Event) -> None:
@@ -57,6 +59,17 @@ class Plugin(PluginBase):
             extra={
                 "event_name": event.name,
                 "correlation_id": event.context.correlation_id
+            }
+        )
+        
+    async def handle_status(self, event: Event) -> None:
+        """Handle status events"""
+        self.logger.info(
+            "Received status update",
+            extra={
+                "correlation_id": event.context.correlation_id,
+                "source_plugin": event.context.source_plugin,
+                "status": event.payload.get("status", "unknown")
             }
         )
         

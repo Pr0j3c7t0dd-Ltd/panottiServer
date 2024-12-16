@@ -92,62 +92,34 @@ class PluginManager:
                     "Verifying plugin class",
                     extra={
                         "plugin_name": config.name,
-                        "plugin_class": str(plugin_class),
-                        "plugin_class_type": str(type(plugin_class)),
-                        "plugin_class_bases": str(getattr(plugin_class, '__bases__', None)),
-                        "plugin_class_dict": str(getattr(plugin_class, '__dict__', {})),
-                        "is_type": isinstance(plugin_class, type),
-                        "is_callable": callable(plugin_class)
+                        "plugin_class": plugin_class.__name__ if plugin_class else None
                     }
                 )
-
-                if not isinstance(plugin_class, type):
-                    logger.error(
-                        "Plugin class is not a type",
-                        extra={
-                            "plugin_name": config.name,
-                            "module_path": str(module_path),
-                            "plugin_class_type": str(type(plugin_class)),
-                            "module_dict": str(module.__dict__)
-                        }
-                    )
-                    continue
-
-                if not callable(plugin_class):
-                    logger.error(
-                        "Plugin class is not callable",
-                        extra={
-                            "plugin_name": config.name,
-                            "module_path": str(module_path),
-                            "module_dict": str(module.__dict__),
-                            "plugin_class_type": str(type(plugin_class)),
-                            "plugin_class_dict": str(getattr(plugin_class, '__dict__', {}))
-                        }
-                    )
-                    continue
-
-                if not issubclass(plugin_class, PluginBase):
-                    logger.error(
-                        "Plugin class is not a subclass of PluginBase",
-                        extra={
-                            "plugin_name": config.name,
-                            "module_path": str(module_path),
-                            "plugin_class_bases": str([base.__name__ for base in plugin_class.__bases__])
-                        }
-                    )
-                    continue
                 
-                # Create plugin instance
-                plugin = plugin_class(config, event_bus=self.event_bus)
-                self.plugins[config.name] = plugin
+                if not plugin_class or not issubclass(plugin_class, PluginBase):
+                    logger.error(
+                        "Invalid plugin class",
+                        extra={
+                            "plugin_name": config.name,
+                            "plugin_class": plugin_class.__name__ if plugin_class else None
+                        }
+                    )
+                    continue
+
+                # Successfully loaded plugin
                 logger.info(
-                    "Plugin discovered successfully",
+                    "✨ Plugin loaded successfully",
                     extra={
                         "plugin_name": config.name,
                         "plugin_version": config.version,
+                        "plugin_enabled": config.enabled,
                         "plugin_dependencies": config.dependencies
                     }
                 )
+
+                # Create plugin instance
+                plugin = plugin_class(config, event_bus=self.event_bus)
+                self.plugins[config.name] = plugin
                 
             except Exception as e:
                 logger.error(
