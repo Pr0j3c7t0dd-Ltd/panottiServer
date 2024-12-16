@@ -6,6 +6,8 @@ This document outlines best practices, coding standards, and recommendations for
 
 Every time you choose to apply a rule(s), explicitly state the rule(s) in the output. You can abbreviate the rule description to a single word or phrase.
 
+ALWAYS consult the files in @panottiServer-vault/architecture folder for the best practices.  Update the files in @panottiServer-vault/architecture folder or add new files as necessary to capture the latest architecture.
+
 ### Description
 Ensure adherence to clean code principles, maintainability, and scalability.
 
