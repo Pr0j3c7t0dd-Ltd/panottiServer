@@ -136,25 +136,55 @@ class NoiseReductionPlugin(PluginBase):
             }
         )
         
-        # Read both audio files, suppressing WAV file warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", wavfile.WavFileWarning)
-            mic_rate, mic_data = wavfile.read(mic_file)
-            noise_rate, noise_data = wavfile.read(noise_file)
+        # Validate input files exist
+        if not os.path.exists(mic_file):
+            raise FileNotFoundError(f"Microphone audio file not found: {mic_file}")
+        if not os.path.exists(noise_file):
+            raise FileNotFoundError(f"System audio file not found: {noise_file}")
+            
+        # Create output directory with proper path handling
+        output_dir = os.path.dirname(os.path.abspath(output_file))
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            raise IOError(f"Failed to create output directory {output_dir}: {str(e)}")
         
-        # Convert stereo to mono by averaging channels
-        if len(mic_data.shape) > 1:
-            mic_data = np.mean(mic_data, axis=1)
-        if len(noise_data.shape) > 1:
-            noise_data = np.mean(noise_data, axis=1)
+        # Read both audio files, suppressing WAV file warnings
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", wavfile.WavFileWarning)
+                mic_rate, mic_data = wavfile.read(mic_file)
+                noise_rate, noise_data = wavfile.read(noise_file)
+        except Exception as e:
+            raise IOError(f"Failed to read WAV files: {str(e)}")
+        
+        # Store original shape for later reconstruction
+        original_shape = mic_data.shape
+        is_stereo = len(original_shape) > 1
+        
+        # Convert to mono temporarily for noise processing
+        if is_stereo:
+            mic_mono = np.mean(mic_data, axis=1)
+            noise_mono = np.mean(noise_data, axis=1) if len(noise_data.shape) > 1 else noise_data
+        else:
+            mic_mono = mic_data
+            noise_mono = noise_data
             
         # Convert to float32 for processing
-        mic_data = mic_data.astype(np.float32)
-        noise_data = noise_data.astype(np.float32)
+        mic_mono = mic_mono.astype(np.float32)
+        noise_mono = noise_mono.astype(np.float32)
         
-        # Normalize audio
-        mic_data = mic_data / np.max(np.abs(mic_data))
-        noise_data = noise_data / np.max(np.abs(noise_data))
+        # Normalize audio with safety checks
+        mic_max = np.max(np.abs(mic_mono))
+        noise_max = np.max(np.abs(noise_mono))
+        
+        if mic_max == 0:
+            raise ValueError("Microphone audio is silent")
+        if noise_max == 0:
+            raise ValueError("System audio is silent")
+            
+        mic_mono = mic_mono / mic_max
+        noise_mono = noise_mono / noise_max
         
         # Calculate STFT parameters
         nperseg = 2048  # Window size
@@ -162,7 +192,7 @@ class NoiseReductionPlugin(PluginBase):
         
         # Compute noise profile using STFT
         _, _, noise_spectrogram = signal.stft(
-            noise_data,
+            noise_mono,
             fs=noise_rate,
             nperseg=nperseg,
             noverlap=noverlap
@@ -171,49 +201,117 @@ class NoiseReductionPlugin(PluginBase):
         # Calculate noise profile magnitude
         noise_profile = np.mean(np.abs(noise_spectrogram), axis=1)
         
-        # Compute STFT of microphone audio
-        f, t, mic_spectrogram = signal.stft(
-            mic_data,
-            fs=mic_rate,
-            nperseg=nperseg,
-            noverlap=noverlap
-        )
+        if is_stereo:
+            # Process each channel separately
+            cleaned_channels = []
+            for channel in range(original_shape[1]):
+                channel_data = mic_data[:, channel].astype(np.float32)
+                channel_max = np.max(np.abs(channel_data))
+                if channel_max > 0:
+                    channel_data = channel_data / channel_max
+                
+                # Compute STFT of channel
+                f, t, channel_spectrogram = signal.stft(
+                    channel_data,
+                    fs=mic_rate,
+                    nperseg=nperseg,
+                    noverlap=noverlap
+                )
+                
+                # Apply spectral subtraction
+                channel_mag = np.abs(channel_spectrogram)
+                channel_phase = np.angle(channel_spectrogram)
+                
+                # Expand noise profile to match spectrogram shape
+                noise_profile_reshaped = noise_profile.reshape(-1, 1)
+                
+                # Subtract noise profile from magnitude spectrum with safety floor
+                cleaned_mag = np.maximum(
+                    channel_mag - noise_profile_reshaped * noise_reduce_factor,
+                    channel_mag * 0.1  # Spectral floor to prevent complete silence
+                )
+                
+                # Reconstruct complex spectrogram
+                cleaned_spectrogram = cleaned_mag * np.exp(1j * channel_phase)
+                
+                # Inverse STFT to get cleaned audio
+                _, cleaned_channel = signal.istft(
+                    cleaned_spectrogram,
+                    fs=mic_rate,
+                    nperseg=nperseg,
+                    noverlap=noverlap
+                )
+                
+                # Normalize channel
+                cleaned_max = np.max(np.abs(cleaned_channel))
+                if cleaned_max > 0:
+                    cleaned_channel = cleaned_channel / cleaned_max
+                
+                cleaned_channels.append(cleaned_channel)
+            
+            # Stack channels back into stereo
+            cleaned_audio = np.stack(cleaned_channels, axis=1)
+        else:
+            # Mono processing (original code)
+            # Compute STFT of microphone audio
+            f, t, mic_spectrogram = signal.stft(
+                mic_mono,
+                fs=mic_rate,
+                nperseg=nperseg,
+                noverlap=noverlap
+            )
+            
+            # Apply spectral subtraction
+            mic_mag = np.abs(mic_spectrogram)
+            mic_phase = np.angle(mic_spectrogram)
+            
+            # Expand noise profile to match spectrogram shape
+            noise_profile = noise_profile.reshape(-1, 1)
+            
+            # Subtract noise profile from magnitude spectrum with safety floor
+            cleaned_mag = np.maximum(
+                mic_mag - noise_profile * noise_reduce_factor,
+                mic_mag * 0.1  # Spectral floor to prevent complete silence
+            )
+            
+            # Reconstruct complex spectrogram
+            cleaned_spectrogram = cleaned_mag * np.exp(1j * mic_phase)
+            
+            # Inverse STFT to get cleaned audio
+            _, cleaned_audio = signal.istft(
+                cleaned_spectrogram,
+                fs=mic_rate,
+                nperseg=nperseg,
+                noverlap=noverlap
+            )
+            
+            # Normalize output with safety checks
+            cleaned_max = np.max(np.abs(cleaned_audio))
+            if cleaned_max > 0:
+                cleaned_audio = cleaned_audio / cleaned_max
         
-        # Apply spectral subtraction
-        mic_mag = np.abs(mic_spectrogram)
-        mic_phase = np.angle(mic_spectrogram)
+        # Convert back to int16 with clipping protection
+        cleaned_audio = np.clip(cleaned_audio * 32767, -32768, 32767).astype(np.int16)
         
-        # Expand noise profile to match spectrogram shape
-        noise_profile = noise_profile.reshape(-1, 1)
-        
-        # Subtract noise profile from magnitude spectrum
-        cleaned_mag = np.maximum(
-            mic_mag - noise_profile * noise_reduce_factor,
-            mic_mag * 0.1  # Spectral floor to prevent complete silence
-        )
-        
-        # Reconstruct complex spectrogram
-        cleaned_spectrogram = cleaned_mag * np.exp(1j * mic_phase)
-        
-        # Inverse STFT to get cleaned audio
-        _, cleaned_audio = signal.istft(
-            cleaned_spectrogram,
-            fs=mic_rate,
-            nperseg=nperseg,
-            noverlap=noverlap
-        )
-        
-        # Normalize output
-        cleaned_audio = cleaned_audio / np.max(np.abs(cleaned_audio))
-        
-        # Convert back to int16 for WAV file
-        cleaned_audio = (cleaned_audio * 32767).astype(np.int16)
-        
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        
-        # Save cleaned audio
-        wavfile.write(output_file, mic_rate, cleaned_audio)
+        # Save cleaned audio with error handling
+        try:
+            wavfile.write(output_file, mic_rate, cleaned_audio)
+            
+            # Verify the file was written successfully
+            if not os.path.exists(output_file):
+                raise IOError(f"Failed to write output file: {output_file}")
+                
+            # Verify the file size is non-zero
+            if os.path.getsize(output_file) == 0:
+                raise IOError(f"Output file is empty: {output_file}")
+                
+        except Exception as e:
+            if os.path.exists(output_file):
+                try:
+                    os.remove(output_file)
+                except:
+                    pass
+            raise IOError(f"Failed to save cleaned audio: {str(e)}")
         
     async def handle_recording_ended(self, event: Event) -> None:
         """Handle recording_ended events"""
