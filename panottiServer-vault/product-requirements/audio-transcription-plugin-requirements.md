@@ -16,7 +16,7 @@ Also, include the "microphone_audio_path" from the original_event is null or emp
 
 The working code to be implemented is below, no need to change, apart to incorporate into the plugin structure and app logging.  Ensure you have the correct logging in place.
 
-Ensure you add a detailed README.md to the plugin, with any information needed for additional python package requirements.txt
+Ensure you add a detailed README.md to the plugin, with any information needed for additional python package requirements.txt . In the README.md, make sure we mention that we need to `brew install openai whisper`
 
 Look at the current example plugin in the /app/plugins/example and /app/plugins/noise_reduction directory to get context on how to create the plugin.  Especially pay attention to how worker threads are handled in the noise_reduction plugin as an example.
 

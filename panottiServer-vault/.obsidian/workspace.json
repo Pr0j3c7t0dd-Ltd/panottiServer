@@ -168,6 +168,8 @@
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
     "product-requirements/audio-preprocessing-plugin-requirement.md",
+    "product-requirements/plugin-requirements-example-cdoe.md",
+    "panottiServer Roadmap Board.md",
     "product-requirements/audio-transcription-plugin-requirements.md",
     "architecture/security_and_configuration.md",
     "architecture/utils.md",
@@ -176,9 +178,7 @@
     "architecture/deployment_and_middleware.md",
     "architecture/architecture_overview.md",
     "product-requirements/plugin-architecture-requirements.md",
-    "product-requirements/plugin-requirements-example-cdoe.md",
     "default-prompts/run-codebase-analysis.md",
-    "panottiServer Roadmap Board.md",
     "product-requirements/basic-product-requirements.md",
     "Welcome.md",
     "architecture",
