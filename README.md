@@ -12,7 +12,7 @@ A FastAPI-based server for handling recording events with secure API endpoints f
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.12
 - Rust (required for FastAPI's Pydantic V2)
 - Other dependencies listed in `requirements.txt`
 
@@ -31,8 +31,24 @@ cd panottiServer
 ```
 
 3. Create and activate a virtual environment:
+
+> **Important**: This application requires Python 3.12 (does not work with version 3.13)
+
+To set up the correct Python version using pyenv:
 ```bash
+# Install pyenv
+brew install pyenv
+
+# Install Python 3.12 using pyenv
+pyenv install 3.12
+
+# Set local Python version for this project
+pyenv local 3.12
+
+# Create virtual environment
 python -m venv .venv
+
+# activate virtual environment
 source .venv/bin/activate  # On Windows: .\venv\Scripts\activate
 ```
 

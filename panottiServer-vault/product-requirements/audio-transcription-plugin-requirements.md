@@ -18,6 +18,8 @@ The working code to be implemented is below, no need to change, apart to incorpo
 
 Ensure you add a detailed README.md to the plugin, with any information needed for additional python package requirements.txt . In the README.md, make sure we mention that we need to `brew install openai whisper`
 
+Make the whisper model a variable in the plugin settings, but default it to 'base.en'
+
 Look at the current example plugin in the /app/plugins/example and /app/plugins/noise_reduction directory to get context on how to create the plugin.  Especially pay attention to how worker threads are handled in the noise_reduction plugin as an example.
 
 ---
