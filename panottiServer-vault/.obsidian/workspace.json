@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "product-requirements/audio-preprocessing-plugin-requirement.md",
+                "file": "product-requirements/audio-transcription-plugin-requirements.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "audio-preprocessing-plugin-requirement"
+              "title": "audio-transcription-plugin-requirements"
             }
           }
         ]
@@ -167,8 +167,9 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
-    "architecture/security_and_configuration.md",
     "product-requirements/audio-preprocessing-plugin-requirement.md",
+    "product-requirements/audio-transcription-plugin-requirements.md",
+    "architecture/security_and_configuration.md",
     "architecture/utils.md",
     "architecture/plugins.md",
     "architecture/models.md",

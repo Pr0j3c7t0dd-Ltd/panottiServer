@@ -156,9 +156,9 @@ return cleaned_audio
 
 # Example usage
 
-mic_file = '/Users/todd/Library/Containers/com.pr0j3c7t0dd.PanottiAudio/Data/Documents/20241216140128_2096E65E_microphone.wav'
+mic_file = '~/Users/todd~/Library/Containers/com.pr0j3c7t0dd.PanottiAudio/Data/Documents/20241216140128_2096E65E_microphone.wav'
 
-noise_file = '/Users/todd/Library/Containers/com.pr0j3c7t0dd.PanottiAudio/Data/Documents/20241216140128_2096E65E_system_audio.wav'
+noise_file = '~/Library/Containers/com.pr0j3c7t0dd.PanottiAudio/Data/Documents/20241216140128_2096E65E_system_audio.wav'
 
 output_file = 'cleaned.wav'
 

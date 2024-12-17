@@ -30,7 +30,13 @@ class PluginManager:
             extra={"plugin_dir": str(self.plugin_dir)}
         )
         
-        for config_file in self.plugin_dir.glob("*/plugin.yaml"):
+        config_files = list(self.plugin_dir.glob("*/plugin.yaml"))
+        logger.debug(
+            "Found plugin config files",
+            extra={"config_files": [str(f) for f in config_files]}
+        )
+        
+        for config_file in config_files:
             try:
                 plugin_dir = config_file.parent
                 logger.debug(
@@ -43,6 +49,10 @@ class PluginManager:
                 
                 with open(config_file) as f:
                     config_data = yaml.safe_load(f)
+                    logger.debug(
+                        "Loaded plugin config data",
+                        extra={"config_data": config_data}
+                    )
                 
                 config = PluginConfig(**config_data)
                 self.configs[config.name] = config
@@ -72,17 +82,33 @@ class PluginManager:
                 try:
                     # Import the plugin package directly
                     plugin_package = f"app.plugins.{config.name}"
+                    logger.debug(
+                        f"Importing plugin package {plugin_package}",
+                        extra={
+                            "plugin_package": plugin_package,
+                            "plugin_name": config.name
+                        }
+                    )
                     module = importlib.import_module(plugin_package)
                     
                     # Get plugin class from the module
                     plugin_class = getattr(module, "Plugin", None)
+                    logger.debug(
+                        f"Found plugin class {plugin_class.__name__ if plugin_class else None}",
+                        extra={
+                            "plugin_name": config.name,
+                            "plugin_class": plugin_class.__name__ if plugin_class else None,
+                            "plugin_module": module.__name__
+                        }
+                    )
                 except Exception as e:
                     logger.error(
-                        "Failed to load plugin module",
+                        f"Failed to load plugin module {config.name}",
                         extra={
                             "plugin_name": config.name,
                             "module_path": str(module_path),
-                            "error": str(e)
+                            "error": str(e),
+                            "error_type": type(e).__name__
                         }
                     )
                     continue

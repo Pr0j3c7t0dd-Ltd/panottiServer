@@ -36,10 +36,13 @@ class NoiseReductionPlugin(PluginBase):
         self.event_bus.subscribe("recording_ended", self.handle_recording_ended)
         
         self.logger.info(
-            "Noise reduction plugin initialized",
+            "NoiseReductionPlugin initialized successfully",
             extra={
+                "plugin": "noise_reduction",
                 "max_workers": max_workers,
-                "output_directory": self.get_config("output_directory", "data/cleaned_audio")
+                "output_directory": self.get_config("output_directory", "data/cleaned_audio"),
+                "noise_reduce_factor": self.get_config("noise_reduce_factor", 0.7),
+                "db_initialized": self._db_initialized
             }
         )
         
@@ -119,6 +122,17 @@ class NoiseReductionPlugin(PluginBase):
             output_file: Path to save cleaned audio
             noise_reduce_factor: Amount of noise reduction (0 to 1)
         """
+        self.logger.info(
+            "Starting noise reduction process",
+            extra={
+                "plugin": "noise_reduction",
+                "mic_file": mic_file,
+                "noise_file": noise_file,
+                "output_file": output_file,
+                "noise_reduce_factor": noise_reduce_factor
+            }
+        )
+        
         # Read both audio files
         mic_rate, mic_data = wavfile.read(mic_file)
         noise_rate, noise_data = wavfile.read(noise_file)
@@ -274,12 +288,37 @@ class NoiseReductionPlugin(PluginBase):
             # Get noise reduction factor from config
             noise_reduce_factor = self.get_config("noise_reduce_factor", 0.7)
             
+            self.logger.info(
+                "Starting audio processing in thread",
+                extra={
+                    "plugin": "noise_reduction",
+                    "recording_id": recording_id,
+                    "mic_path": mic_path,
+                    "sys_path": sys_path,
+                    "output_file": output_file,
+                    "noise_reduce_factor": noise_reduce_factor,
+                    "correlation_id": original_event.context.correlation_id,
+                    "thread_id": threading.get_ident()
+                }
+            )
+            
             # Process audio
             self.reduce_noise(
                 mic_path,
                 sys_path,
                 output_file,
                 noise_reduce_factor
+            )
+            
+            self.logger.info(
+                "Audio processing completed successfully",
+                extra={
+                    "plugin": "noise_reduction",
+                    "recording_id": recording_id,
+                    "output_file": output_file,
+                    "correlation_id": original_event.context.correlation_id,
+                    "thread_id": threading.get_ident()
+                }
             )
             
             # Update status to completed
@@ -290,7 +329,7 @@ class NoiseReductionPlugin(PluginBase):
             )
             
             # Emit completion event
-            asyncio.run_coroutine_threadsafe(
+            future = asyncio.run_coroutine_threadsafe(
                 self._emit_completion_event(
                     recording_id,
                     original_event,
@@ -299,13 +338,19 @@ class NoiseReductionPlugin(PluginBase):
                 ),
                 asyncio.get_event_loop()
             )
+            # Wait for the future to complete
+            future.result()
             
         except Exception as e:
             self.logger.error(
                 "Error in audio processing thread",
                 extra={
+                    "plugin": "noise_reduction",
                     "recording_id": recording_id,
-                    "error": str(e)
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "correlation_id": original_event.context.correlation_id,
+                    "thread_id": threading.get_ident()
                 }
             )
             self._update_task_status(
