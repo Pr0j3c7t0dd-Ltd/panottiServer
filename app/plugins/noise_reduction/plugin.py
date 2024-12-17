@@ -5,14 +5,17 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
-
+import logging
 import numpy as np
 from scipy import signal
 from scipy.io import wavfile
+import warnings
 
 from app.plugins.base import PluginBase
 from app.plugins.events.models import Event, EventContext, EventPriority
 from app.models.database import DatabaseManager
+
+logger = logging.getLogger(__name__)
 
 class NoiseReductionPlugin(PluginBase):
     """Plugin for reducing background noise from microphone recordings"""
@@ -133,9 +136,11 @@ class NoiseReductionPlugin(PluginBase):
             }
         )
         
-        # Read both audio files
-        mic_rate, mic_data = wavfile.read(mic_file)
-        noise_rate, noise_data = wavfile.read(noise_file)
+        # Read both audio files, suppressing WAV file warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", wavfile.WavFileWarning)
+            mic_rate, mic_data = wavfile.read(mic_file)
+            noise_rate, noise_data = wavfile.read(noise_file)
         
         # Convert stereo to mono by averaging channels
         if len(mic_data.shape) > 1:
@@ -248,9 +253,6 @@ class NoiseReductionPlugin(PluginBase):
                 f"{recording_id}_microphone_cleaned.wav"
             )
             
-            # Create processing task in database
-            self._create_task(recording_id, mic_path, sys_path)
-            
             # Process audio in thread pool
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
@@ -282,11 +284,9 @@ class NoiseReductionPlugin(PluginBase):
                       original_event: Event) -> None:
         """Process audio files in a separate thread"""
         try:
-            # Update status to processing
-            self._update_task_status(recording_id, "processing")
-            
-            # Get noise reduction factor from config
-            noise_reduce_factor = self.get_config("noise_reduce_factor", 0.7)
+            # Set up event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             
             self.logger.info(
                 "Starting audio processing in thread",
@@ -296,18 +296,22 @@ class NoiseReductionPlugin(PluginBase):
                     "mic_path": mic_path,
                     "sys_path": sys_path,
                     "output_file": output_file,
-                    "noise_reduce_factor": noise_reduce_factor,
+                    "noise_reduce_factor": self.get_config("noise_reduce_factor", 0.7),
                     "correlation_id": original_event.context.correlation_id,
                     "thread_id": threading.get_ident()
                 }
             )
+            
+            # Create processing task in database and update status
+            self._create_task(recording_id, mic_path, sys_path)
+            self._update_task_status(recording_id, "processing")
             
             # Process audio
             self.reduce_noise(
                 mic_path,
                 sys_path,
                 output_file,
-                noise_reduce_factor
+                self.get_config("noise_reduce_factor", 0.7)
             )
             
             self.logger.info(
@@ -329,17 +333,14 @@ class NoiseReductionPlugin(PluginBase):
             )
             
             # Emit completion event
-            future = asyncio.run_coroutine_threadsafe(
+            future = loop.run_until_complete(
                 self._emit_completion_event(
                     recording_id,
                     original_event,
                     output_file,
                     "success"
-                ),
-                asyncio.get_event_loop()
+                )
             )
-            # Wait for the future to complete
-            future.result()
             
         except Exception as e:
             self.logger.error(
@@ -358,6 +359,21 @@ class NoiseReductionPlugin(PluginBase):
                 "failed",
                 error_message=str(e)
             )
+            
+            # Emit error completion event
+            if loop and loop.is_running():
+                future = loop.run_until_complete(
+                    self._emit_completion_event(
+                        recording_id,
+                        original_event,
+                        None,
+                        "error"
+                    )
+                )
+        finally:
+            # Clean up the event loop
+            if loop:
+                loop.close()
             
     async def _emit_completion_event(self, recording_id: str, 
                                    original_event: Event,

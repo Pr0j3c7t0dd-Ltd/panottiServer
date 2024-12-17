@@ -4,5 +4,5 @@ enabled: true
 dependencies: []
 config:
   output_directory: "data/cleaned_audio"
-  noise_reduce_factor: 0.7
+  noise_reduce_factor: 1.0
   max_concurrent_tasks: 4
