@@ -152,3 +152,24 @@ Commit Message Prefixes:
 - "refactor:" for code refactoring
 - "test:" for adding missing tests
 - "chore:" for maintenance tasks
+
+Rules:
+
+Use lowercase for commit messages
+Keep the summary line concise
+Include description for non-obvious changes
+Reference issue numbers when applicable
+
+## Documentation
+- Maintain clear README with setup instructions
+- Document API interactions and data flows
+- Keep manifest.json well-documented
+- Don't include comments unless it's for complex logic
+- Document permission requirements
+
+## Development Workflow
+- Use proper version control
+- Implement proper code review process
+- Test in multiple environments
+- Follow semantic versioning for releases
+- Maintain changelog
