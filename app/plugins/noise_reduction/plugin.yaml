@@ -1,0 +1,6 @@
+name: noise_reduction
+enabled: true
+config:
+  output_directory: data/cleaned_audio  # Default output directory, can be overridden
+  noise_reduce_factor: 0.7  # Amount of noise reduction (0 to 1)
+  max_concurrent_tasks: 4  # Maximum number of concurrent processing tasks

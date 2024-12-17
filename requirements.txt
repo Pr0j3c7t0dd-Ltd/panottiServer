@@ -11,6 +11,15 @@ typing-extensions>=4.9.0
 requests==2.31.0
 pylint
 
+# Type hints support
+typing-extensions>=4.7.0
+
+# Optional but recommended for development
+pytest>=7.4.0  # For testing
+black>=23.7.0  # For code formatting
+pylint>=2.17.0  # For linting
+mypy>=1.4.0  # For type checking
+
 # Plugin system dependencies
 pydantic>=2.5.3
 PyYAML>=6.0.1
@@ -20,3 +29,7 @@ aiosqlite>=0.19.0
 asyncio>=3.4.3
 watchdog>=3.0.0  # For plugin hot-reloading
 importlib-metadata>=7.0.1  # For plugin discovery
+
+# Audio processing dependencies
+numpy>=1.24.0
+scipy>=1.10.0

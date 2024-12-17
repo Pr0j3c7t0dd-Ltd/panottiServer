@@ -1,0 +1,12 @@
+# Core dependencies for audio processing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Type hints support
+typing-extensions>=4.7.0
+
+# Optional but recommended for development
+pytest>=7.4.0  # For testing
+black>=23.7.0  # For code formatting
+pylint>=2.17.0  # For linting
+mypy>=1.4.0  # For type checking
