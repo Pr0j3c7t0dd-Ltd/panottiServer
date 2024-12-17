@@ -241,7 +241,13 @@ async def recording_ended(
         # Emit event using the event system
         event_to_emit = Event(
             name="recording_ended",
-            payload=event.model_dump(),
+            payload={
+                "recordingId": event.recordingId,
+                "microphoneAudioPath": event.microphoneAudioPath,
+                "systemAudioPath": event.systemAudioPath,
+                "timestamp": event.timestamp,
+                "metadata": event.metadata
+            },
             context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api")
         )
         await event_bus.publish(event_to_emit)

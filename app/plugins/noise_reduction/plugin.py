@@ -214,9 +214,9 @@ class NoiseReductionPlugin(PluginBase):
         """Handle recording_ended events"""
         try:
             # Extract recording information from event
-            recording_id = event.payload.get("recording_id")
-            mic_path = event.payload.get("microphone_audio_path")
-            sys_path = event.payload.get("system_audio_path")
+            recording_id = event.payload.get("recordingId")
+            mic_path = event.payload.get("microphoneAudioPath")
+            sys_path = event.payload.get("systemAudioPath")
             
             self.logger.info(
                 "Processing recording",
