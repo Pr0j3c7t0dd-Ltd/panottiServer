@@ -51,13 +51,14 @@ class DatabaseManager:
                     type TEXT NOT NULL,
                     timestamp DATETIME NOT NULL,
                     recording_id TEXT NOT NULL,
-                    recording_datetime TEXT,
                     event_title TEXT,
                     event_provider_id TEXT,
                     event_provider TEXT,
                     event_attendees TEXT,  -- JSON array
                     system_label TEXT,     -- Label for system audio source
                     microphone_label TEXT, -- Label for microphone audio source
+                    recording_started TEXT, -- ISO8601 timestamp when recording started
+                    recording_ended TEXT,   -- ISO8601 timestamp when recording ended
                     metadata_json TEXT,    -- Full JSON payload
                     system_audio_path TEXT,
                     microphone_audio_path TEXT,

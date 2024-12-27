@@ -66,18 +66,20 @@ class EventMetadata(BaseModel):
         eventProviderId: Provider-specific event ID
         eventTitle: Title of the event
         eventProvider: Name of the event provider
-        recordingDateTime: ISO8601 formatted timestamp of when the recording was made
         eventAttendees: List of attendee email addresses
         systemLabel: Label for the system audio source
         microphoneLabel: Label for the microphone audio source
+        recordingStarted: ISO8601 formatted timestamp of when the recording started
+        recordingEnded: ISO8601 formatted timestamp of when the recording ended
     """
     eventProviderId: Optional[str] = None
     eventTitle: Optional[str] = None
     eventProvider: Optional[str] = None
-    recordingDateTime: str
     eventAttendees: Optional[List[str]] = None
     systemLabel: Optional[str] = None
     microphoneLabel: Optional[str] = None
+    recordingStarted: Optional[str] = None
+    recordingEnded: Optional[str] = None
 
     def to_db_format(self) -> dict:
         """Convert the model to a format suitable for database storage"""
@@ -173,16 +175,17 @@ class RecordingEvent(BaseModel):
                     self.event,
                     self.timestamp,
                     self.recordingId,
-                    system_audio_path,
-                    microphone_audio_path,
-                    metadata.get('recordingDateTime'),
                     metadata.get('eventTitle'),
                     metadata.get('eventProviderId'),
                     metadata.get('eventProvider'),
                     json.dumps(metadata.get('eventAttendees')) if metadata.get('eventAttendees') else None,
                     metadata.get('systemLabel'),
                     metadata.get('microphoneLabel'),
-                    json.dumps(data)
+                    metadata.get('recordingStarted'),
+                    metadata.get('recordingEnded'),
+                    json.dumps(data),
+                    system_audio_path,
+                    microphone_audio_path
                 )
                 logger.debug(f"Database insert values: {insert_values}")
                 
@@ -191,17 +194,18 @@ class RecordingEvent(BaseModel):
                         type, 
                         timestamp, 
                         recording_id,
-                        system_audio_path,
-                        microphone_audio_path,
-                        recording_datetime,
                         event_title,
                         event_provider_id,
                         event_provider,
                         event_attendees,
                         system_label,
                         microphone_label,
-                        metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        recording_started,
+                        recording_ended,
+                        metadata_json,
+                        system_audio_path,
+                        microphone_audio_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', insert_values)
                 conn.commit()
                 
