@@ -1,11 +1,63 @@
 from datetime import datetime
 from typing import Optional, Literal, Union, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 import json
 from .database import get_db
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+def parse_timestamp(timestamp_str: str) -> datetime:
+    """Parse timestamp string in various formats to datetime object.
+    
+    Supported formats:
+    - ISO 8601 with microseconds and optional timezone (e.g., "2024-12-27T14:24:46.123456Z")
+    - ISO 8601 without microseconds (e.g., "2024-12-27T14:24:46Z")
+    - ISO 8601 with timezone offset (e.g., "2024-12-27T14:24:46+00:00")
+    - Numeric timestamp (e.g., "1703686789" or "1703686789.123456")
+    - Compact format (e.g., "20241227143602" for YYYYMMDDHHMMSS)
+    """
+    # Try compact format first (YYYYMMDDHHMMSS)
+    if len(timestamp_str) == 14 and timestamp_str.isdigit():
+        try:
+            return datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+        except ValueError:
+            pass
+
+    # First, try parsing as ISO format with various patterns
+    iso_formats = [
+        '%Y-%m-%dT%H:%M:%S.%f',  # With microseconds
+        '%Y-%m-%dT%H:%M:%S.%fZ',  # With microseconds and Z
+        '%Y-%m-%dT%H:%M:%S',  # Without microseconds
+        '%Y-%m-%dT%H:%M:%SZ',  # Without microseconds with Z
+        '%Y-%m-%dT%H:%M:%S%z',  # With timezone offset
+    ]
+    
+    # Remove trailing Z if present and try parsing
+    clean_ts = timestamp_str.rstrip('Z')
+    
+    for fmt in iso_formats:
+        try:
+            return datetime.strptime(clean_ts, fmt)
+        except ValueError:
+            continue
+    
+    # Try parsing as numeric timestamp
+    try:
+        ts = float(timestamp_str)
+        return datetime.fromtimestamp(ts)
+    except ValueError:
+        pass
+    
+    raise ValueError(
+        "Invalid timestamp format. Expected one of:\n"
+        "1. ISO 8601 with microseconds: '2024-12-27T14:24:46.123456Z'\n"
+        "2. ISO 8601 without microseconds: '2024-12-27T14:24:46Z'\n"
+        "3. ISO 8601 with timezone: '2024-12-27T14:24:46+00:00'\n"
+        "4. Numeric timestamp: '1703686789' or '1703686789.123456'\n"
+        "5. Compact format: '20241227143602' (YYYYMMDDHHMMSS)"
+    )
 
 class EventMetadata(BaseModel):
     """Model for event metadata.
@@ -179,7 +231,7 @@ class RecordingStartRequest(BaseModel):
     """Request model for starting a recording session.
     
     Attributes:
-        timestamp: ISO8601 formatted timestamp of the event
+        timestamp: ISO8601 formatted timestamp of the event (e.g., "2024-12-27T14:24:46Z")
         recordingId: Unique identifier for the recording session
         event: Type of recording event (always "Recording Started")
         metadata: Optional metadata about the recording
@@ -190,6 +242,17 @@ class RecordingStartRequest(BaseModel):
     metadata: Optional[dict] = None
     systemAudioPath: Optional[str] = None
     microphoneAudioPath: Optional[str] = None
+
+    @validator('timestamp')
+    def validate_timestamp(cls, v):
+        """Validate and format timestamp to ISO 8601 UTC format"""
+        try:
+            dt = parse_timestamp(v)
+            # Format to standard UTC format without microseconds
+            return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+        except ValueError as e:
+            logger.error(f"Timestamp validation error for value '{v}': {str(e)}")
+            raise ValueError(str(e))
 
     def to_event(self):
         """Convert request to RecordingEvent"""
@@ -218,7 +281,7 @@ class RecordingEndRequest(BaseModel):
     """Request model for ending a recording session.
     
     Attributes:
-        timestamp: ISO8601 formatted timestamp of the event
+        timestamp: ISO8601 formatted timestamp of the event (e.g., "2024-12-27T14:24:46Z")
         recordingId: Unique identifier for the recording session
         event: Type of recording event (always "Recording Ended")
         metadata: Metadata about the recording
@@ -231,6 +294,17 @@ class RecordingEndRequest(BaseModel):
     microphoneAudioPath: str
     event: Literal["Recording Ended"] = Field(default="Recording Ended")
     metadata: dict
+
+    @validator('timestamp')
+    def validate_timestamp(cls, v):
+        """Validate and format timestamp to ISO 8601 UTC format"""
+        try:
+            dt = parse_timestamp(v)
+            # Format to standard UTC format without microseconds
+            return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+        except ValueError as e:
+            logger.error(f"Timestamp validation error for value '{v}': {str(e)}")
+            raise ValueError(str(e))
 
     def to_event(self):
         """Convert request to RecordingEvent"""

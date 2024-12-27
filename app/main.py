@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException, Security, Request
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 import os
 from dotenv import load_dotenv
 from datetime import datetime
@@ -153,6 +155,40 @@ async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
         detail="Invalid API Key"
     )
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors with detailed information"""
+    body = await request.body()
+    body_str = body.decode()
+    
+    # Format validation errors
+    formatted_errors = []
+    for error in exc.errors():
+        error_dict = {
+            "loc": error.get("loc", []),
+            "msg": str(error.get("msg", "")),
+            "type": error.get("type", "")
+        }
+        formatted_errors.append(error_dict)
+    
+    # Log the error details
+    logger.error(
+        "Validation error",
+        extra={
+            "raw_body": body_str,
+            "formatted_errors": formatted_errors,
+            "body": exc.body
+        }
+    )
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": formatted_errors,
+            "body": exc.body
+        }
+    )
+
 @app.get("/api/active-recordings")
 async def get_active_recordings():
     """Get all active recordings from the database"""
@@ -175,11 +211,13 @@ async def recording_started(
     try:
         # Log raw request body
         body = await request.body()
+        body_str = body.decode()
         logger.info(
             "Received recording started request",
             extra={
-                "raw_body": body.decode(),
+                "raw_body": body_str,
                 "parsed_request": event_request.model_dump(),
+                "validation_error": None
             }
         )
         
