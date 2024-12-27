@@ -240,16 +240,21 @@ class RecordingStartRequest(BaseModel):
         event: Type of recording event (always "Recording Started")
         metadata: Optional metadata about the recording
     """
-    recording_timestamp: str
+    timestamp: Optional[str] = None  # For backward compatibility
+    recording_timestamp: Optional[str] = None
     recordingId: str
     event: Literal["Recording Started"] = Field(default="Recording Started")
     metadata: Optional[dict] = None
     systemAudioPath: Optional[str] = None
     microphoneAudioPath: Optional[str] = None
 
-    @validator('recording_timestamp')
-    def validate_timestamp(cls, v):
-        """Validate and format timestamp to ISO 8601 UTC format"""
+    @validator('recording_timestamp', pre=True, always=True)
+    def set_recording_timestamp(cls, v, values):
+        """Use timestamp field if recording_timestamp is not provided"""
+        if v is None:
+            v = values.get('timestamp')
+        if v is None:
+            raise ValueError("Either timestamp or recording_timestamp must be provided")
         try:
             dt = parse_timestamp(v)
             # Format to standard UTC format without microseconds
@@ -263,7 +268,7 @@ class RecordingStartRequest(BaseModel):
         logger.debug("Converting RecordingStartRequest to RecordingEvent")
         logger.debug(f"Original request data: {self.model_dump()}")
         
-        data = self.model_dump()
+        data = self.model_dump(exclude={'timestamp'})  # Exclude the legacy field
         if self.metadata:
             try:
                 logger.debug(f"Processing metadata: {self.metadata}")
@@ -292,16 +297,21 @@ class RecordingEndRequest(BaseModel):
         systemAudioPath: Path to system audio file
         microphoneAudioPath: Path to microphone audio file
     """
-    recording_timestamp: str
+    timestamp: Optional[str] = None  # For backward compatibility
+    recording_timestamp: Optional[str] = None
     recordingId: str
     systemAudioPath: str
     microphoneAudioPath: str
     event: Literal["Recording Ended"] = Field(default="Recording Ended")
     metadata: dict
 
-    @validator('recording_timestamp')
-    def validate_timestamp(cls, v):
-        """Validate and format timestamp to ISO 8601 UTC format"""
+    @validator('recording_timestamp', pre=True, always=True)
+    def set_recording_timestamp(cls, v, values):
+        """Use timestamp field if recording_timestamp is not provided"""
+        if v is None:
+            v = values.get('timestamp')
+        if v is None:
+            raise ValueError("Either timestamp or recording_timestamp must be provided")
         try:
             dt = parse_timestamp(v)
             # Format to standard UTC format without microseconds
@@ -315,7 +325,7 @@ class RecordingEndRequest(BaseModel):
         logger.debug("Converting RecordingEndRequest to RecordingEvent")
         logger.debug(f"Original request data: {self.model_dump()}")
         
-        data = self.model_dump()
+        data = self.model_dump(exclude={'timestamp'})  # Exclude the legacy field
         if self.metadata:
             try:
                 logger.debug(f"Processing metadata: {self.metadata}")

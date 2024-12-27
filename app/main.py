@@ -283,7 +283,7 @@ async def recording_ended(
                 "recordingId": event.recordingId,
                 "microphoneAudioPath": event.microphoneAudioPath,
                 "systemAudioPath": event.systemAudioPath,
-                "timestamp": event.timestamp,
+                "recording_timestamp": event.recording_timestamp,
                 "metadata": event.metadata
             },
             context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api")
