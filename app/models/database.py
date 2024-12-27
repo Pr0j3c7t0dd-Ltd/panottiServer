@@ -49,7 +49,7 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     type TEXT NOT NULL,
-                    timestamp DATETIME NOT NULL,
+                    recording_timestamp DATETIME NOT NULL,
                     recording_id TEXT NOT NULL,
                     event_title TEXT,
                     event_provider_id TEXT,

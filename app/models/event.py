@@ -89,14 +89,14 @@ class RecordingEvent(BaseModel):
     """Base model for recording events.
     
     Attributes:
-        timestamp: ISO8601 formatted timestamp of the event
+        recording_timestamp: ISO8601 formatted timestamp of the event
         recordingId: Unique identifier for the recording session
         systemAudioPath: Optional path to the system audio recording file
         microphoneAudioPath: Optional path to the microphone audio recording file
         event: Type of recording event
         metadata: Additional metadata about the recording
     """
-    timestamp: str
+    recording_timestamp: str
     recordingId: str
     systemAudioPath: Optional[str] = None
     microphoneAudioPath: Optional[str] = None
@@ -173,7 +173,7 @@ class RecordingEvent(BaseModel):
                 # Log the values being inserted
                 insert_values = (
                     self.event,
-                    self.timestamp,
+                    self.recording_timestamp,
                     self.recordingId,
                     metadata.get('eventTitle'),
                     metadata.get('eventProviderId'),
@@ -192,7 +192,7 @@ class RecordingEvent(BaseModel):
                 cursor.execute('''
                     INSERT INTO events (
                         type, 
-                        timestamp, 
+                        recording_timestamp, 
                         recording_id,
                         event_title,
                         event_provider_id,
@@ -214,7 +214,7 @@ class RecordingEvent(BaseModel):
                 extra={
                     "event_type": self.event,
                     "recording_id": self.recordingId,
-                    "timestamp": self.timestamp,
+                    "timestamp": self.recording_timestamp,
                     "metadata": metadata
                 }
             )
@@ -226,7 +226,7 @@ class RecordingEvent(BaseModel):
             with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    'SELECT * FROM events WHERE json_extract(data, "$.recordingId") = ? ORDER BY timestamp',
+                    'SELECT * FROM events WHERE json_extract(data, "$.recordingId") = ? ORDER BY recording_timestamp',
                     (recording_id,)
                 )
                 return [json.loads(row[3]) for row in cursor.fetchall()]
@@ -235,19 +235,19 @@ class RecordingStartRequest(BaseModel):
     """Request model for starting a recording session.
     
     Attributes:
-        timestamp: ISO8601 formatted timestamp of the event (e.g., "2024-12-27T14:24:46Z")
+        recording_timestamp: ISO8601 formatted timestamp of the event (e.g., "2024-12-27T14:24:46Z")
         recordingId: Unique identifier for the recording session
         event: Type of recording event (always "Recording Started")
         metadata: Optional metadata about the recording
     """
-    timestamp: str
+    recording_timestamp: str
     recordingId: str
     event: Literal["Recording Started"] = Field(default="Recording Started")
     metadata: Optional[dict] = None
     systemAudioPath: Optional[str] = None
     microphoneAudioPath: Optional[str] = None
 
-    @validator('timestamp')
+    @validator('recording_timestamp')
     def validate_timestamp(cls, v):
         """Validate and format timestamp to ISO 8601 UTC format"""
         try:
@@ -285,21 +285,21 @@ class RecordingEndRequest(BaseModel):
     """Request model for ending a recording session.
     
     Attributes:
-        timestamp: ISO8601 formatted timestamp of the event (e.g., "2024-12-27T14:24:46Z")
+        recording_timestamp: ISO8601 formatted timestamp of the event (e.g., "2024-12-27T14:24:46Z")
         recordingId: Unique identifier for the recording session
         event: Type of recording event (always "Recording Ended")
         metadata: Metadata about the recording
         systemAudioPath: Path to system audio file
         microphoneAudioPath: Path to microphone audio file
     """
-    timestamp: str
+    recording_timestamp: str
     recordingId: str
     systemAudioPath: str
     microphoneAudioPath: str
     event: Literal["Recording Ended"] = Field(default="Recording Ended")
     metadata: dict
 
-    @validator('timestamp')
+    @validator('recording_timestamp')
     def validate_timestamp(cls, v):
         """Validate and format timestamp to ISO 8601 UTC format"""
         try:
