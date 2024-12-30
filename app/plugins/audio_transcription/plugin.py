@@ -214,21 +214,22 @@ class AudioTranscriptionPlugin(PluginBase):
                 f.write("# Merged Transcript\n\n")
                 f.write("## Recording Metadata\n")
                 f.write("```json\n")
-                metadata = {
+                metadata = original_event.get("metadata", {})
+                metadata_output = {
                     "recording_id": original_event.get("recording_id"),
                     "recording_timestamp": original_event.get("recording_timestamp"),
-                    "event_title": original_event.get("metadata", {}).get("eventTitle"),
-                    "event_provider": original_event.get("metadata", {}).get("eventProvider"),
-                    "event_provider_id": original_event.get("metadata", {}).get("eventProviderId"),
-                    "event_attendees": original_event.get("metadata", {}).get("eventAttendees", []),
-                    "system_label": original_event.get("metadata", {}).get("systemLabel", "Meeting Participants"),
-                    "microphone_label": original_event.get("metadata", {}).get("microphoneLabel", "Speaker"),
-                    "recording_started": original_event.get("metadata", {}).get("recordingStarted"),
-                    "recording_ended": original_event.get("metadata", {}).get("recordingEnded"),
+                    "event_title": metadata.get("eventTitle"),
+                    "event_provider": metadata.get("eventProvider"),
+                    "event_provider_id": metadata.get("eventProviderId"),
+                    "event_attendees": metadata.get("eventAttendees", []),
+                    "system_label": metadata.get("systemLabel", "Meeting Participants"),
+                    "microphone_label": metadata.get("microphoneLabel", "Speaker"),
+                    "recording_started": metadata.get("recordingStarted"),
+                    "recording_ended": metadata.get("recordingEnded"),
                     "system_audio_path": original_event.get("system_audio_path"),
                     "microphone_audio_path": original_event.get("microphone_audio_path")
                 }
-                f.write(json.dumps(metadata, indent=2))
+                f.write(json.dumps(metadata_output, indent=2))
                 f.write("\n```\n\n")
                 f.write("## Transcript\n\n")
             
@@ -317,7 +318,8 @@ class AudioTranscriptionPlugin(PluginBase):
                     "system_label": system_label,
                     "microphone_label": microphone_label,
                     "transcripts_dir": transcripts_dir,
-                    "original_event": original_event
+                    "original_event": original_event,
+                    "metadata": metadata
                 }
             )
 
@@ -342,7 +344,8 @@ class AudioTranscriptionPlugin(PluginBase):
                     "error": str(e),
                     "config": str(self.config) if hasattr(self, 'config') else None,
                     "event_payload": event.payload,
-                    "original_event": original_event if 'original_event' in locals() else None
+                    "original_event": original_event if 'original_event' in locals() else None,
+                    "metadata": metadata if 'metadata' in locals() else None
                 }
             )
             raise

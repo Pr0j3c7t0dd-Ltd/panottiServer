@@ -409,11 +409,17 @@ class NoiseReductionPlugin(PluginBase):
                                    output_file: Optional[str],
                                    status: str) -> None:
         """Emit event when processing is complete"""
+        # Include both payload and metadata in the original_event field
+        original_event_data = {
+            **original_event.payload,
+            "metadata": original_event.payload.get("metadata", {})
+        }
+        
         event = Event(
             name="noise_reduction.completed",
             payload={
                 "recording_id": recording_id,
-                "original_event": original_event.payload,
+                "original_event": original_event_data,
                 "microphone_cleaned_file": output_file,
                 "status": status
             },
@@ -432,6 +438,7 @@ class NoiseReductionPlugin(PluginBase):
             extra={
                 "recording_id": recording_id,
                 "status": status,
-                "correlation_id": original_event.context.correlation_id
+                "correlation_id": original_event.context.correlation_id,
+                "original_event_data": original_event_data
             }
         )
