@@ -235,33 +235,35 @@ class MeetingNotesPlugin(PluginBase):
                 if match:
                     # If we have a previous chunk, add it
                     if current_chunk:
-                        start_time, end_time, speaker = current_chunk[0]
+                        # Get the first chunk's metadata (they're all the same within a chunk)
+                        first_chunk = current_chunk[0]
                         content = ' '.join(chunk_line for _, _, _, chunk_line in current_chunk)
                         lines.append({
-                            'start_time': float(start_time),
-                            'end_time': float(end_time),
-                            'speaker': speaker,
+                            'start_time': float(first_chunk[0]),
+                            'end_time': float(first_chunk[1]),
+                            'speaker': first_chunk[2],
                             'content': content.strip()
                         })
                         current_chunk = []
                     
-                    # Start new chunk
+                    # Start new chunk with all 4 values
                     start_time, end_time, speaker, content = match.groups()
                     current_chunk.append((start_time, end_time, speaker, content))
                 else:
                     # If this is a continuation line, append to current chunk
                     if current_chunk:
-                        current_chunk.append((current_chunk[-1][0], current_chunk[-1][1], 
-                                           current_chunk[-1][2], line))
+                        # Use the same metadata as the previous line
+                        prev = current_chunk[-1]
+                        current_chunk.append((prev[0], prev[1], prev[2], line))
             
             # Add the last chunk if any
             if current_chunk:
-                start_time, end_time, speaker = current_chunk[0][:3]
+                first_chunk = current_chunk[0]
                 content = ' '.join(chunk_line for _, _, _, chunk_line in current_chunk)
                 lines.append({
-                    'start_time': float(start_time),
-                    'end_time': float(end_time),
-                    'speaker': speaker,
+                    'start_time': float(first_chunk[0]),
+                    'end_time': float(first_chunk[1]),
+                    'speaker': first_chunk[2],
                     'content': content.strip()
                 })
             
