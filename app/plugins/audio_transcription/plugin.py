@@ -245,8 +245,8 @@ class AudioTranscriptionPlugin(PluginBase):
     def handle_noise_reduction_completed(self, event: Event) -> None:
         """Handle noise_reduction.completed events"""
         try:
-            recording_id = event.context.recording_id
-            original_event = event.original_event
+            recording_id = event.payload["recording_id"]
+            original_event = event.payload["original_event"]
             
             # Get custom labels from original event or use defaults
             mic_label = original_event.get("microphone_label", "microphone")
@@ -306,12 +306,12 @@ class AudioTranscriptionPlugin(PluginBase):
             self.logger.error(
                 f"Failed to handle noise reduction completed event",
                 extra={
-                    "recording_id": event.context.recording_id,
+                    "recording_id": event.payload["recording_id"],
                     "error": str(e)
                 }
             )
             self._emit_completion_event(
-                event.context.recording_id,
+                event.payload["recording_id"],
                 event,
                 None,
                 "error",
