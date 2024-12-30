@@ -1,0 +1,5 @@
+faster-whisper==0.10.0
+numpy>=1.24.0  # Required by faster-whisper
+torch>=2.0.0   # Required by faster-whisper
+torchaudio>=2.0.0  # Required for audio processing
+transformers>=4.30.0  # Required by faster-whisper

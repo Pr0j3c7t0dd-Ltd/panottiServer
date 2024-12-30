@@ -388,7 +388,7 @@ class NoiseReductionPlugin(PluginBase):
             
             # Update task status and emit completion event
             self._update_task_status(recording_id, "completed", output_file)
-            self._emit_completion_event(recording_id, original_event, output_file, "success")
+            asyncio.create_task(self._emit_completion_event(recording_id, original_event, output_file, "success"))
             
         except Exception as e:
             error_msg = f"Failed to process audio: {str(e)}"
@@ -402,7 +402,7 @@ class NoiseReductionPlugin(PluginBase):
                 exc_info=True
             )
             self._update_task_status(recording_id, "failed", error_message=error_msg)
-            self._emit_completion_event(recording_id, original_event, None, "error")
+            asyncio.create_task(self._emit_completion_event(recording_id, original_event, None, "error"))
             
     async def _emit_completion_event(self, recording_id: str, 
                                    original_event: Event,
