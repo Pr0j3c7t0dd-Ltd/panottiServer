@@ -337,16 +337,7 @@ class NoiseReductionPlugin(PluginBase):
             )
             
             # Process audio in thread pool
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
-                self._process_audio,
-                recording_id,
-                mic_path,
-                sys_path,
-                output_file,
-                event
-            )
+            await self._process_audio(recording_id, mic_path, sys_path, output_file, event)
             
         except Exception as e:
             self.logger.error(
@@ -362,33 +353,42 @@ class NoiseReductionPlugin(PluginBase):
                 error_message=str(e)
             )
             
-    def _process_audio(self, recording_id: str, mic_path: str, 
-                      sys_path: str, output_file: str, 
-                      original_event: Event) -> None:
+    async def _process_audio(self, recording_id: str, mic_path: str, 
+                         sys_path: str, output_file: str, 
+                         original_event: Event) -> None:
         """Process audio files in a separate thread"""
         try:
-            # Get configuration parameters
+            # Create output directory if it doesn't exist
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            
+            # Get noise reduction parameters from config
             noise_reduce_factor = self.get_config("noise_reduce_factor", 0.3)
             wiener_alpha = self.get_config("wiener_alpha", 0.0)
             highpass_cutoff = self.get_config("highpass_cutoff", 0)
             spectral_floor = self.get_config("spectral_floor", 0.15)
             smoothing_factor = self.get_config("smoothing_factor", 0)
             
-            # Apply noise reduction
-            self.reduce_noise(
+            # Create task in database
+            self._create_task(recording_id, mic_path, sys_path)
+            
+            # Process audio in thread pool
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self.reduce_noise,
                 mic_path,
                 sys_path,
                 output_file,
-                noise_reduce_factor=noise_reduce_factor,
-                wiener_alpha=wiener_alpha,
-                highpass_cutoff=highpass_cutoff,
-                spectral_floor=spectral_floor,
-                smoothing_factor=smoothing_factor
+                noise_reduce_factor,
+                wiener_alpha,
+                highpass_cutoff,
+                spectral_floor,
+                smoothing_factor
             )
             
             # Update task status and emit completion event
             self._update_task_status(recording_id, "completed", output_file)
-            asyncio.create_task(self._emit_completion_event(recording_id, original_event, output_file, "success"))
+            await self._emit_completion_event(recording_id, original_event, output_file, "success")
             
         except Exception as e:
             error_msg = f"Failed to process audio: {str(e)}"
@@ -402,7 +402,7 @@ class NoiseReductionPlugin(PluginBase):
                 exc_info=True
             )
             self._update_task_status(recording_id, "failed", error_message=error_msg)
-            asyncio.create_task(self._emit_completion_event(recording_id, original_event, None, "error"))
+            await self._emit_completion_event(recording_id, original_event, None, "error")
             
     async def _emit_completion_event(self, recording_id: str, 
                                    original_event: Event,
@@ -419,7 +419,8 @@ class NoiseReductionPlugin(PluginBase):
             },
             context=EventContext(
                 correlation_id=original_event.context.correlation_id,
-                source_plugin=self.name
+                source_plugin=self.name,
+                recording_id=recording_id  # Add recording_id to context
             ),
             priority=EventPriority.LOW
         )
