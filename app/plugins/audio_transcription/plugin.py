@@ -216,7 +216,14 @@ class AudioTranscriptionPlugin(PluginBase):
                             timestamp_end = line.find(']')
                             if timestamp_end != -1:
                                 timestamp = line[1:timestamp_end]
+                                
+                                # Extract text after timestamp, removing any existing label
                                 text = line[timestamp_end + 2:]
+                                label_start = text.find('(')
+                                label_end = text.find(')')
+                                if label_start != -1 and label_end != -1:
+                                    # Remove the existing label
+                                    text = text[label_end + 2:].strip()
                                 
                                 # Parse start and end times
                                 times = timestamp.split(' - ')
