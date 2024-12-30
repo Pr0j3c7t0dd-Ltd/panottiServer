@@ -215,24 +215,71 @@ class MeetingNotesPlugin(PluginBase):
     def _extract_transcript_lines(self, transcript_text: str) -> list:
         """Extract transcript lines from markdown text"""
         try:
+            # Find the transcript section
+            if "## Transcript" not in transcript_text:
+                self.logger.error("Could not find transcript section")
+                return []
+                
             transcript_section = transcript_text.split("## Transcript")[1].strip()
             lines = []
+            
+            # Process each line
+            current_chunk = []
             for line in transcript_section.split('\n'):
-                if line.strip():
-                    match = re.match(r'\[([\d.]+)s - ([\d.]+)s\] \((.*?)\) (.*)', line.strip())
-                    if match:
-                        start_time, end_time, speaker, content = match.groups()
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Check if this is a new timestamp line
+                match = re.match(r'\[([\d.]+)s - ([\d.]+)s\] \((.*?)\) (.*)', line)
+                if match:
+                    # If we have a previous chunk, add it
+                    if current_chunk:
+                        start_time, end_time, speaker = current_chunk[0]
+                        content = ' '.join(chunk_line for _, _, _, chunk_line in current_chunk)
                         lines.append({
                             'start_time': float(start_time),
                             'end_time': float(end_time),
                             'speaker': speaker,
                             'content': content.strip()
                         })
+                        current_chunk = []
+                    
+                    # Start new chunk
+                    start_time, end_time, speaker, content = match.groups()
+                    current_chunk.append((start_time, end_time, speaker, content))
+                else:
+                    # If this is a continuation line, append to current chunk
+                    if current_chunk:
+                        current_chunk.append((current_chunk[-1][0], current_chunk[-1][1], 
+                                           current_chunk[-1][2], line))
+            
+            # Add the last chunk if any
+            if current_chunk:
+                start_time, end_time, speaker = current_chunk[0][:3]
+                content = ' '.join(chunk_line for _, _, _, chunk_line in current_chunk)
+                lines.append({
+                    'start_time': float(start_time),
+                    'end_time': float(end_time),
+                    'speaker': speaker,
+                    'content': content.strip()
+                })
+            
+            if not lines:
+                self.logger.warning(
+                    "No transcript lines extracted",
+                    extra={"transcript_length": len(transcript_text)}
+                )
+                
             return lines
+            
         except Exception as e:
             self.logger.error(
                 "Error extracting transcript lines",
-                extra={"error": str(e)},
+                extra={
+                    "error": str(e),
+                    "transcript_length": len(transcript_text) if transcript_text else 0
+                },
                 exc_info=True
             )
             return []
