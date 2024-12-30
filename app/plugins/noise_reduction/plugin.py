@@ -414,7 +414,7 @@ class NoiseReductionPlugin(PluginBase):
             payload={
                 "recording_id": recording_id,
                 "original_event": original_event.payload,
-                "output_file": output_file,
+                "microphone_cleaned_file": output_file,
                 "status": status
             },
             context=EventContext(
