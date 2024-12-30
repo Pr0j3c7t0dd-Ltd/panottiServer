@@ -186,8 +186,8 @@ class DesktopNotifierPlugin(PluginBase):
         """Handle meeting notes completed event"""
         try:
             # Extract data from event payload
-            notes_id = event.payload.get("notes_id")
-            notes_path = event.payload.get("notes_path")
+            recording_id = event.payload.get("recording_id")
+            notes_path = event.payload.get("meeting_notes_path")
             
             if not notes_path or not os.path.exists(notes_path):
                 raise ValueError(f"Invalid notes path: {notes_path}")
@@ -195,19 +195,19 @@ class DesktopNotifierPlugin(PluginBase):
             self.logger.info(
                 "Received meeting notes completion",
                 extra={
-                    "notes_id": notes_id,
+                    "recording_id": recording_id,
                     "correlation_id": event.context.correlation_id,
                     "notes_path": notes_path
                 }
             )
 
             # Create task record
-            self._create_task_record(notes_id, notes_path)
+            self._create_task_record(recording_id, notes_path)
 
             # Process in thread pool
             self._executor.submit(
                 self._process_notification,
-                notes_id,
+                recording_id,
                 notes_path,
                 event
             )
@@ -217,7 +217,9 @@ class DesktopNotifierPlugin(PluginBase):
                 "Error handling meeting notes completion",
                 extra={
                     "error": str(e),
-                    "correlation_id": event.context.correlation_id
+                    "event_id": event.id,
+                    "correlation_id": event.context.correlation_id,
+                    "payload": event.payload
                 },
                 exc_info=True
             )
