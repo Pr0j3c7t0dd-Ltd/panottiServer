@@ -279,57 +279,18 @@ class AudioTranscriptionPlugin(PluginBase):
             raise
 
     async def handle_noise_reduction_completed(self, event: Event) -> None:
-        """Handle noise_reduction.completed events"""
-        if not event or not event.payload:
-            self.logger.error("Received invalid event or payload")
-            return
-
+        """Handle noise reduction completion events"""
         try:
+            # Get recording ID and paths from event
             recording_id = event.payload.get("recording_id")
-            if not recording_id:
-                self.logger.error("No recording_id in event payload")
-                return
-
-            # Get original event which contains the paths
             original_event = event.payload.get("original_event", {})
-            if not original_event:
-                self.logger.error(
-                    "No original event in payload",
-                    extra={"recording_id": recording_id}
-                )
-                return
-
-            # Get paths from original event
+            
+            # Get audio paths
             system_audio = original_event.get("system_audio_path")
-            microphone_audio = event.payload.get("microphone_cleaned_file")  # Try to get cleaned file first
-            if not microphone_audio:  # Fall back to original mic file if no cleaned file
-                microphone_audio = original_event.get("microphone_audio_path")
-
-            self.logger.debug(
-                "Audio paths from event",
-                extra={
-                    "recording_id": recording_id,
-                    "system_audio": system_audio,
-                    "microphone_audio": microphone_audio,
-                    "event_payload": event.payload,
-                    "original_event": original_event
-                }
-            )
+            microphone_audio = event.payload.get("microphone_cleaned_file")  # Use cleaned file from noise reduction
             
             if not system_audio or not microphone_audio:
-                self.logger.error(
-                    "Missing audio paths in event payload",
-                    extra={
-                        "recording_id": recording_id,
-                        "system_audio": system_audio,
-                        "microphone_audio": microphone_audio
-                    }
-                )
-                return
-
-            # Ensure paths are absolute
-            system_audio = os.path.abspath(system_audio)
-            microphone_audio = os.path.abspath(microphone_audio)
+                raise ValueError(f"Missing audio paths: system_audio={system_audio}, microphone_audio={microphone_audio}")
 
             # Create output paths in the transcripts directory
             transcripts_dir = getattr(self.config, "transcripts_directory", "data/transcripts")
@@ -355,7 +316,8 @@ class AudioTranscriptionPlugin(PluginBase):
                     "merged_transcript": merged_transcript,
                     "system_label": system_label,
                     "microphone_label": microphone_label,
-                    "transcripts_dir": transcripts_dir
+                    "transcripts_dir": transcripts_dir,
+                    "original_event": original_event
                 }
             )
 
@@ -378,7 +340,9 @@ class AudioTranscriptionPlugin(PluginBase):
                 extra={
                     "recording_id": recording_id if 'recording_id' in locals() else None,
                     "error": str(e),
-                    "config": str(self.config) if hasattr(self, 'config') else None
+                    "config": str(self.config) if hasattr(self, 'config') else None,
+                    "event_payload": event.payload,
+                    "original_event": original_event if 'original_event' in locals() else None
                 }
             )
             raise
