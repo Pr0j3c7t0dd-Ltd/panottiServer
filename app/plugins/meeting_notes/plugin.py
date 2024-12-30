@@ -100,6 +100,22 @@ class MeetingNotesPlugin(PluginBase):
             )
 
         except Exception as e:
+            error_event = Event(
+                type="meeting_notes.error",
+                priority=EventPriority.HIGH,
+                context=EventContext(
+                    recording_id=recording_id,
+                    correlation_id=event.context.correlation_id,
+                    source_plugin="meeting_notes"
+                ),
+                payload={
+                    "error": str(e),
+                    "recording_id": recording_id
+                }
+            )
+            
+            asyncio.run(self.event_bus.emit(error_event))
+
             self.logger.error(
                 "Error handling transcription completed event",
                 extra={
@@ -162,7 +178,8 @@ class MeetingNotesPlugin(PluginBase):
                 priority=EventPriority.NORMAL,
                 context=EventContext(
                     recording_id=recording_id,
-                    correlation_id=event.context.correlation_id
+                    correlation_id=event.context.correlation_id,
+                    source_plugin="meeting_notes"
                 ),
                 payload=event_data
             )
@@ -170,6 +187,22 @@ class MeetingNotesPlugin(PluginBase):
             asyncio.run(self.event_bus.emit(completion_event))
 
         except Exception as e:
+            error_event = Event(
+                type="meeting_notes.error",
+                priority=EventPriority.HIGH,
+                context=EventContext(
+                    recording_id=recording_id,
+                    correlation_id=event.context.correlation_id,
+                    source_plugin="meeting_notes"
+                ),
+                payload={
+                    "error": str(e),
+                    "recording_id": recording_id
+                }
+            )
+            
+            asyncio.run(self.event_bus.emit(error_event))
+
             self.logger.error(
                 "Error processing transcript",
                 extra={
