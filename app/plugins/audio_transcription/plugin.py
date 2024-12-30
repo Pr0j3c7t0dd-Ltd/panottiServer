@@ -38,7 +38,26 @@ class AudioTranscriptionPlugin(PluginBase):
         
         # Initialize Whisper model
         model_name = getattr(self.config, "model_name", "base.en")
-        self._model = WhisperModel(model_name, device="cpu", compute_type="int8")
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        model_dir = getattr(self.config, "model_dir", os.path.join(root_dir, "models", "whisper"))
+        os.makedirs(model_dir, exist_ok=True)
+        
+        # Ensure model exists locally
+        model_path = os.path.join(model_dir, model_name)
+        if not os.path.exists(model_path):
+            self.logger.error(
+                f"Model {model_name} not found in {model_dir}. Please download it first.",
+                extra={"plugin": "audio_transcription"}
+            )
+            raise RuntimeError(f"Model {model_name} not found in local directory")
+            
+        self._model = WhisperModel(
+            model_name,
+            device="cpu",
+            compute_type="int8",
+            download_root=model_dir,
+            local_files_only=True  # Ensures offline mode
+        )
         
         # Subscribe to noise reduction completed event
         self.event_bus.subscribe("noise_reduction.completed", self.handle_noise_reduction_completed)

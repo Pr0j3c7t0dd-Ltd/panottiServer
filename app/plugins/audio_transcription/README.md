@@ -21,6 +21,35 @@ Add these to your requirements.txt:
 faster-whisper==0.10.0
 ```
 
+## Model Setup
+
+The plugin uses OpenAI's Whisper model through the `faster-whisper` library in offline mode. Before using the plugin, you need to download the model files locally.
+
+### Downloading Models
+
+Use the provided script to download the Whisper model:
+
+```bash
+# Download the default model (base.en)
+./scripts/download_models.py
+
+# Download a specific model
+./scripts/download_models.py --model medium.en
+
+# Available models:
+# - tiny.en: Smallest and fastest, less accurate
+# - base.en: Good balance of speed and accuracy (default)
+# - small.en: Better accuracy, slower than base
+# - medium.en: High accuracy, slower
+# - large-v2: Best accuracy, much slower
+```
+
+Models will be downloaded to `/models/whisper` in the project root by default. You can specify a different location using the `--output-dir` option:
+
+```bash
+./scripts/download_models.py --model base.en --output-dir /path/to/models
+```
+
 ## Configuration
 The plugin can be configured through the `plugin.yaml` file:
 
@@ -28,6 +57,15 @@ The plugin can be configured through the `plugin.yaml` file:
 output_directory: Path to store transcription files
 model_name: Whisper model to use (default: "base.en")
 max_concurrent_tasks: Maximum number of concurrent transcription tasks
+```
+
+Alternatively, you can configure the plugin through environment variables or the plugin configuration:
+
+```yaml
+audio_transcription:
+  model_name: "base.en"  # Which model to use
+  model_dir: "/path/to/models/whisper"  # Optional: Override default model directory
+  max_concurrent_tasks: 4  # Number of concurrent transcription tasks
 ```
 
 ## Events
