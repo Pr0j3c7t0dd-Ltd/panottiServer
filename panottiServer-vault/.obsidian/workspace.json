@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "product-requirements/audio-transcription-plugin-requirements.md",
+                "file": "product-requirements/meeting-note-plugin-requirements.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "audio-transcription-plugin-requirements"
+              "title": "meeting-note-plugin-requirements"
             }
           }
         ]
@@ -167,8 +167,9 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
-    "product-requirements/basic-product-requirements.md",
     "product-requirements/audio-transcription-plugin-requirements.md",
+    "product-requirements/meeting-note-plugin-requirements.md",
+    "product-requirements/basic-product-requirements.md",
     "panottiServer Roadmap Board.md",
     "default-prompts/run-add-docs.md",
     "product-requirements/audio-preprocessing-plugin-requirement.md",
