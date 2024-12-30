@@ -25,8 +25,18 @@ def download_whisper_model(model_name: str, output_dir: str):
     """
     print(f"Downloading model '{model_name}' to {output_dir}...")
     try:
+        # First ensure the output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Download the model
         download_model(model_name, output_dir=output_dir)
-        print(f"Successfully downloaded model '{model_name}'")
+        
+        # Verify the download
+        config_path = os.path.join(output_dir, "config.json")
+        if not os.path.exists(config_path):
+            raise RuntimeError(f"Model files not found after download in {output_dir}")
+            
+        print(f"Successfully downloaded model '{model_name}' to {output_dir}")
     except Exception as e:
         print(f"Error downloading model: {e}", file=sys.stderr)
         sys.exit(1)

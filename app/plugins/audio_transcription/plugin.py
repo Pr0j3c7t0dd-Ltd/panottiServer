@@ -38,26 +38,44 @@ class AudioTranscriptionPlugin(PluginBase):
         
         # Initialize Whisper model
         model_name = getattr(self.config, "model_name", "base.en")
-        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        model_dir = getattr(self.config, "model_dir", os.path.join(root_dir, "models", "whisper"))
+        
+        # Get project root directory (3 levels up from plugin directory)
+        current_dir = Path(__file__).resolve().parent
+        project_root = current_dir.parent.parent.parent
+        model_dir = getattr(self.config, "model_dir", str(project_root / "models" / "whisper"))
+        
         os.makedirs(model_dir, exist_ok=True)
         
-        # Ensure model exists locally
-        model_path = os.path.join(model_dir, model_name)
-        if not os.path.exists(model_path):
+        # Check if model files exist (config.json is a required file for whisper models)
+        config_path = os.path.join(model_dir, "config.json")
+        if not os.path.exists(config_path):
             self.logger.error(
-                f"Model {model_name} not found in {model_dir}. Please download it first.",
+                f"Model files not found in {model_dir}. Please download the model first.",
                 extra={"plugin": "audio_transcription"}
             )
-            raise RuntimeError(f"Model {model_name} not found in local directory")
+            raise RuntimeError(f"Model files not found in {model_dir}")
             
         self._model = WhisperModel(
             model_name,
             device="cpu",
             compute_type="int8",
             download_root=model_dir,
-            local_files_only=True  # Ensures offline mode
+            local_files_only=True  # Only use local files, no downloads
         )
+        
+        # Verify model exists
+        config_path = os.path.join(model_dir, "config.json")
+        if not os.path.exists(config_path):
+            raise RuntimeError(f"Model files not found in {model_dir}. Please run the download script first.")
+        else:
+            self.logger.info(
+                "Whisper model initialized successfully",
+                extra={
+                    "plugin": "audio_transcription",
+                    "model_name": model_name,
+                    "model_dir": model_dir
+                }
+            )
         
         # Subscribe to noise reduction completed event
         self.event_bus.subscribe("noise_reduction.completed", self.handle_noise_reduction_completed)

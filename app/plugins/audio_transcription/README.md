@@ -33,8 +33,8 @@ Use the provided script to download the Whisper model:
 # Download the default model (base.en)
 ./scripts/download_models.py
 
-# Download a specific model
-./scripts/download_models.py --model medium.en
+# Download a specific model (reccomended)
+/app/plugins/audio_transcription/scripts/download_models.py --model base.en
 
 # Available models:
 # - tiny.en: Smallest and fastest, less accurate
