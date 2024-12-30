@@ -173,15 +173,13 @@ class AudioTranscriptionPlugin(PluginBase):
                 f.write(f"# Transcript from {label}\n\n")
                 for segment in segments:
                     timestamp = f"[{segment.start:.2f}s - {segment.end:.2f}s]"
-                    f.write(f"{timestamp} {segment.text}\n\n")
+                    f.write(f"{timestamp} ({label}) {segment.text}\n\n")
                     
             self.logger.info(
                 f"Transcription completed",
                 extra={
-                    "input_file": os.path.basename(audio_path),
-                    "output_file": os.path.basename(output_path),
-                    "label": label,
-                    "duration": info.duration
+                    "file": os.path.basename(audio_path),
+                    "output": os.path.basename(output_path)
                 }
             )
             
@@ -191,24 +189,29 @@ class AudioTranscriptionPlugin(PluginBase):
             self.logger.error(
                 f"Transcription failed",
                 extra={
-                    "input_file": os.path.basename(audio_path),
-                    "label": label,
+                    "file": os.path.basename(audio_path),
                     "error": str(e)
                 }
             )
-            raise
-
-    def merge_transcripts(self, transcript_files: List[str], output_path: str) -> str:
+            return None
+            
+    def merge_transcripts(self, transcript_files: List[str], output_path: str, labels: List[str]) -> str:
         """Merge multiple transcript files based on timestamps"""
         try:
             segments = []
+            file_labels = {}  # Map file paths to their labels
+            
+            # Create mapping of files to labels
+            for file_path, label in zip(transcript_files, labels):
+                file_labels[file_path] = label
             
             # Read all transcripts and parse segments
             for file_path in transcript_files:
+                label = file_labels[file_path]
                 with open(file_path, 'r') as f:
                     for line in f:
                         line = line.strip()
-                        if line:
+                        if line and not line.startswith('#'):  # Skip header
                             # Parse timestamp and text
                             timestamp_end = line.find(']')
                             if timestamp_end != -1:
@@ -220,15 +223,16 @@ class AudioTranscriptionPlugin(PluginBase):
                                 start = float(times[0].replace('s', ''))
                                 end = float(times[1].replace('s', ''))
                                 
-                                segments.append((start, end, text))
+                                segments.append((start, end, text, label))
             
             # Sort segments by start time
             segments.sort(key=lambda x: x[0])
             
             # Write merged transcript
             with open(output_path, 'w') as f:
-                for start, end, text in segments:
-                    f.write(f"[{start:.2f}s - {end:.2f}s] {text}\n\n")
+                f.write("# Merged Transcript\n\n")
+                for start, end, text, label in segments:
+                    f.write(f"[{start:.2f}s - {end:.2f}s] ({label}) {text}\n\n")
                     
             return output_path
             
@@ -265,7 +269,7 @@ class AudioTranscriptionPlugin(PluginBase):
                 file_types.append("system")
             
             # Add microphone audio (prefer cleaned version if available)
-            mic_audio = event.get("microphone_cleaned_file")
+            mic_audio = event.payload.get("microphone_cleaned_file")
             if not mic_audio:
                 mic_audio = original_event.get("microphone_audio_path")
             if mic_audio and mic_audio.strip():
@@ -332,7 +336,7 @@ class AudioTranscriptionPlugin(PluginBase):
                 
             # Merge transcripts
             if len(output_files) > 1:
-                self.merge_transcripts(output_files, merged_output)
+                self.merge_transcripts(output_files, merged_output, input_labels)
             else:
                 # If only one transcript, just copy it
                 import shutil
@@ -377,29 +381,30 @@ class AudioTranscriptionPlugin(PluginBase):
                              error_message: Optional[str] = None,
                              output_files: Optional[List[str]] = None) -> None:
         """Emit event when processing is complete"""
-        context = EventContext(
-            recording_id=recording_id,
-            priority=EventPriority.NORMAL
-        )
-        
-        event_data = {
-            "status": status,
-            "original_event": original_event.to_dict()
-        }
-        
-        if output_file:
-            event_data["merged_transcript_path"] = output_file
-            
-        if output_files:
-            event_data["transcript_paths"] = output_files
-            
-        if error_message:
-            event_data["error"] = error_message
-            
         event = Event(
-            type="transcription.completed",
-            data=event_data,
-            context=context
+            name="transcription.completed",
+            payload={
+                "recording_id": recording_id,
+                "original_event": original_event.payload,
+                "output_file": output_file,
+                "output_files": output_files,
+                "status": status,
+                "error": error_message
+            },
+            context=EventContext(
+                correlation_id=original_event.context.correlation_id,
+                source_plugin=self.name
+            ),
+            priority=EventPriority.LOW
         )
         
-        self.event_bus.emit(event)
+        self.event_bus.publish(event)
+        
+        self.logger.info(
+            "Emitted completion event",
+            extra={
+                "recording_id": recording_id,
+                "status": status,
+                "correlation_id": original_event.context.correlation_id
+            }
+        )
