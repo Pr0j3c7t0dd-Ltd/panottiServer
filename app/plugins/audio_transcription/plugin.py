@@ -303,6 +303,17 @@ class AudioTranscriptionPlugin(PluginBase):
 
             # Get labels from original event metadata
             metadata = original_event.get("metadata", {})
+            
+            # Log the metadata for debugging
+            self.logger.debug(
+                "Processing metadata from noise reduction event",
+                extra={
+                    "recording_id": recording_id,
+                    "original_event": original_event,
+                    "metadata": metadata
+                }
+            )
+            
             system_label = metadata.get("systemLabel", "Meeting Participants")  # Default for system audio
             microphone_label = metadata.get("microphoneLabel", "Speaker")  # Default for microphone
 
@@ -318,7 +329,6 @@ class AudioTranscriptionPlugin(PluginBase):
                     "system_label": system_label,
                     "microphone_label": microphone_label,
                     "transcripts_dir": transcripts_dir,
-                    "original_event": original_event,
                     "metadata": metadata
                 }
             )

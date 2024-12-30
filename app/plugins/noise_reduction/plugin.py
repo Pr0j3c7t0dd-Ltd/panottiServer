@@ -11,6 +11,7 @@ from scipy import signal, fftpack
 from scipy.signal import butter, filtfilt
 from scipy.io import wavfile
 import warnings
+import json
 
 from app.plugins.base import PluginBase
 from app.plugins.events.models import Event, EventContext, EventPriority
@@ -409,11 +410,44 @@ class NoiseReductionPlugin(PluginBase):
                                    output_file: Optional[str],
                                    status: str) -> None:
         """Emit event when processing is complete"""
-        # Include both payload and metadata in the original_event field
+        # Reconstruct metadata from the original event
+        metadata = {}
+        if original_event.payload.get("metadata_json"):
+            try:
+                metadata = json.loads(original_event.payload["metadata_json"])
+            except json.JSONDecodeError:
+                self.logger.warning("Failed to parse metadata_json")
+        
+        # Fallback to individual fields if metadata_json parsing failed
+        if not metadata:
+            metadata = {
+                "eventTitle": original_event.payload.get("event_title"),
+                "eventProvider": original_event.payload.get("event_provider"),
+                "eventProviderId": original_event.payload.get("event_provider_id"),
+                "eventAttendees": json.loads(original_event.payload.get("event_attendees", "[]")),
+                "systemLabel": original_event.payload.get("system_label"),
+                "microphoneLabel": original_event.payload.get("microphone_label"),
+                "recordingStarted": original_event.payload.get("recording_started"),
+                "recordingEnded": original_event.payload.get("recording_ended")
+            }
+        
+        # Construct the event data with proper metadata
         original_event_data = {
-            **original_event.payload,
-            "metadata": original_event.payload.get("metadata", {})
+            "recording_id": original_event.payload.get("recording_id"),
+            "recording_timestamp": original_event.payload.get("recording_timestamp"),
+            "system_audio_path": original_event.payload.get("system_audio_path"),
+            "microphone_audio_path": original_event.payload.get("microphone_audio_path"),
+            "metadata": metadata
         }
+        
+        self.logger.debug(
+            "Emitting completion event with metadata",
+            extra={
+                "recording_id": recording_id,
+                "metadata": metadata,
+                "original_event_data": original_event_data
+            }
+        )
         
         event = Event(
             name="noise_reduction.completed",
@@ -426,7 +460,7 @@ class NoiseReductionPlugin(PluginBase):
             context=EventContext(
                 correlation_id=original_event.context.correlation_id,
                 source_plugin=self.name,
-                recording_id=recording_id  # Add recording_id to context
+                recording_id=recording_id
             ),
             priority=EventPriority.LOW
         )
