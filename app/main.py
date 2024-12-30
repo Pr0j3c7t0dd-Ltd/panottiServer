@@ -236,7 +236,22 @@ async def recording_started(
         # Emit event using the event system
         event_to_emit = Event(
             name="recording_started",
-            payload=event.model_dump(),
+            payload={
+                "type": "Recording Started",
+                "recording_timestamp": event.recording_timestamp,
+                "recording_id": event.recordingId,
+                "event_title": event.metadata.get("eventTitle") if event.metadata else None,
+                "event_provider_id": event.metadata.get("eventProviderId") if event.metadata else None,
+                "event_provider": event.metadata.get("eventProvider") if event.metadata else None,
+                "event_attendees": json.dumps(event.metadata.get("eventAttendees", [])) if event.metadata else "[]",
+                "system_label": event.metadata.get("systemLabel") if event.metadata else None,
+                "microphone_label": event.metadata.get("microphoneLabel") if event.metadata else None,
+                "recording_started": event.metadata.get("recordingStarted") if event.metadata else None,
+                "recording_ended": event.metadata.get("recordingEnded") if event.metadata else None,
+                "metadata_json": json.dumps(event.metadata) if event.metadata else None,
+                "system_audio_path": event.systemAudioPath,
+                "microphone_audio_path": event.microphoneAudioPath
+            },
             context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api")
         )
         await event_bus.publish(event_to_emit)
@@ -280,11 +295,20 @@ async def recording_ended(
         event_to_emit = Event(
             name="recording_ended",
             payload={
-                "recordingId": event.recordingId,
-                "microphoneAudioPath": event.microphoneAudioPath,
-                "systemAudioPath": event.systemAudioPath,
+                "type": "Recording Ended",
                 "recording_timestamp": event.recording_timestamp,
-                "metadata": event.metadata
+                "recording_id": event.recordingId,
+                "event_title": event.metadata.get("eventTitle") if event.metadata else None,
+                "event_provider_id": event.metadata.get("eventProviderId") if event.metadata else None,
+                "event_provider": event.metadata.get("eventProvider") if event.metadata else None,
+                "event_attendees": json.dumps(event.metadata.get("eventAttendees", [])) if event.metadata else "[]",
+                "system_label": event.metadata.get("systemLabel") if event.metadata else None,
+                "microphone_label": event.metadata.get("microphoneLabel") if event.metadata else None,
+                "recording_started": event.metadata.get("recordingStarted") if event.metadata else None,
+                "recording_ended": event.metadata.get("recordingEnded") if event.metadata else None,
+                "metadata_json": json.dumps(event.metadata) if event.metadata else None,
+                "system_audio_path": event.systemAudioPath,
+                "microphone_audio_path": event.microphoneAudioPath
             },
             context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api")
         )
