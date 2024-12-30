@@ -11,20 +11,14 @@
             "id": "5e4aefd4e6d2c38c",
             "type": "leaf",
             "state": {
-              "type": "kanban",
+              "type": "markdown",
               "state": {
-                "file": "panottiServer Roadmap Board.md",
-                "kanbanViewState": {
-                  "kanban-plugin": "board",
-                  "list-collapse": [
-                    false,
-                    false,
-                    false
-                  ]
-                }
+                "file": "product-requirements/audio-transcription-plugin-requirements.md",
+                "mode": "source",
+                "source": false
               },
-              "icon": "lucide-trello",
-              "title": "panottiServer Roadmap Board"
+              "icon": "lucide-file",
+              "title": "audio-transcription-plugin-requirements"
             }
           }
         ]
@@ -173,11 +167,12 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
-    "default-prompts/run-add-docs.md",
+    "product-requirements/basic-product-requirements.md",
     "product-requirements/audio-transcription-plugin-requirements.md",
+    "panottiServer Roadmap Board.md",
+    "default-prompts/run-add-docs.md",
     "product-requirements/audio-preprocessing-plugin-requirement.md",
     "product-requirements/plugin-requirements-example-cdoe.md",
-    "panottiServer Roadmap Board.md",
     "architecture/security_and_configuration.md",
     "architecture/utils.md",
     "architecture/plugins.md",
@@ -186,7 +181,6 @@
     "architecture/architecture_overview.md",
     "product-requirements/plugin-architecture-requirements.md",
     "default-prompts/run-codebase-analysis.md",
-    "product-requirements/basic-product-requirements.md",
     "Welcome.md",
     "architecture",
     "default-prompts/run-add-logging.md",
