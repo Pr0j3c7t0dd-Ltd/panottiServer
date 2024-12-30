@@ -195,7 +195,8 @@ class AudioTranscriptionPlugin(PluginBase):
             )
             return None
             
-    def merge_transcripts(self, transcript_files: List[str], output_path: str, labels: List[str]) -> str:
+    def merge_transcripts(self, transcript_files: List[str], output_path: str, labels: List[str], 
+                         original_event: dict) -> str:
         """Merge multiple transcript files based on timestamps"""
         try:
             segments = []
@@ -205,39 +206,61 @@ class AudioTranscriptionPlugin(PluginBase):
             for file_path, label in zip(transcript_files, labels):
                 file_labels[file_path] = label
             
-            # Read all transcripts and parse segments
-            for file_path in transcript_files:
-                label = file_labels[file_path]
-                with open(file_path, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#'):  # Skip header
-                            # Parse timestamp and text
-                            timestamp_end = line.find(']')
-                            if timestamp_end != -1:
-                                timestamp = line[1:timestamp_end]
-                                
-                                # Extract text after timestamp, removing any existing label
-                                text = line[timestamp_end + 2:]
-                                label_start = text.find('(')
-                                label_end = text.find(')')
-                                if label_start != -1 and label_end != -1:
-                                    # Remove the existing label
-                                    text = text[label_end + 2:].strip()
-                                
-                                # Parse start and end times
-                                times = timestamp.split(' - ')
-                                start = float(times[0].replace('s', ''))
-                                end = float(times[1].replace('s', ''))
-                                
-                                segments.append((start, end, text, label))
-            
-            # Sort segments by start time
-            segments.sort(key=lambda x: x[0])
-            
             # Write merged transcript
             with open(output_path, 'w') as f:
+                # Write metadata header
                 f.write("# Merged Transcript\n\n")
+                f.write("## Recording Metadata\n")
+                f.write("```json\n")
+                metadata = {
+                    "recording_id": original_event.get("recording_id"),
+                    "recording_timestamp": original_event.get("recording_timestamp"),
+                    "event_title": original_event.get("metadata", {}).get("eventTitle"),
+                    "event_provider": original_event.get("metadata", {}).get("eventProvider"),
+                    "event_provider_id": original_event.get("metadata", {}).get("eventProviderId"),
+                    "event_attendees": original_event.get("metadata", {}).get("eventAttendees", []),
+                    "system_label": original_event.get("metadata", {}).get("systemLabel"),
+                    "microphone_label": original_event.get("metadata", {}).get("microphoneLabel"),
+                    "recording_started": original_event.get("metadata", {}).get("recordingStarted"),
+                    "recording_ended": original_event.get("metadata", {}).get("recordingEnded"),
+                    "system_audio_path": original_event.get("systemAudioPath"),
+                    "microphone_audio_path": original_event.get("microphoneAudioPath")
+                }
+                f.write(json.dumps(metadata, indent=2))
+                f.write("\n```\n\n")
+                f.write("## Transcript\n\n")
+            
+                # Read all transcripts and parse segments
+                for file_path in transcript_files:
+                    label = file_labels[file_path]
+                    with open(file_path, 'r') as tf:
+                        for line in tf:
+                            line = line.strip()
+                            if line and not line.startswith('#'):  # Skip header
+                                # Parse timestamp and text
+                                timestamp_end = line.find(']')
+                                if timestamp_end != -1:
+                                    timestamp = line[1:timestamp_end]
+                                    
+                                    # Extract text after timestamp, removing any existing label
+                                    text = line[timestamp_end + 2:]
+                                    label_start = text.find('(')
+                                    label_end = text.find(')')
+                                    if label_start != -1 and label_end != -1:
+                                        # Remove the existing label
+                                        text = text[label_end + 2:].strip()
+                                    
+                                    # Parse start and end times
+                                    times = timestamp.split(' - ')
+                                    start = float(times[0].replace('s', ''))
+                                    end = float(times[1].replace('s', ''))
+                                    
+                                    segments.append((start, end, text, label))
+                
+                # Sort segments by start time
+                segments.sort(key=lambda x: x[0])
+                
+                # Write transcript content
                 for start, end, text, label in segments:
                     f.write(f"[{start:.2f}s - {end:.2f}s] ({label}) {text}\n\n")
                     
@@ -343,11 +366,34 @@ class AudioTranscriptionPlugin(PluginBase):
                 
             # Merge transcripts
             if len(output_files) > 1:
-                self.merge_transcripts(output_files, merged_output, input_labels)
+                self.merge_transcripts(output_files, merged_output, input_labels, original_event.payload)
             else:
-                # If only one transcript, just copy it
-                import shutil
-                shutil.copy2(output_files[0], merged_output)
+                # If only one transcript, just copy it and add metadata
+                with open(output_files[0], 'r') as src:
+                    content = src.read()
+                with open(merged_output, 'w') as dest:
+                    # Write metadata
+                    dest.write("# Merged Transcript\n\n")
+                    dest.write("## Recording Metadata\n")
+                    dest.write("```json\n")
+                    metadata = {
+                        "recording_id": original_event.payload.get("recording_id"),
+                        "recording_timestamp": original_event.payload.get("recording_timestamp"),
+                        "event_title": original_event.payload.get("metadata", {}).get("eventTitle"),
+                        "event_provider": original_event.payload.get("metadata", {}).get("eventProvider"),
+                        "event_provider_id": original_event.payload.get("metadata", {}).get("eventProviderId"),
+                        "event_attendees": original_event.payload.get("metadata", {}).get("eventAttendees", []),
+                        "system_label": original_event.payload.get("metadata", {}).get("systemLabel"),
+                        "microphone_label": original_event.payload.get("metadata", {}).get("microphoneLabel"),
+                        "recording_started": original_event.payload.get("metadata", {}).get("recordingStarted"),
+                        "recording_ended": original_event.payload.get("metadata", {}).get("recordingEnded"),
+                        "system_audio_path": original_event.payload.get("systemAudioPath"),
+                        "microphone_audio_path": original_event.payload.get("microphoneAudioPath")
+                    }
+                    dest.write(json.dumps(metadata, indent=2))
+                    dest.write("\n```\n\n")
+                    dest.write("## Transcript\n\n")
+                    dest.write(content)
                 
             # Update status to completed
             self._update_task_status(
