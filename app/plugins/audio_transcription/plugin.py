@@ -407,33 +407,32 @@ class AudioTranscriptionPlugin(PluginBase):
                     dest.write("## Transcript\n\n")
                     dest.write(content)
                 
-            # Update status to completed
+            # Update status and publish completion event
             self._update_task_status(
-                recording_id,
+                recording_id, 
                 "completed",
                 output_files,
                 merged_output
             )
             
-            # Emit completion event
+            # Create and publish transcription completed event
             event = Event(
                 name="transcription.completed",
                 payload={
                     "recording_id": recording_id,
-                    "status": "completed",
-                    "output_path": merged_output,
                     "output_files": output_files,
+                    "merged_output": merged_output,
                     "original_event": original_event
                 },
                 context=EventContext(
-                    correlation_id=original_event.get("correlation_id") if original_event else None,
+                    correlation_id=recording_id,
                     source_plugin=self.name
                 ),
                 priority=EventPriority.LOW
             )
             
             await self.event_bus.publish(event)
-            
+
         except Exception as e:
             self.logger.error(
                 f"Audio processing failed",

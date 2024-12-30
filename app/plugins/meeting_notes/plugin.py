@@ -72,29 +72,30 @@ class MeetingNotesPlugin(PluginBase):
     async def handle_transcription_completed(self, event: Event) -> None:
         """Handle transcription completed event"""
         try:
-            recording_id = event.context.recording_id
-            input_path = event.data.get("output_path")
+            # Extract data from event payload
+            recording_id = event.payload.get("recording_id")
+            merged_output = event.payload.get("merged_output")
             
-            if not input_path or not os.path.exists(input_path):
-                raise ValueError(f"Invalid input path: {input_path}")
+            if not merged_output or not os.path.exists(merged_output):
+                raise ValueError(f"Invalid merged transcript path: {merged_output}")
 
             self.logger.info(
                 "Processing transcript",
                 extra={
                     "recording_id": recording_id,
                     "correlation_id": event.context.correlation_id,
-                    "input_path": input_path
+                    "input_path": merged_output
                 }
             )
 
             # Create task record
-            self._update_task_created(recording_id, input_path)
+            self._update_task_created(recording_id, merged_output)
 
             # Process in thread pool
             self._executor.submit(
                 self._process_transcript,
                 recording_id,
-                input_path,
+                merged_output,
                 event
             )
 
@@ -105,7 +106,8 @@ class MeetingNotesPlugin(PluginBase):
                     "plugin": "meeting_notes",
                     "error": str(e),
                     "event_id": event.id,
-                    "correlation_id": event.context.correlation_id
+                    "correlation_id": event.context.correlation_id if hasattr(event, 'context') else None,
+                    "payload": event.payload
                 },
                 exc_info=True
             )
@@ -151,7 +153,7 @@ class MeetingNotesPlugin(PluginBase):
 
             # Create completion event
             event_data = {
-                **event.data,
+                **event.payload,
                 "meeting_notes_path": output_path
             }
             
@@ -162,7 +164,7 @@ class MeetingNotesPlugin(PluginBase):
                     recording_id=recording_id,
                     correlation_id=event.context.correlation_id
                 ),
-                data=event_data
+                payload=event_data
             )
             
             asyncio.run(self.event_bus.emit(completion_event))
@@ -252,29 +254,63 @@ class MeetingNotesPlugin(PluginBase):
             raise ValueError("Could not extract transcript lines")
 
         # Prepare prompt
-        prompt = f"""Please analyze the meeting metadata and transcript below and create comprehensive meeting notes in markdown format. Please ensure the notes are clear and concise.
+        prompt = f"""Please analyze the meeting metadata and transcript below and create comprehensive meeting notes in markdown format. Please ensure the notes are clear and concise. 
+
+---
 
 Metadata:
 {metadata if metadata else 'No metadata available'}
 
+---
+
 Transcript:
 {json.dumps(transcript_lines, indent=2)}
 
-Please format the notes with the following sections:
-## Summary
-[Brief overview of the meeting]
+---
 
-## Key Points
-[List main topics discussed]
+The meeting notes should include the following sections:
 
-## Action Items
-[List tasks, assignments, and deadlines]
+# Event Title: [event_title from the Meeting Metadata, or if not available, create a meeting title]
 
-## Decisions
+## Meeting Information  
+Date: [Convert Meeting Metadata meeting date timestamp into a human readable format, just the date/time, no additional comments]
+Duration: [Convert the number of seconds from the transcript into a human-readable format]
+Location: [Event provider from the Meeting Metadata, if available]
+
+## Attendees
+[List each attendee from the <Metadata> event_attendees as a bullet point for each attendee.  If no event_attendees are available, use "Unknown".] 
+
+## Executive Summary
+[Provide a brief, high-level overview of the meeting's purpose and key outcomes]
+
+## Agenda Items Discussed
+[List and elaborate on the main topics discussed]
+
+## Notes and Additional Information
+[Include any other relevant information, clarifications, or important context]
+
+## Key Decisions
 [List all decisions made during the meeting]
 
 ## Risks and Issues
-[List any risks or issues discussed]
+[Document any risks, blockers, or issues raised during the meeting]
+
+## Open Questions
+[List any questions that remained unanswered or need further discussion]
+
+## Action Items
+[
+List action items in format: "- [Owner/Responsible Person] Action description".
+NOTE: If no clear owner is mentioned, use "UNASSIGNED". Example:
+- [<Owner Name>] Create project timeline by Friday
+- [UNASSIGNED] Review security documentation
+]
+
+## Next Steps
+[Outline immediate next steps and upcoming milestones]
+
+## Next Meeting
+[If discussed, include details about the next meeting]
 """
 
         # Call Ollama API
@@ -284,19 +320,39 @@ Please format the notes with the following sections:
                 json={
                     "model": self.get_config("model_name", "llama3.1:latest"),
                     "prompt": prompt,
-                    "context_window": self.get_config("num_ctx", 128000)
-                }
+                    "stream": False,  # Don't stream to get complete response
+                    "num_ctx": self.get_config("num_ctx", 128000)
+                },
+                stream=False  # Don't stream at requests level either
             )
             response.raise_for_status()
             
             # Extract generated text from response
-            meeting_notes = response.json().get("response", "")
+            response_json = response.json()
+            if isinstance(response_json, dict):
+                meeting_notes = response_json.get("response", "")
+            else:
+                self.logger.error(
+                    "Unexpected response format from Ollama API",
+                    extra={"response": str(response_json)}
+                )
+                raise ValueError("Unexpected response format from Ollama API")
             
             if not meeting_notes:
                 raise ValueError("Empty response from Ollama API")
                 
             return meeting_notes
 
+        except requests.exceptions.JSONDecodeError as e:
+            self.logger.error(
+                "Failed to decode Ollama API response",
+                extra={
+                    "error": str(e),
+                    "response_text": response.text[:1000]  # Log first 1000 chars of response
+                },
+                exc_info=True
+            )
+            raise
         except Exception as e:
             self.logger.error(
                 "Error calling Ollama API",
