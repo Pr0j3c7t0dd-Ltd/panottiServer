@@ -42,24 +42,22 @@ class AudioTranscriptionPlugin(PluginBase):
         # Get project root directory (3 levels up from plugin directory)
         current_dir = Path(__file__).resolve().parent
         project_root = current_dir.parent.parent.parent
-        model_dir = getattr(self.config, "model_dir", str(project_root / "models" / "whisper"))
         
-        os.makedirs(model_dir, exist_ok=True)
+        # Initialize the Whisper model
+        model_dir = os.path.join(project_root, "models", "whisper")
+        self.logger.info(
+            "Initializing Whisper model",
+            extra={
+                "plugin": "audio_transcription",
+                "model_name": model_name,
+                "model_dir": model_dir
+            }
+        )
         
-        # Check if model files exist (config.json is a required file for whisper models)
-        config_path = os.path.join(model_dir, "config.json")
-        if not os.path.exists(config_path):
-            self.logger.error(
-                f"Model files not found in {model_dir}. Please download the model first.",
-                extra={"plugin": "audio_transcription"}
-            )
-            raise RuntimeError(f"Model files not found in {model_dir}")
-            
         self._model = WhisperModel(
-            model_name,
+            model_size_or_path=model_dir,  # Use the model directory path directly
             device="cpu",
             compute_type="int8",
-            download_root=model_dir,
             local_files_only=True  # Only use local files, no downloads
         )
         
