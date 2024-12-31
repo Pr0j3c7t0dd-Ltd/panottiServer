@@ -233,7 +233,7 @@ async def recording_started(request: Request) -> dict[str, Any]:
     )
 
     # Notify plugins
-    event_data = {"type": "recording.started", **data}
+    event_data = {"event": "recording.started", **data}
     await event_bus.emit(event_data)
 
     return {"status": "success", "recording_id": recording_id}
@@ -262,8 +262,19 @@ async def recording_ended(request: Request) -> dict[str, Any]:
         extra={"recording_id": recording_id},
     )
 
-    # Update recordings table
+    # Initialize database connection
     db = DatabaseManager.get_instance()
+
+    # Ensure recording exists in recordings table
+    await db.execute(
+        """
+        INSERT OR IGNORE INTO recordings (recording_id, status)
+        VALUES (?, 'completed')
+        """,
+        (recording_id,),
+    )
+
+    # Update recordings table
     await db.execute(
         "UPDATE recordings SET status = 'completed' WHERE recording_id = ?",
         (recording_id,),
@@ -288,7 +299,7 @@ async def recording_ended(request: Request) -> dict[str, Any]:
 
     # Notify plugins
     event_data = {
-        "type": "recording.ended",
+        "event": "recording.ended",
         "recording_id": recording_id,
         "system_audio_path": data.get("systemAudioPath"),
         "microphone_audio_path": data.get("microphoneAudioPath"),

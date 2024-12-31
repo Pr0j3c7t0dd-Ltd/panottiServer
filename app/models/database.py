@@ -103,18 +103,17 @@ class DatabaseManager:
                 """
             )
 
-            # Create plugin_tasks table for tracking plugin processing tasks
+            # Create plugin_tasks table
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS plugin_tasks (
                     id TEXT PRIMARY KEY,
                     plugin_name TEXT NOT NULL,
                     recording_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
+                    status TEXT NOT NULL,  -- 'processing', 'completed', 'failed'
                     input_paths TEXT,  -- Comma-separated list of input file paths
                     output_paths TEXT,  -- Comma-separated list of output file paths
                     error_message TEXT,
-                    metadata TEXT,  -- JSON object for plugin-specific metadata
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (recording_id) REFERENCES recordings(recording_id)
