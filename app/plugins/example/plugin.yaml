@@ -1,7 +1,0 @@
-name: example
-version: "1.0.0"
-enabled: true
-dependencies: []
-config:
-  check_interval: 60  # seconds
-  log_level: "INFO"
