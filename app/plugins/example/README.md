@@ -30,8 +30,9 @@ The plugin is configured through `plugin.yaml`:
 ## Installation
 
 1. Ensure the plugin directory is placed in the `app/plugins/` directory of your Panotti Server installation
-2. The plugin will be automatically discovered and loaded by the plugin manager
-3. Verify the plugin is loaded by checking the server logs on startup
+2. Copy `plugin.yaml.example` to `plugin.yaml` and update the configuration according to your needs
+3. The plugin will be automatically discovered and loaded by the plugin manager
+4. Verify the plugin is loaded by checking the server logs on startup
 
 ## Development
 

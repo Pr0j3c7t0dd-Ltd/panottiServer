@@ -17,7 +17,13 @@ scipy>=1.10.0
 ```
 
 ## Configuration
-Plugin configuration in plugin.yaml:
+
+To set up the plugin configuration:
+
+1. Copy `plugin.yaml.example` to `plugin.yaml`
+2. Update the configuration values according to your needs
+
+The configuration supports the following options:
 ```yaml
 name: noise_reduction
 enabled: true

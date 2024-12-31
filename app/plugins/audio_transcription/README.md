@@ -51,7 +51,13 @@ Models will be downloaded to `/models/whisper` in the project root by default. Y
 ```
 
 ## Configuration
-The plugin can be configured through the `plugin.yaml` file:
+
+To set up the plugin configuration:
+
+1. Copy `plugin.yaml.example` to `plugin.yaml`
+2. Update the configuration values according to your needs
+
+The configuration supports the following options:
 
 ```yaml
 output_directory: Path to store transcription files

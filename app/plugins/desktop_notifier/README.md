@@ -15,7 +15,12 @@ No additional Python packages required beyond the core application dependencies.
 
 ## Configuration
 
-The plugin configuration in `plugin.yaml` supports the following options:
+To configure the plugin:
+
+1. Copy `plugin.yaml.example` to `plugin.yaml`
+2. Update the configuration values according to your needs
+
+The plugin configuration supports the following options:
 
 - `auto_open_notes`: Boolean (default: false) - If true, automatically opens the meeting notes file when notification is shown
 - `max_concurrent_tasks`: Integer (default: 4) - Maximum number of concurrent notification tasks

@@ -12,7 +12,12 @@ This plugin automatically generates meeting notes from transcription files using
 
 ## Configuration
 
-The plugin is configured via `plugin.yaml`:
+To set up the plugin configuration:
+
+1. Copy `plugin.yaml.example` to `plugin.yaml`
+2. Update the configuration values according to your needs
+
+The configuration supports the following options:
 
 - `output_directory`: Directory where meeting notes will be stored
 - `ollama_url`: URL for Ollama API (default: http://localhost:11434/api/generate)
