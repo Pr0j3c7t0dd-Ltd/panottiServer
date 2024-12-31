@@ -14,7 +14,7 @@ A FastAPI-based server for handling recording events with secure API endpoints f
 
 - Python 3.12
 - Rust (required for FastAPI's Pydantic V2)
-- Other dependencies listed in `requirements.txt`
+- Poetry (for dependency management)
 
 ## Installation
 
@@ -30,11 +30,12 @@ git clone https://github.com/yourusername/panottiServer.git
 cd panottiServer
 ```
 
-3. Create and activate a virtual environment:
+3. Install Poetry (if not already installed):
+```bash
+curl -sSL https://install.python-poetry.org | python3 -
+```
 
-> **Important**: This application requires Python 3.12 (does not work with version 3.13)
-
-To set up the correct Python version using pyenv:
+4. Set up Python 3.12 using pyenv:
 ```bash
 # Install pyenv
 brew install pyenv
@@ -44,26 +45,24 @@ pyenv install 3.12
 
 # Set local Python version for this project
 pyenv local 3.12
-
-# Create virtual environment
-python -m venv .venv
-
-# activate virtual environment
-source .venv/bin/activate  # On Windows: .\venv\Scripts\activate
 ```
 
-4. Install dependencies:
+5. Install dependencies using Poetry:
 ```bash
-pip install -r requirements.txt
+# Install dependencies
+poetry install
+
+# Activate the virtual environment
+poetry shell
 ```
 
-5. Create a `.env` file based on `.env.example`:
+6. Create a `.env` file based on `.env.example`:
 ```bash
 cp .env.example .env
 ```
 Then edit `.env` with your actual configuration values.
 
-6. Set up HTTPS (optional):
+7. Set up HTTPS (optional):
 ```bash
 # Create SSL directory
 mkdir -p ssl
@@ -77,6 +76,103 @@ cd ..
 Note: When using self-signed certificates in development, your browser will show a security warning. This is normal. For production, use certificates from a trusted certificate authority.
 
 ## Usage
+
+### Starting the Server
+
+There are two recommended ways to start the server:
+
+1. Using the Python script:
+```bash
+python run_server.py
+```
+
+2. Using the shell script:
+```bash
+./start_server.sh
+```
+
+Both methods will read the port configuration from your `.env` file. The default port is 8001 if not specified.
+
+Note: Using `uvicorn app.main:app --reload` directly will use port 8000 by default and won't read from the `.env` file.
+
+#### Development
+Run the server using uvicorn:
+```bash
+uvicorn app.main:app --reload
+```
+
+#### Production
+For production deployment, use Gunicorn with Uvicorn workers:
+```bash
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+```
+
+The server will start at `http://localhost:8000`
+
+### Stopping the Server
+
+To stop the server, you can use one of these methods:
+
+1. If running in the foreground, press `Ctrl+C`
+2. If running in the background or if `Ctrl+C` doesn't work, use:
+```bash
+pkill -f uvicorn
+```
+
+### API Documentation
+
+Once the server is running, you can access:
+- Swagger UI documentation at `http://localhost:8000/docs`
+- ReDoc documentation at `http://localhost:8000/redoc`
+
+### API Endpoints
+
+#### Start Recording
+```http
+POST /start-recording
+Header: X-API-Key: your_api_key
+Content-Type: application/json
+
+{
+    "session_id": "unique_session_id",
+    "timestamp": "2023-12-09T20:00:00Z"
+}
+```
+
+#### End Recording
+```http
+POST /end-recording
+Header: X-API-Key: your_api_key
+Content-Type: application/json
+
+{
+    "session_id": "unique_session_id",
+    "timestamp": "2023-12-09T20:10:00Z"
+}
+```
+
+## Development
+
+### Dependency Management
+
+The project uses Poetry for dependency management. Here are some common commands:
+
+```bash
+# Add a new dependency
+poetry add package-name
+
+# Add a development dependency
+poetry add --group dev package-name
+
+# Update dependencies
+poetry update
+
+# Generate requirements.txt (useful for environments without Poetry)
+poetry export -f requirements.txt --output requirements.txt
+
+# Generate requirements.txt including development dependencies
+poetry export -f requirements.txt --output requirements.txt --with dev
+```
 
 ### Starting the Server
 
