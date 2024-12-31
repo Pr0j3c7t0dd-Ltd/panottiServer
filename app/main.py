@@ -53,6 +53,9 @@ app.add_middleware(
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
+# HTTP Status Code Constants
+HTTP_ERROR_STATUS_CODE = 400
+
 
 def generate_request_id() -> str:
     """Generate a unique request ID."""
@@ -154,7 +157,7 @@ async def log_requests(
                 "metrics": {
                     "duration_seconds": duration,
                     "status_code": response.status_code,
-                    "success": response.status_code < 400,
+                    "success": response.status_code < HTTP_ERROR_STATUS_CODE,
                 },
             },
         )
@@ -271,13 +274,13 @@ async def recording_ended(
     try:
         # Create recording event
         recording_event = event_request.to_event()
-        
+
         # Store in database
         await recording_event.save()
-        
+
         # Publish to event bus
         await event_bus.publish(recording_event)
-        
+
         logger.info(
             "Successfully processed recording ended event",
             extra={
@@ -285,7 +288,7 @@ async def recording_ended(
                 "recording_id": recording_event.recording_id,
             },
         )
-        
+
         return {
             "status": "success",
             "recording_id": recording_event.recording_id,
@@ -303,7 +306,7 @@ async def recording_ended(
         )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to process recording ended event: {str(e)}",
+            detail=f"Failed to process recording ended event: {e!s}",
         ) from e
 
 

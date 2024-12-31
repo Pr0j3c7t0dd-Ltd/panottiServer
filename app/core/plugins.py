@@ -1,7 +1,7 @@
 """Core plugin system interfaces and base classes."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from app.core.events import EventBus
 
@@ -9,9 +9,9 @@ from app.core.events import EventBus
 class PluginBase(ABC):
     """Base class for all plugins."""
 
-    def __init__(self, config: Any, event_bus: Optional[EventBus] = None) -> None:
+    def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin.
-        
+
         Args:
             config: Plugin configuration
             event_bus: Optional event bus instance

@@ -24,7 +24,7 @@ class EventStore:
     async def store_event(self, event: Event) -> str:
         """Store an event in memory and return its ID."""
         # Handle events without plugin_id (like RecordingEvent)
-        plugin_id = getattr(event, 'plugin_id', 'system')
+        plugin_id = getattr(event, "plugin_id", "system")
         if plugin_id not in self._events:
             self._events[plugin_id] = []
         self._events[plugin_id].append(event)

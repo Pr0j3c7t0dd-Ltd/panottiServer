@@ -7,7 +7,11 @@ from datetime import datetime
 from typing import Any
 
 from app.models.database import DatabaseManager
-from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
 from app.plugins.base import PluginBase, PluginConfig
 
 logger = logging.getLogger(__name__)

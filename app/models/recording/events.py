@@ -44,8 +44,14 @@ def parse_timestamp(timestamp_str: str) -> datetime:
     # Try parsing as numeric timestamp
     try:
         return datetime.fromtimestamp(float(timestamp_str))
-    except ValueError:
-        raise ValueError(f"Unable to parse timestamp: {timestamp_str}")
+    except ValueError as err:
+        raise ValueError(f"Unable to parse timestamp: {timestamp_str}") from err
+
+    # Try parsing as numeric timestamp
+    try:
+        return datetime.fromtimestamp(float(timestamp_str))
+    except ValueError as err:
+        raise ValueError(f"Unable to parse timestamp: {timestamp_str}") from err
 
 
 class EventMetadata(BaseModel):
@@ -78,7 +84,9 @@ class RecordingEvent(BaseModel):
     plugin_id: str = Field(default="recording_plugin")
     name: str = Field(default="")  # Required by event store
     data: dict[str, Any] = Field(default_factory=dict)  # Required by event store
-    context: EventContext = Field(default_factory=lambda: EventContext(correlation_id=str(uuid.uuid4())))
+    context: EventContext = Field(
+        default_factory=lambda: EventContext(correlation_id=str(uuid.uuid4()))
+    )
 
     @field_validator("name", mode="before")
     @classmethod
@@ -99,7 +107,7 @@ class RecordingEvent(BaseModel):
                 "system_audio_path": values.get("system_audio_path"),
                 "microphone_audio_path": values.get("microphone_audio_path"),
             }
-            if "metadata" in values and values["metadata"]:
+            if values.get("metadata"):
                 data["metadata"] = values["metadata"]
             return data
         return v
@@ -185,6 +193,7 @@ class RecordingStartRequest(BaseModel):
 
     @field_validator("recording_timestamp", mode="before")
     # pylint: disable=no-self-argument  # Pydantic validators use cls instead of self
+    # ruff: noqa: N805
     @classmethod
     def set_recording_timestamp(cls, value: str | None, info: Any) -> str:
         """Use timestamp field if recording_timestamp is not provided."""
@@ -217,6 +226,7 @@ class RecordingStartRequest(BaseModel):
 
 class RecordingEndRequest(BaseModel):
     """Request model for ending a recording session."""
+
     timestamp: str | None = None
     recording_timestamp: str | None = Field(None, alias="recordingTimestamp")
     recording_id: str = Field(..., alias="recordingId")
@@ -227,6 +237,7 @@ class RecordingEndRequest(BaseModel):
 
     @field_validator("recording_timestamp", mode="before")
     # pylint: disable=no-self-argument  # Pydantic validators use cls instead of self
+    # ruff: noqa: N805
     def set_recording_timestamp(cls, value: str | None, info: Any) -> str | None:
         """Use timestamp field if recording_timestamp is not provided."""
         data = info.data

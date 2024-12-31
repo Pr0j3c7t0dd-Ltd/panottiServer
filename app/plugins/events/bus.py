@@ -3,12 +3,17 @@
 import asyncio
 import uuid
 from asyncio import Task
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import Any, overload
 
-from app.core.events import EventBus as EventBusProtocol, EventData
-from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
-from app.plugins.events.models import Event, EventPriority
+from app.core.events import EventBus as EventBusProtocol
+from app.core.events import EventData
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
+from app.plugins.events.models import Event
 from app.plugins.events.persistence import EventStore
 from app.utils.logging_config import get_logger
 
@@ -19,7 +24,7 @@ def get_event_name(event: Event) -> str: ...
 
 @overload
 def get_event_name(
-    event: RecordingEvent | RecordingStartRequest | RecordingEndRequest
+    event: RecordingEvent | RecordingStartRequest | RecordingEndRequest,
 ) -> str: ...
 
 
@@ -46,7 +51,7 @@ def get_event_id(event: Event) -> str: ...
 
 @overload
 def get_event_id(
-    event: RecordingEvent | RecordingStartRequest | RecordingEndRequest
+    event: RecordingEvent | RecordingStartRequest | RecordingEndRequest,
 ) -> str: ...
 
 
@@ -89,7 +94,7 @@ class EventBus(EventBusProtocol):
 
             # Get subscribers for this event
             subscribers = self._subscribers.get(event_name, [])
-            
+
             # Notify subscribers
             self.logger.debug(
                 "Publishing event",

@@ -4,7 +4,11 @@ from abc import abstractmethod
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
 
 # Type for any event data
 EventData = (

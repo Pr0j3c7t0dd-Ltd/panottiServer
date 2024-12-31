@@ -1,7 +1,5 @@
-"""Noise reduction plugin for removing background noise from microphone recordings"""
+"""Noise reduction plugin for cleaning audio recordings."""
 
 from .plugin import NoiseReductionPlugin
-
-NoiseReductionPlugin = NoiseReductionPlugin
 
 __all__ = ["NoiseReductionPlugin"]

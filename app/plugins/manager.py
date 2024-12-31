@@ -98,10 +98,10 @@ class PluginManager:
                     # Get plugin class from the module
                     plugin_class = None
                     for attr_name in dir(module):
-                        if attr_name.endswith('Plugin'):
+                        if attr_name.endswith("Plugin"):
                             plugin_class = getattr(module, attr_name)
                             break
-                    
+
                     plugin_name = plugin_class.__name__ if plugin_class else None
                     logger.debug(
                         f"Found plugin class {plugin_name}",

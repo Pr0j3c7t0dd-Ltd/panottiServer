@@ -1,6 +1,6 @@
-import os
-import json
 import asyncio
+import json
+import os
 import threading
 import warnings
 from collections.abc import Callable, Coroutine
@@ -13,10 +13,15 @@ import numpy as np
 from scipy import signal
 from scipy.io import wavfile
 
-from app.plugins.base import PluginBase
-from app.core.events import EventBus, EventData
+from app.core.events import EventBus
+from app.core.events import EventData as BaseEventData
 from app.models.database import DatabaseManager
-from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
+from app.plugins.base import PluginBase
 from app.plugins.events.models import Event
 from app.utils.logging_config import get_logger
 
@@ -26,10 +31,11 @@ logger = get_logger(__name__)
 SPEECH_FREQ_MIN_HZ: int = 300
 SPEECH_FREQ_MAX_HZ: int = 3000
 
-EventData = (
+# Type alias for event data specific to noise reduction
+type NoiseReductionEventData = (
     dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest
 )
-EventHandler = Callable[[EventData], Coroutine[Any, Any, None]]
+EventHandler = Callable[[NoiseReductionEventData], Coroutine[Any, Any, None]]
 
 
 class NoiseReductionPlugin(PluginBase):
@@ -47,7 +53,7 @@ class NoiseReductionPlugin(PluginBase):
     async def _initialize(self) -> None:
         """Initialize plugin"""
         self._executor = ThreadPoolExecutor(max_workers=4)
-        
+
         # Subscribe to recording_ended event
         if self.event_bus:
             self.logger.info("Subscribing to recording.ended events")
@@ -55,7 +61,7 @@ class NoiseReductionPlugin(PluginBase):
             self.logger.info("Successfully subscribed to recording.ended events")
         else:
             self.logger.warning("No event bus available for noise reduction plugin")
-        
+
         self.logger.info("Noise reduction plugin initialized")
 
     async def _shutdown(self) -> None:
@@ -85,14 +91,16 @@ class NoiseReductionPlugin(PluginBase):
             WHERE recording_id = ? AND event_type = 'Recording Ended'
             """,
             (
-                json.dumps({
-                    "noise_reduction": {
-                        "status": status,
-                        "output_path": output_path,
-                        "error_message": error_message,
-                        "updated_at": datetime.utcnow().isoformat()
+                json.dumps(
+                    {
+                        "noise_reduction": {
+                            "status": status,
+                            "output_path": output_path,
+                            "error_message": error_message,
+                            "updated_at": datetime.utcnow().isoformat(),
+                        }
                     }
-                }),
+                ),
                 recording_id,
             ),
         )
@@ -366,8 +374,7 @@ class NoiseReductionPlugin(PluginBase):
         try:
             # Generate output path
             output_file = os.path.join(
-                str(self.output_dir),
-                f"{recording_id}_cleaned.wav"
+                str(self.output_dir), f"{recording_id}_cleaned.wav"
             )
 
             # Get noise reduction parameters from config
@@ -396,7 +403,7 @@ class NoiseReductionPlugin(PluginBase):
                 output_file,
                 noise_reduce_factor,
                 0.0,  # wiener_alpha
-                0,    # highpass_cutoff
+                0,  # highpass_cutoff
                 spectral_floor,
                 smoothing_factor,
             )
@@ -435,7 +442,7 @@ class NoiseReductionPlugin(PluginBase):
     async def _emit_completion_event(
         self,
         recording_id: str,
-        original_event: EventData,
+        original_event: BaseEventData,
         output_file: str | None,
         status: str,
         metrics: dict[str, float] | None = None,

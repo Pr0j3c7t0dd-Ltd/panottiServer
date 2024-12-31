@@ -12,7 +12,11 @@ from typing import Any
 from faster_whisper import WhisperModel
 
 from app.models.database import DatabaseManager
-from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
 from app.plugins.base import PluginBase
 
 logger = logging.getLogger(__name__)

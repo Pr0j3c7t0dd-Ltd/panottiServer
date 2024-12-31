@@ -1,5 +1,15 @@
 """Recording models package."""
 
-from .events import EventMetadata, RecordingEndRequest, RecordingEvent, RecordingStartRequest
+from .events import (
+    EventMetadata,
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
 
-__all__ = ["EventMetadata", "RecordingEvent", "RecordingStartRequest", "RecordingEndRequest"]
+__all__ = [
+    "EventMetadata",
+    "RecordingEndRequest",
+    "RecordingEvent",
+    "RecordingStartRequest",
+]

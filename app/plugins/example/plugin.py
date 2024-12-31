@@ -2,7 +2,11 @@ from collections.abc import Callable, Coroutine
 from datetime import datetime
 from typing import Any
 
-from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
 from app.plugins.base import PluginBase
 from app.plugins.events.models import Event
 
