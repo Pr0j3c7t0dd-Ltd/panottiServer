@@ -137,6 +137,17 @@ class DatabaseManager:
             self._executor, _insert
         )
 
+    async def fetch_one(self, sql: str, parameters: tuple = ()) -> sqlite3.Row | None:
+        """Fetch a single row from the database."""
+        def _fetch_one():
+            conn = self.get_connection()
+            cursor = conn.execute(sql, parameters)
+            return cursor.fetchone()
+
+        return await asyncio.get_event_loop().run_in_executor(
+            self._executor, _fetch_one
+        )
+
     async def fetch_all(self, sql: str, parameters: tuple = ()) -> list[sqlite3.Row]:
         """Fetch all records from the database."""
         def _fetch_all():

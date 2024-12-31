@@ -2,6 +2,6 @@
 
 from .plugin import NoiseReductionPlugin
 
-Plugin = NoiseReductionPlugin
+NoiseReductionPlugin = NoiseReductionPlugin
 
-__all__ = ["Plugin"]
+__all__ = ["NoiseReductionPlugin"]

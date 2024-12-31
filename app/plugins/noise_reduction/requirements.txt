@@ -1,6 +1,7 @@
 # Core dependencies for audio processing
 numpy>=1.24.0
 scipy>=1.10.0
+soundfile>=0.12.1  # For reading/writing audio files
 
 # Type hints support
 typing-extensions>=4.7.0

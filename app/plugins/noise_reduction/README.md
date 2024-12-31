@@ -9,6 +9,18 @@ This plugin processes audio files to remove background noise from microphone rec
 - Stores processing state in SQLite database
 - Emits completion events with cleaned file information
 
+## System Dependencies
+
+### macOS
+```bash
+brew install libsndfile
+```
+
+### Linux (Ubuntu/Debian)
+```bash
+sudo apt-get install libsndfile1
+```
+
 ## Dependencies
 Add these to your requirements.txt:
 ```

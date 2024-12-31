@@ -91,6 +91,14 @@ class EventBus(EventBusProtocol):
             subscribers = self._subscribers.get(event_name, [])
             
             # Notify subscribers
+            self.logger.debug(
+                "Publishing event",
+                extra={
+                    "event_name": event_name,
+                    "event_type": event_type,
+                    "subscriber_count": len(subscribers),
+                },
+            )
             for subscriber in subscribers:
                 try:
                     await subscriber(event)
@@ -127,13 +135,16 @@ class EventBus(EventBusProtocol):
         callback: Callable[[EventData], Any],
     ) -> None:
         """Subscribe a handler to an event"""
+        self.logger.info(
+            "Subscribing to event",
+            extra={
+                "event_name": event_type,
+                "subscriber": callback.__name__,
+            },
+        )
         if event_type not in self._subscribers:
             self._subscribers[event_type] = []
         self._subscribers[event_type].append(callback)
-        self.logger.debug(
-            "Handler subscribed",
-            extra={"event_name": event_type, "handler": callback.__qualname__},
-        )
 
     async def unsubscribe(
         self,

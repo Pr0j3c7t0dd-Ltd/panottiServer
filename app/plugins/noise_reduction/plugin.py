@@ -1,4 +1,6 @@
 import os
+import json
+import asyncio
 import threading
 import warnings
 from collections.abc import Callable, Coroutine
@@ -8,13 +10,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import soundfile as sf
 from scipy import signal
 from scipy.io import wavfile
 
-from app.core.events import EventBus
+from app.core.events import EventBus, EventData
+from app.core.plugins import PluginBase
 from app.models.database import DatabaseManager
 from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
-from app.plugins.base import PluginBase
 from app.plugins.events.models import Event
 from app.utils.logging_config import get_logger
 
@@ -48,7 +51,11 @@ class NoiseReductionPlugin(PluginBase):
         
         # Subscribe to recording_ended event
         if self.event_bus:
+            self.logger.info("Subscribing to Recording Ended events")
             await self.event_bus.subscribe("Recording Ended", self.handle_recording_ended)
+            self.logger.info("Successfully subscribed to Recording Ended events")
+        else:
+            self.logger.warning("No event bus available for noise reduction plugin")
         
         self.logger.info("Noise reduction plugin initialized")
 
@@ -306,9 +313,9 @@ class NoiseReductionPlugin(PluginBase):
         """Handle recording ended event"""
         try:
             # Check if event is a RecordingEvent
-            if not hasattr(event, "data") or not event.data:
+            if not isinstance(event, RecordingEvent):
                 self.logger.warning(
-                    "Skipping event - missing data",
+                    "Skipping event - not a RecordingEvent",
                     extra={"event_type": type(event).__name__},
                 )
                 return
@@ -329,27 +336,8 @@ class NoiseReductionPlugin(PluginBase):
                 )
                 return
 
-            # Get recording event from database
-            db = DatabaseManager.get_instance()
-            event_row = await db.fetch_one(
-                """
-                SELECT * FROM recording_events
-                WHERE recording_id = ? AND event_type = 'Recording Ended'
-                ORDER BY event_timestamp DESC
-                LIMIT 1
-                """,
-                (recording_id,),
-            )
-
-            if not event_row:
-                self.logger.warning(
-                    "Recording event not found in database",
-                    extra={"recording_id": recording_id},
-                )
-                return
-
             # Process audio
-            await self._process_audio(recording_id=recording_id, mic_path=mic_path)
+            await self._process_audio(recording_id=recording_id, mic_path=mic_path, sys_path=sys_path)
 
             # Log completion
             self.logger.info(
@@ -371,54 +359,77 @@ class NoiseReductionPlugin(PluginBase):
         self,
         recording_id: str,
         mic_path: str,
+        sys_path: str,
     ) -> None:
         """Process audio files in a separate thread"""
-        if not os.path.exists(mic_path):
-            logger.error(
-                "Audio files not found",
+        try:
+            # Generate output path
+            output_file = os.path.join(
+                str(self.output_dir),
+                f"{recording_id}_cleaned.wav"
+            )
+
+            # Get noise reduction parameters from config
+            noise_reduce_factor = self.get_config("noise_reduce_factor", 0.3)
+            spectral_floor = self.get_config("spectral_floor", 0.04)
+            smoothing_factor = self.get_config("smoothing_factor", 2)
+
+            self.logger.info(
+                "Starting basic noise reduction",
                 extra={
-                    "recording_id": recording_id,
-                    "mic_path": mic_path,
+                    "plugin": "noise_reduction",
+                    "mic_file": mic_path,
+                    "noise_file": sys_path,
+                    "output_file": output_file,
+                    "noise_reduce_factor": noise_reduce_factor,
                 },
             )
-            return
 
-        try:
-            # Get configuration
-            spectral_floor = float(self.get_config("spectral_floor", 0.15))
-            smoothing_factor = int(self.get_config("smoothing_factor", 0))
-
-            # Process audio
-            self.reduce_noise(
+            # Run noise reduction in thread pool
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self.reduce_noise,
                 mic_path,
-                mic_path,
-                str(self.output_dir / f"{recording_id}_cleaned.wav"),
-                spectral_floor=spectral_floor,
-                smoothing_factor=smoothing_factor,
+                sys_path,
+                output_file,
+                noise_reduce_factor,
+                0.0,  # wiener_alpha
+                0,    # highpass_cutoff
+                spectral_floor,
+                smoothing_factor,
             )
 
-            # Emit completion event
-            await self._emit_completion_event(
-                recording_id,
-                {"recording_id": recording_id},
-                str(self.output_dir / f"{recording_id}_cleaned.wav"),
-                "completed",
-                metrics={"spectral_floor": spectral_floor},
+            # Update task status
+            await self._update_task_status(
+                recording_id=recording_id,
+                status="completed",
+                output_path=output_file,
+            )
+
+            self.logger.info(
+                "Audio processing completed",
+                extra={
+                    "recording_id": recording_id,
+                    "output_file": output_file,
+                },
             )
 
         except Exception as e:
-            logger.error(
-                f"Error processing audio: {e}",
-                extra={"recording_id": recording_id},
+            self.logger.error(
+                "Error processing audio",
+                extra={
+                    "recording_id": recording_id,
+                    "error": str(e),
+                },
                 exc_info=True,
             )
-            await self._emit_completion_event(
-                recording_id,
-                {"recording_id": recording_id},
-                None,
-                "failed",
-                metrics=None,
+            await self._update_task_status(
+                recording_id=recording_id,
+                status="failed",
+                error_message=str(e),
             )
+            raise
 
     async def _emit_completion_event(
         self,
@@ -550,6 +561,7 @@ class NoiseReductionPlugin(PluginBase):
             await self._process_audio(
                 recording_id=recording_id,
                 mic_path=input_file,
+                sys_path=input_file,
             )
 
             # Log completion
