@@ -1,24 +1,23 @@
-from fastapi import FastAPI, Depends, HTTPException, Security, Request
-from fastapi.security.api_key import APIKeyHeader
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-import os
-from dotenv import load_dotenv
-from datetime import datetime
-import logging
 import json
-from typing import Dict
-import asyncio
+import logging
+import os
 import uuid
+from datetime import datetime
 
-from .models.event import RecordingEvent, RecordingStartRequest, RecordingEndRequest
-from .models.database import get_db, DatabaseManager
-from .utils.logging_config import setup_logging
-from .plugins.manager import PluginManager
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security.api_key import APIKeyHeader
+
+from .models.database import DatabaseManager, get_db
+from .models.event import RecordingEndRequest, RecordingStartRequest
 from .plugins.events.bus import EventBus
+from .plugins.events.models import Event, EventContext
 from .plugins.events.persistence import EventStore
-from .plugins.events.models import Event, EventContext, EventPriority
+from .plugins.manager import PluginManager
+from .utils.logging_config import setup_logging
 
 # Load environment variables
 load_dotenv()
@@ -54,17 +53,19 @@ app.add_middleware(
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize application resources"""
     # Initialize the database
     get_db()
     logger.info("Database initialized")
-    
+
     # Initialize plugins
     await plugin_manager.discover_plugins()
     await plugin_manager.initialize_plugins()
     logger.info("Plugins initialized")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -73,63 +74,59 @@ async def shutdown_event():
     DatabaseManager.get_instance().close_connections()
     logger.info("Database connections closed")
 
+
 def generate_request_id():
     return str(uuid.uuid4())
+
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Middleware to log requests with detailed header information."""
-    print(f"=== log_requests middleware called === URL: {request.url.scheme}://{request.url.netloc}{request.url.path}")  # Debug print with protocol
-    request_id = request.headers.get('X-Request-ID') or generate_request_id()
-    logger_context = logging.LoggerAdapter(logger, {'request_id': request_id})
-    
+    request_id = request.headers.get("X-Request-ID") or generate_request_id()
+    logger.info("Processing request", extra={"request_id": request_id})
+
     # Extract and format headers
     headers = dict(request.headers)
     sanitized_headers = headers.copy()
-    sensitive_headers = ['authorization', 'x-api-key', 'cookie']
+    sensitive_headers = ["authorization", "x-api-key", "cookie"]
     for header in sensitive_headers:
         if header in sanitized_headers:
-            sanitized_headers[header] = '[REDACTED]'
-    
+            sanitized_headers[header] = "[REDACTED]"
+
     # Log the request with headers
     logger.info(
         "Incoming request",
         extra={
-            'req_headers': sanitized_headers,
-            'req_method': request.method,
-            'req_path': request.url.path,
-            'req_task': "http_middleware",
-            'req_id': request_id
-        }
+            "req_headers": sanitized_headers,
+            "req_method": request.method,
+            "req_path": request.url.path,
+            "req_task": "http_middleware",
+            "req_id": request_id,
+        },
     )
-    
+
     # Get request body
     body = await request.body()
-    body_content = None
-    
-    if body:
-        try:
-            body_content = json.loads(body)
-        except json.JSONDecodeError:
-            try:
-                body_content = body.decode()
-            except UnicodeDecodeError:
-                body_content = "[BINARY DATA]"
-    
+    try:
+        body_content = body.decode()
+        logger.debug("Request body", extra={"body": body_content})
+    except UnicodeDecodeError:
+        logger.debug("Binary request body detected")
+
     # Process the request
     start_time = datetime.utcnow()
     response = await call_next(request)
     duration = (datetime.utcnow() - start_time).total_seconds()
-    
+
     # Add request ID to response headers
-    response.headers['X-Request-ID'] = request_id
-    
+    response.headers["X-Request-ID"] = request_id
+
     # Get response headers
     response_headers = dict(response.headers)
     for header in sensitive_headers:
         if header in response_headers:
-            response_headers[header] = '[REDACTED]'
-    
+            response_headers[header] = "[REDACTED]"
+
     # Log response
     logger.info(
         "Request completed",
@@ -138,56 +135,52 @@ async def log_requests(request: Request, call_next):
                 "response": {
                     "status_code": response.status_code,
                     "headers": response_headers,
-                    "duration_seconds": duration
+                    "duration_seconds": duration,
                 }
             },
-            'request_id': request_id
-        }
+            "request_id": request_id,
+        },
     )
-    
+
     return response
+
 
 async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
     if api_key_header == os.getenv("API_KEY"):
         return api_key_header
-    raise HTTPException(
-        status_code=403,
-        detail="Invalid API Key"
-    )
+    raise HTTPException(status_code=403, detail="Invalid API Key")
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors with detailed information"""
     body = await request.body()
     body_str = body.decode()
-    
+
     # Format validation errors
     formatted_errors = []
     for error in exc.errors():
         error_dict = {
             "loc": error.get("loc", []),
             "msg": str(error.get("msg", "")),
-            "type": error.get("type", "")
+            "type": error.get("type", ""),
         }
         formatted_errors.append(error_dict)
-    
+
     # Log the error details
     logger.error(
         "Validation error",
         extra={
             "raw_body": body_str,
             "formatted_errors": formatted_errors,
-            "body": exc.body
-        }
+            "body": exc.body,
+        },
     )
-    
+
     return JSONResponse(
-        status_code=422,
-        content={
-            "detail": formatted_errors,
-            "body": exc.body
-        }
+        status_code=422, content={"detail": formatted_errors, "body": exc.body}
     )
+
 
 @app.get("/api/active-recordings")
 async def get_active_recordings():
@@ -198,38 +191,34 @@ async def get_active_recordings():
             recordings = db.get_active_recordings()
         return {"status": "success", "recordings": recordings}
     except Exception as e:
-        logger.error(f"Error retrieving active recordings: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error retrieving active recordings: {e!s}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.post("/api/recording-started")
 async def recording_started(
     request: Request,
     event_request: RecordingStartRequest,
-    api_key: str = Depends(get_api_key)
+    api_key: str = Depends(get_api_key),
 ):
     """Handle a recording started event."""
     try:
         # Log raw request body
         body = await request.body()
-        body_str = body.decode()
         logger.info(
             "Received recording started request",
             extra={
-                "raw_body": body_str,
+                "raw_body": body.decode(),
                 "parsed_request": event_request.model_dump(),
-                "validation_error": None
-            }
+            },
         )
-        
+
         # Convert to event
         event = event_request.to_event()
         logger.info(
-            "Converted request to event",
-            extra={
-                "event_data": event.model_dump()
-            }
+            "Converted request to event", extra={"event_data": event.model_dump()}
         )
-        
+
         # Save event
         event.save()
 
@@ -240,32 +229,51 @@ async def recording_started(
                 "type": "Recording Started",
                 "recording_timestamp": event.recording_timestamp,
                 "recording_id": event.recordingId,
-                "event_title": event.metadata.get("eventTitle") if event.metadata else None,
-                "event_provider_id": event.metadata.get("eventProviderId") if event.metadata else None,
-                "event_provider": event.metadata.get("eventProvider") if event.metadata else None,
-                "event_attendees": json.dumps(event.metadata.get("eventAttendees", [])) if event.metadata else "[]",
-                "system_label": event.metadata.get("systemLabel") if event.metadata else None,
-                "microphone_label": event.metadata.get("microphoneLabel") if event.metadata else None,
-                "recording_started": event.metadata.get("recordingStarted") if event.metadata else None,
-                "recording_ended": event.metadata.get("recordingEnded") if event.metadata else None,
+                "event_title": (
+                    event.metadata.get("eventTitle") if event.metadata else None
+                ),
+                "event_provider_id": (
+                    event.metadata.get("eventProviderId") if event.metadata else None
+                ),
+                "event_provider": (
+                    event.metadata.get("eventProvider") if event.metadata else None
+                ),
+                "event_attendees": (
+                    json.dumps(event.metadata.get("eventAttendees", []))
+                    if event.metadata
+                    else "[]"
+                ),
+                "system_label": (
+                    event.metadata.get("systemLabel") if event.metadata else None
+                ),
+                "microphone_label": (
+                    event.metadata.get("microphoneLabel") if event.metadata else None
+                ),
+                "recording_started": (
+                    event.metadata.get("recordingStarted") if event.metadata else None
+                ),
+                "recording_ended": (
+                    event.metadata.get("recordingEnded") if event.metadata else None
+                ),
                 "metadata_json": json.dumps(event.metadata) if event.metadata else None,
                 "system_audio_path": event.systemAudioPath,
-                "microphone_audio_path": event.microphoneAudioPath
+                "microphone_audio_path": event.microphoneAudioPath,
             },
-            context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api")
+            context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api"),
         )
         await event_bus.publish(event_to_emit)
-        
+
         return {"status": "success", "event": event.model_dump()}
     except Exception as e:
-        logger.error(f"Error processing recording started event: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error processing recording started event: {e!s}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.post("/api/recording-ended")
 async def recording_ended(
     request: Request,
     event_request: RecordingEndRequest,
-    api_key: str = Depends(get_api_key)
+    api_key: str = Depends(get_api_key),
 ):
     """Handle a recording ended event."""
     try:
@@ -276,18 +284,15 @@ async def recording_ended(
             extra={
                 "raw_body": body.decode(),
                 "parsed_request": event_request.model_dump(),
-            }
+            },
         )
-        
+
         # Convert to event
         event = event_request.to_event()
         logger.info(
-            "Converted request to event",
-            extra={
-                "event_data": event.model_dump()
-            }
+            "Converted request to event", extra={"event_data": event.model_dump()}
         )
-        
+
         # Save event
         event.save()
 
@@ -298,34 +303,57 @@ async def recording_ended(
                 "type": "Recording Ended",
                 "recording_timestamp": event.recording_timestamp,
                 "recording_id": event.recordingId,
-                "event_title": event.metadata.get("eventTitle") if event.metadata else None,
-                "event_provider_id": event.metadata.get("eventProviderId") if event.metadata else None,
-                "event_provider": event.metadata.get("eventProvider") if event.metadata else None,
-                "event_attendees": json.dumps(event.metadata.get("eventAttendees", [])) if event.metadata else "[]",
-                "system_label": event.metadata.get("systemLabel") if event.metadata else None,
-                "microphone_label": event.metadata.get("microphoneLabel") if event.metadata else None,
-                "recording_started": event.metadata.get("recordingStarted") if event.metadata else None,
-                "recording_ended": event.metadata.get("recordingEnded") if event.metadata else None,
+                "event_title": (
+                    event.metadata.get("eventTitle") if event.metadata else None
+                ),
+                "event_provider_id": (
+                    event.metadata.get("eventProviderId") if event.metadata else None
+                ),
+                "event_provider": (
+                    event.metadata.get("eventProvider") if event.metadata else None
+                ),
+                "event_attendees": (
+                    json.dumps(event.metadata.get("eventAttendees", []))
+                    if event.metadata
+                    else "[]"
+                ),
+                "system_label": (
+                    event.metadata.get("systemLabel") if event.metadata else None
+                ),
+                "microphone_label": (
+                    event.metadata.get("microphoneLabel") if event.metadata else None
+                ),
+                "recording_started": (
+                    event.metadata.get("recordingStarted") if event.metadata else None
+                ),
+                "recording_ended": (
+                    event.metadata.get("recordingEnded") if event.metadata else None
+                ),
                 "metadata_json": json.dumps(event.metadata) if event.metadata else None,
                 "system_audio_path": event.systemAudioPath,
-                "microphone_audio_path": event.microphoneAudioPath
+                "microphone_audio_path": event.microphoneAudioPath,
             },
-            context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api")
+            context=EventContext(correlation_id=str(uuid.uuid4()), source_plugin="api"),
         )
         await event_bus.publish(event_to_emit)
-        
+
         return {"status": "success", "event": event.model_dump()}
     except Exception as e:
-        logger.error(f"Error processing recording ended event: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error processing recording ended event: {e!s}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 if __name__ == "__main__":
     import uvicorn
+
+    PORT = int(os.getenv("API_PORT", "8001"))
+    HOST = os.getenv("API_HOST", "127.0.0.1")  # Default to localhost
+    
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
+        host=HOST,
         port=PORT,
         reload=True,
         ssl_keyfile="ssl/key.pem",
-        ssl_certfile="ssl/cert.pem"
+        ssl_certfile="ssl/cert.pem",
     )

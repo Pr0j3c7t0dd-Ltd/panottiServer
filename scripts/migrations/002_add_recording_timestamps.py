@@ -1,14 +1,14 @@
-import sqlite3
 import os
+import sqlite3
 from pathlib import Path
-import json
+
 
 def migrate():
     """Add recording_started and recording_ended columns to events table"""
     # Get the project root directory (three levels up from this file)
     root_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    data_dir = root_dir / 'data'
-    db_path = str(data_dir / 'panotti.db')
+    data_dir = root_dir / "data"
+    db_path = str(data_dir / "panotti.db")
 
     # Connect to the database
     with sqlite3.connect(db_path) as conn:
@@ -16,7 +16,8 @@ def migrate():
 
         try:
             # Create new table with the updated schema
-            cursor.execute('''
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS events_new (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     type TEXT NOT NULL,
@@ -36,10 +37,12 @@ def migrate():
                     microphone_audio_path TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            ''')
+            """
+            )
 
             # Copy existing data to new table, extracting recording timestamps from metadata_json
-            cursor.execute('''
+            cursor.execute(
+                """
                 INSERT INTO events_new (
                     id, type, timestamp, recording_id, recording_datetime,
                     event_title, event_provider_id, event_provider,
@@ -48,7 +51,7 @@ def migrate():
                     metadata_json, system_audio_path, microphone_audio_path,
                     created_at
                 )
-                SELECT 
+                SELECT
                     id, type, timestamp, recording_id, recording_datetime,
                     event_title, event_provider_id, event_provider,
                     event_attendees, system_label, microphone_label,
@@ -57,13 +60,14 @@ def migrate():
                     metadata_json, system_audio_path, microphone_audio_path,
                     created_at
                 FROM events
-            ''')
+            """
+            )
 
             # Drop the old table
-            cursor.execute('DROP TABLE IF EXISTS events')
+            cursor.execute("DROP TABLE IF EXISTS events")
 
             # Rename the new table to events
-            cursor.execute('ALTER TABLE events_new RENAME TO events')
+            cursor.execute("ALTER TABLE events_new RENAME TO events")
 
             # Commit the changes
             conn.commit()
@@ -74,5 +78,6 @@ def migrate():
             conn.rollback()
             raise
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     migrate()

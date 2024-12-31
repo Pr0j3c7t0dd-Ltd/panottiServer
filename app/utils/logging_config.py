@@ -1,9 +1,10 @@
-import logging
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
+
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
@@ -13,35 +14,53 @@ class JSONFormatter(logging.Formatter):
             "level": record.levelname,
             "message": record.getMessage(),
             "logger": record.name,
-            "request_id": getattr(record, 'req_id', str(uuid.uuid4()))
+            "request_id": getattr(record, "req_id", str(uuid.uuid4())),
         }
 
         # Add our custom request fields
-        custom_fields = ['req_headers', 'req_method', 'req_path', 'req_task']
+        custom_fields = ["req_headers", "req_method", "req_path", "req_task"]
         for field in custom_fields:
             if hasattr(record, field):
                 # Remove the 'req_' prefix in the output
-                log_key = field[4:] if field.startswith('req_') else field
+                log_key = field[4:] if field.startswith("req_") else field
                 log_record[log_key] = getattr(record, field)
 
         # Add any additional extra attributes that might be present
         for key, value in record.__dict__.items():
-            if (key not in log_record and 
-                key not in ['args', 'exc_info', 'exc_text', 'stack_info', 'lineno', 
-                           'funcName', 'created', 'msecs', 'relativeCreated', 'levelno', 
-                           'pathname', 'filename', 'module', 'processName', 'threadName', 
-                           'thread', 'process', 'msg', 'name']):
+            if key not in log_record and key not in [
+                "args",
+                "exc_info",
+                "exc_text",
+                "stack_info",
+                "lineno",
+                "funcName",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "levelno",
+                "pathname",
+                "filename",
+                "module",
+                "processName",
+                "threadName",
+                "thread",
+                "process",
+                "msg",
+                "name",
+            ]:
                 log_record[key] = value
 
         # Add exception information if present
         if record.exc_info:
-            log_record['exc_info'] = self.formatException(record.exc_info)
+            log_record["exc_info"] = self.formatException(record.exc_info)
 
         return json.dumps(log_record)
+
 
 def generate_request_id():
     """Generate a unique request ID"""
     return str(uuid.uuid4())
+
 
 def setup_logging():
     """
@@ -80,23 +99,27 @@ def setup_logging():
         log_file,
         when="midnight",
         interval=1,  # Rotate daily
-        backupCount=retention_days if retention_days > 0 else 0,  # Keep X days of logs, 0 for infinite
-        encoding="utf-8"
+        backupCount=(
+            retention_days if retention_days > 0 else 0
+        ),  # Keep X days of logs, 0 for infinite
+        encoding="utf-8",
     )
     file_handler.setFormatter(JSONFormatter())
     logger.addHandler(file_handler)
 
+
 def get_logger(name: str) -> logging.Logger:
     """
     Get a logger instance with the specified name.
-    
+
     Args:
         name: The name of the logger, typically __name__ of the module
-        
+
     Returns:
         logging.Logger: Configured logger instance
     """
     return logging.getLogger(name)
+
 
 # Example usage
 if __name__ == "__main__":

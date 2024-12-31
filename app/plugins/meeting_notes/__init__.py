@@ -4,4 +4,4 @@ from .plugin import MeetingNotesPlugin
 
 Plugin = MeetingNotesPlugin
 
-__all__ = ['Plugin']
+__all__ = ["Plugin"]

@@ -4,4 +4,4 @@ from .plugin import NoiseReductionPlugin
 
 Plugin = NoiseReductionPlugin
 
-__all__ = ['Plugin']
+__all__ = ["Plugin"]
