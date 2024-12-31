@@ -60,7 +60,7 @@ class NoiseReductionPlugin(PluginBase):
 
     async def _register_handlers(self) -> None:
         """Register event handlers."""
-        await self.subscribe("recording.ended", self._handle_recording_ended)
+        await self.subscribe("Recording Ended", self._handle_recording_ended)
 
     async def _handle_recording_ended(self, event: EventType) -> None:
         """Handle recording ended event."""
@@ -164,7 +164,15 @@ class NoiseReductionPlugin(PluginBase):
                 },
                 exc_info=True,
             )
-            raise
+            # Emit completion event with error status
+            await self._emit_completion_event(
+                recording_id,
+                original_event,
+                None,  # No output file on error
+                "error",
+                {"error": str(e)},
+            )
+            return  # Exit early on error
 
     def _reduce_noise(self, audio_data: np.ndarray) -> np.ndarray:
         """Apply noise reduction to audio data."""
