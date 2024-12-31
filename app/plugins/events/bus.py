@@ -1,7 +1,7 @@
 import asyncio
-from collections.abc import Awaitable, Callable
-from typing import Dict, Any, Optional, List
 from asyncio import Task
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from app.plugins.events.models import Event, EventPriority
 from app.plugins.events.persistence import EventStore
@@ -15,9 +15,9 @@ class EventBus:
 
     def __init__(self, event_store: EventStore):
         self.event_store = event_store
-        self.handlers: Dict[str, List[EventHandler]] = {}
-        self.plugins: Dict[str, Any] = {}
-        self.tasks: List[Task[Any]] = []
+        self.handlers: dict[str, list[EventHandler]] = {}
+        self.plugins: dict[str, Any] = {}
+        self.tasks: list[Task[Any]] = []
         self.logger = get_logger("event_bus")
         self.logger.info("Event bus initialized")
 

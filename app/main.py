@@ -2,8 +2,9 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Any, Dict
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
@@ -154,7 +155,9 @@ async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     """Handle validation errors with detailed information"""
     body = await request.body()
     body_str = body.decode()
@@ -185,7 +188,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 @app.get("/api/active-recordings")
-async def get_active_recordings() -> Dict[str, Any]:
+async def get_active_recordings() -> dict[str, Any]:
     """Get all active recordings from the database"""
     try:
         # Query database for active recordings
@@ -202,7 +205,7 @@ async def recording_started(
     request: Request,
     event_request: RecordingStartRequest,
     api_key: str = Depends(get_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle a recording started event."""
     try:
         # Log raw request body
@@ -276,7 +279,7 @@ async def recording_ended(
     request: Request,
     event_request: RecordingEndRequest,
     api_key: str = Depends(get_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle a recording ended event."""
     try:
         # Log raw request body

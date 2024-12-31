@@ -1,6 +1,5 @@
 import os
 from datetime import UTC, datetime
-import uuid
 
 import requests
 from dotenv import load_dotenv

@@ -64,8 +64,8 @@ class AudioTranscriptionPlugin(PluginBase):
         config_path = os.path.join(model_dir, "config.json")
         if not os.path.exists(config_path):
             raise RuntimeError(
-                "Model files not found in {}. "
-                "Please run the download script first.".format(model_dir)
+                f"Model files not found in {model_dir}. "
+                "Please run the download script first."
             )
         else:
             self.logger.info(
