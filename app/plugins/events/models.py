@@ -57,6 +57,26 @@ class Event(BaseModel):
         )
 
 
+def get_event_name(event: Any) -> str:
+    """Get event name from event object."""
+    if hasattr(event, "event"):
+        return event.event
+    elif isinstance(event, dict):
+        return event.get("event", "unknown")
+    else:
+        return "unknown"
+
+
+def get_event_id(event: Any) -> str:
+    """Get event ID from event object."""
+    if hasattr(event, "recording_id"):
+        return event.recording_id
+    elif isinstance(event, dict):
+        return event.get("recording_id", "unknown")
+    else:
+        return "unknown"
+
+
 class EventError(BaseModel):
     """Model for event processing errors"""
 

@@ -2,12 +2,14 @@
 
 import json
 import logging
+import uuid
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.database import get_db
+from app.models.database import DatabaseManager
+from app.plugins.events.models import EventContext
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,35 @@ class RecordingEvent(BaseModel):
     microphone_audio_path: str | None = None
     event: Literal["Recording Started", "Recording Ended"]
     metadata: dict[str, Any] | EventMetadata | None = None
+    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    plugin_id: str = Field(default="recording_plugin")
+    name: str = Field(default="")  # Required by event store
+    data: dict[str, Any] = Field(default_factory=dict)  # Required by event store
+    context: EventContext = Field(default_factory=lambda: EventContext(correlation_id=str(uuid.uuid4())))
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def set_name_from_event(cls, v: str, values: dict[str, Any]) -> str:
+        """Set the name field based on the event type."""
+        if not v and "event" in values:
+            return values["event"]
+        return v
+
+    @field_validator("data", mode="before")
+    @classmethod
+    def set_data(cls, v: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
+        """Set the data field with relevant event information."""
+        if not v:
+            data = {
+                "recording_id": values.get("recording_id", ""),
+                "recording_timestamp": values.get("recording_timestamp", ""),
+                "system_audio_path": values.get("system_audio_path"),
+                "microphone_audio_path": values.get("microphone_audio_path"),
+            }
+            if "metadata" in values and values["metadata"]:
+                data["metadata"] = values["metadata"]
+            return data
+        return v
 
     def _get_metadata_field(self, field: str) -> Any:
         """Safely get a field from metadata whether it's a dict or EventMetadata."""
@@ -83,8 +114,8 @@ class RecordingEvent(BaseModel):
 
     async def save(self) -> None:
         """Save the event to the database."""
-        db = await get_db()
-        await db.execute(
+        db = DatabaseManager.get_instance()
+        await db.insert(
             """
             INSERT INTO recording_events (
                 recording_id,
@@ -101,7 +132,7 @@ class RecordingEvent(BaseModel):
                 self.recording_timestamp,
                 self.system_audio_path,
                 self.microphone_audio_path,
-                json.dumps(self.metadata.dict() if isinstance(self.metadata, EventMetadata) else self.metadata),
+                json.dumps(self.metadata) if self.metadata else None,
             ),
         )
         await db.commit()
@@ -109,8 +140,8 @@ class RecordingEvent(BaseModel):
     @classmethod
     async def get_by_recording_id(cls, recording_id: str) -> list["RecordingEvent"]:
         """Retrieve all events for a specific recording."""
-        db = await get_db()
-        rows = await db.execute_fetchall(
+        db = DatabaseManager.get_instance()
+        rows = await db.fetch_all(
             """
             SELECT * FROM recording_events
             WHERE recording_id = ?
@@ -167,12 +198,20 @@ class RecordingStartRequest(BaseModel):
     def to_event(self) -> RecordingEvent:
         """Convert request to RecordingEvent."""
         return RecordingEvent(
-            recording_timestamp=self.recording_timestamp or datetime.utcnow().isoformat(),
+            recording_timestamp=self.recording_timestamp or self.timestamp,
             recording_id=self.recording_id,
-            event=self.event,
             system_audio_path=self.system_audio_path,
             microphone_audio_path=self.microphone_audio_path,
+            event=self.event,
             metadata=self.metadata,
+            name=self.event,  # Set name to event type
+            data={  # Populate data field
+                "recording_id": self.recording_id,
+                "recording_timestamp": self.recording_timestamp or self.timestamp,
+                "system_audio_path": self.system_audio_path,
+                "microphone_audio_path": self.microphone_audio_path,
+                "metadata": self.metadata,
+            },
         )
 
 
@@ -204,4 +243,12 @@ class RecordingEndRequest(BaseModel):
             microphone_audio_path=self.microphone_audio_path,
             event=self.event,
             metadata=self.metadata,
+            name=self.event,  # Set name to event type
+            data={  # Populate data field
+                "recording_id": self.recording_id,
+                "recording_timestamp": self.recording_timestamp or self.timestamp,
+                "system_audio_path": self.system_audio_path,
+                "microphone_audio_path": self.microphone_audio_path,
+                "metadata": self.metadata,
+            },
         )

@@ -44,68 +44,24 @@ class NoiseReductionPlugin(PluginBase):
 
     async def _initialize(self) -> None:
         """Initialize plugin"""
-        # Initialize database table
-        await self._init_database()
-
-        # Initialize thread pool executor
-        max_workers = self.get_config("max_concurrent_tasks", 4)
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
-
+        self._executor = ThreadPoolExecutor(max_workers=4)
+        
         # Subscribe to recording_ended event
         if self.event_bus:
-            await self.event_bus.subscribe(
-                "recording_ended", self.handle_recording_ended
-            )
-
-        self.logger.info(
-            "NoiseReductionPlugin initialized successfully",
-            extra={
-                "plugin": "noise_reduction",
-                "max_workers": max_workers,
-                "output_directory": self.get_config(
-                    "output_directory", "data/cleaned_audio"
-                ),
-                "noise_reduce_factor": self.get_config("noise_reduce_factor", 0.3),
-                "db_initialized": self._db_initialized,
-            },
-        )
+            await self.event_bus.subscribe("Recording Ended", self.handle_recording_ended)
+        
+        self.logger.info("Noise reduction plugin initialized")
 
     async def _shutdown(self) -> None:
         """Shutdown plugin"""
         # Unsubscribe from events
         if self.event_bus:
-            await self.event_bus.unsubscribe(
-                "recording_ended", self.handle_recording_ended
-            )
+            await self.event_bus.unsubscribe("Recording Ended", self.handle_recording_ended)
 
-        # Shutdown thread pool
         if self._executor:
-            self._executor.shutdown(wait=True)
+            self._executor.shutdown()
 
         self.logger.info("Noise reduction plugin shutdown")
-
-    async def _init_database(self) -> None:
-        """Initialize database table for tracking processing state"""
-        db = DatabaseManager.get_instance()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS noise_reduction_tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    recording_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    input_mic_path TEXT,
-                    input_sys_path TEXT,
-                    output_path TEXT,
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """
-            )
-            conn.commit()
-        self._db_initialized = True
 
     async def _update_task_status(
         self,
@@ -116,39 +72,24 @@ class NoiseReductionPlugin(PluginBase):
     ) -> None:
         """Update the status of a processing task in the database"""
         db = DatabaseManager.get_instance()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            update_values = [
-                status,
-                output_path,
-                error_message,
-                datetime.utcnow().isoformat(),
+        await db.execute(
+            """
+            UPDATE recording_events
+            SET metadata = json_patch(metadata, json(?))
+            WHERE recording_id = ? AND event_type = 'Recording Ended'
+            """,
+            (
+                json.dumps({
+                    "noise_reduction": {
+                        "status": status,
+                        "output_path": output_path,
+                        "error_message": error_message,
+                        "updated_at": datetime.utcnow().isoformat()
+                    }
+                }),
                 recording_id,
-            ]
-            cursor.execute(
-                """
-                UPDATE noise_reduction_tasks
-                SET status = ?, output_path = ?, error_message = ?, updated_at = ?
-                WHERE recording_id = ?
-            """,
-                update_values,
-            )
-            conn.commit()
-
-    def _create_task(self, recording_id: str, mic_path: str, sys_path: str) -> None:
-        """Create a new processing task in the database"""
-        db = DatabaseManager.get_instance()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO noise_reduction_tasks
-                (recording_id, status, input_mic_path, input_sys_path)
-                VALUES (?, ?, ?, ?)
-            """,
-                (recording_id, "pending", mic_path, sys_path),
-            )
-            conn.commit()
+            ),
+        )
 
     def butter_highpass(
         self, cutoff: float, fs: float, order: int = 5
@@ -361,22 +302,25 @@ class NoiseReductionPlugin(PluginBase):
         except Exception as e:
             raise OSError(f"Failed to save cleaned audio: {e!s}") from e
 
-    async def handle_recording_ended(self, event_data: EventData) -> None:
+    async def handle_recording_ended(self, event: EventData) -> None:
         """Handle recording ended event"""
         try:
-            if isinstance(event_data, dict):
-                recording_id = event_data.get("recording_id", "unknown")
-                mic_path = event_data.get("microphone_audio_path")
-                sys_path = event_data.get("system_audio_path")
-            else:
-                # Handle RecordingEvent, RecordingStartRequest, RecordingEndRequest
-                recording_id = getattr(event_data, "recording_id", "unknown")
-                mic_path = getattr(event_data, "microphone_audio_path", None)
-                sys_path = getattr(event_data, "system_audio_path", None)
+            # Check if event is a RecordingEvent
+            if not hasattr(event, "data") or not event.data:
+                self.logger.warning(
+                    "Skipping event - missing data",
+                    extra={"event_type": type(event).__name__},
+                )
+                return
 
-            if not mic_path and not sys_path:
-                logger.error(
-                    "No audio paths provided in recording ended event",
+            # Extract recording information from event data
+            recording_id = event.data.get("recording_id")
+            mic_path = event.data.get("microphone_audio_path")
+            sys_path = event.data.get("system_audio_path")
+
+            if not recording_id or not mic_path or not sys_path:
+                self.logger.warning(
+                    "Missing required fields",
                     extra={
                         "recording_id": recording_id,
                         "mic_path": mic_path,
@@ -385,22 +329,43 @@ class NoiseReductionPlugin(PluginBase):
                 )
                 return
 
-            # Process each audio file
-            if mic_path:
-                await self._process_audio(recording_id, mic_path)
-            if sys_path:
-                await self._process_audio(recording_id, sys_path)
+            # Get recording event from database
+            db = DatabaseManager.get_instance()
+            event_row = await db.fetch_one(
+                """
+                SELECT * FROM recording_events
+                WHERE recording_id = ? AND event_type = 'Recording Ended'
+                ORDER BY event_timestamp DESC
+                LIMIT 1
+                """,
+                (recording_id,),
+            )
+
+            if not event_row:
+                self.logger.warning(
+                    "Recording event not found in database",
+                    extra={"recording_id": recording_id},
+                )
+                return
+
+            # Process audio
+            await self._process_audio(recording_id=recording_id, mic_path=mic_path)
+
+            # Log completion
+            self.logger.info(
+                "Audio processing initiated",
+                extra={
+                    "recording_id": recording_id,
+                },
+            )
 
         except Exception as e:
-            logger.error(
-                f"Failed to handle recording ended: {e}",
-                extra={
-                    "recording_id": (
-                        recording_id if "recording_id" in locals() else "unknown"
-                    )
-                },
+            self.logger.error(
+                "Error processing recording ended event",
+                extra={"error": str(e)},
                 exc_info=True,
             )
+            raise
 
     async def _process_audio(
         self,
@@ -561,7 +526,7 @@ class NoiseReductionPlugin(PluginBase):
         """Handle recording events"""
         try:
             # Check event name
-            if event.name != "recording_ended":
+            if event.name != "Recording Ended":
                 return
 
             # Extract recording information from event payload

@@ -72,99 +72,50 @@ class EventBus(EventBusProtocol):
 
     def __init__(self, event_store: EventStore):
         self.event_store = event_store
-        self.handlers: dict[str, list[Callable[[EventData], Any]]] = {}
+        self._subscribers: dict[str, list[Callable[[EventData], Any]]] = {}
         self.plugins: dict[str, Any] = {}
         self.tasks: list[Task[Any]] = []
         self.logger = get_logger("event_bus")
         self.logger.info("Event bus initialized")
 
-    async def publish(self, event: EventData) -> None:
-        """Publish an event to all registered handlers"""
+    async def publish(self, event: Any) -> None:
+        """Publish an event to all subscribers."""
+        event_name = get_event_name(event)
+        event_type = type(event).__name__
+
         try:
-            # Convert dict to Event if needed
-            event_obj = Event(**event) if isinstance(event, dict) else event
+            # Store the event
+            await self.event_store.store_event(event)
 
-            # Store event
-            event_id = await self.event_store.store_event(event_obj)
-            self.logger.info(
-                "Event published",
-                extra={
-                    "event_id": event_id,
-                    "event_name": get_event_name(event_obj),
-                    "event_priority": event_obj.priority,
-                    "correlation_id": event_obj.context.correlation_id,
-                    "source_plugin": event_obj.context.source_plugin,
-                },
-            )
-
-            # Get handlers for this event
-            event_name = get_event_name(event_obj)
-            handlers = self.handlers.get(event_name, [])
-            if not handlers:
-                self.logger.warning(
-                    "No handlers registered for event",
-                    extra={"event_name": event_name, "event_id": event_id},
-                )
-                return
-
-            # Process event based on priority
-            if event_obj.priority == EventPriority.CRITICAL:
-                # Process critical events immediately and wait for completion
-                await asyncio.gather(
-                    *[self._execute_handler(handler, event) for handler in handlers]
-                )
-            else:
-                # Process other events asynchronously
-                for handler in handlers:
-                    task = asyncio.create_task(self._execute_handler(handler, event))
-                    self.tasks.append(task)
-                    task.add_done_callback(lambda t: self.tasks.remove(t))
-
+            # Get subscribers for this event
+            subscribers = self._subscribers.get(event_name, [])
+            
+            # Notify subscribers
+            for subscriber in subscribers:
+                try:
+                    await subscriber(event)
+                except Exception as e:
+                    self.logger.error(
+                        "Error in subscriber",
+                        extra={
+                            "error": str(e),
+                            "subscriber": subscriber.__name__,
+                            "event_name": event_name,
+                            "event_type": event_type,
+                        },
+                        exc_info=True,
+                    )
         except Exception as e:
             self.logger.error(
                 "Error publishing event",
                 extra={
                     "error": str(e),
-                    "event_name": get_event_name(event),
+                    "event_name": event_name,
+                    "event_type": event_type,
                 },
                 exc_info=True,
             )
             raise
-
-    async def _execute_handler(
-        self, handler: Callable[[EventData], Any], event: EventData
-    ) -> None:
-        """Process a single event with error handling"""
-        try:
-            self.logger.debug(
-                "Processing event",
-                extra={
-                    "event_name": get_event_name(event),
-                    "handler": handler.__qualname__,
-                },
-            )
-            await handler(event)
-            await self.event_store.mark_processed(get_event_id(event))
-            self.logger.debug(
-                "Event processed successfully",
-                extra={
-                    "event_name": get_event_name(event),
-                    "handler": handler.__qualname__,
-                },
-            )
-        except Exception as e:
-            error_msg = str(e)
-            self.logger.error(
-                "Error processing event",
-                extra={
-                    "event_name": get_event_name(event),
-                    "handler": handler.__qualname__,
-                    "error": error_msg,
-                },
-            )
-            await self.event_store.mark_processed(
-                get_event_id(event), success=False, error=error_msg
-            )
 
     async def emit(self, event: EventData) -> None:
         """Emit an event to all registered handlers"""
@@ -176,9 +127,9 @@ class EventBus(EventBusProtocol):
         callback: Callable[[EventData], Any],
     ) -> None:
         """Subscribe a handler to an event"""
-        if event_type not in self.handlers:
-            self.handlers[event_type] = []
-        self.handlers[event_type].append(callback)
+        if event_type not in self._subscribers:
+            self._subscribers[event_type] = []
+        self._subscribers[event_type].append(callback)
         self.logger.debug(
             "Handler subscribed",
             extra={"event_name": event_type, "handler": callback.__qualname__},
@@ -190,8 +141,8 @@ class EventBus(EventBusProtocol):
         callback: Callable[[EventData], Any],
     ) -> None:
         """Unsubscribe a handler from an event"""
-        if event_type in self.handlers:
-            self.handlers[event_type].remove(callback)
+        if event_type in self._subscribers:
+            self._subscribers[event_type].remove(callback)
             self.logger.debug(
                 "Handler unsubscribed",
                 extra={"event_name": event_type, "handler": callback.__qualname__},

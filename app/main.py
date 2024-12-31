@@ -82,7 +82,7 @@ async def shutdown_event() -> None:
     """Cleanup application resources"""
     try:
         if hasattr(app.state, "plugin_manager"):
-            await app.state.plugin_manager.cleanup()
+            await app.state.plugin_manager.shutdown_plugins()
             logger.info("Plugin manager shutdown")
     except Exception as e:
         logger.error(f"Error during shutdown: {e!s}", exc_info=True)
@@ -93,9 +93,9 @@ async def shutdown_event() -> None:
 async def log_requests(
     request: Request, call_next: Callable[[Request], Response]
 ) -> Response:
-    """Middleware to log requests with detailed header information."""
+    """Middleware to log requests with detailed API endpoint information."""
     request_id = request.headers.get("X-Request-ID") or generate_request_id()
-    logger.info("Processing request", extra={"request_id": request_id})
+    start_time = datetime.utcnow()
 
     try:
         # Extract and format headers
@@ -106,33 +106,35 @@ async def log_requests(
             if header in sanitized_headers:
                 sanitized_headers[header] = "[REDACTED]"
 
-        # Log the request with headers
+        # Log the incoming request with endpoint details
         logger.info(
-            "Incoming request",
+            "API request received",
             extra={
-                "req_headers": sanitized_headers,
-                "req_method": request.method,
-                "req_path": request.url.path,
-                "req_task": "http_middleware",
-                "req_id": request_id,
+                "request": {
+                    "id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "query_params": dict(request.query_params),
+                    "headers": sanitized_headers,
+                    "client": {
+                        "host": request.client.host if request.client else "unknown",
+                        "port": request.client.port if request.client else "unknown",
+                    },
+                },
+                "endpoint": {
+                    "name": request.url.path,
+                    "operation": request.method,
+                },
             },
         )
 
-        # Get request body
-        body = await request.body()
-        try:
-            body_content = body.decode()
-            logger.debug("Request body", extra={"body": body_content})
-        except UnicodeDecodeError:
-            logger.debug("Binary request body detected")
-
-        # Process the request
-        start_time = datetime.utcnow()
+        # Process the request and measure timing
         response = await call_next(request)
         duration = (datetime.utcnow() - start_time).total_seconds()
 
-        # Add request ID to response headers
+        # Add request ID and timing to response headers
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Response-Time"] = str(duration)
 
         # Get response headers
         response_headers = dict(response.headers)
@@ -140,25 +142,40 @@ async def log_requests(
             if header in response_headers:
                 response_headers[header] = "[REDACTED]"
 
-        # Log response
+        # Log the completed request with metrics
         logger.info(
-            "Request completed",
+            "API request completed",
             extra={
-                "http": {
-                    "response": {
-                        "status_code": response.status_code,
-                        "headers": response_headers,
-                        "duration_seconds": duration,
-                    }
-                },
                 "request_id": request_id,
+                "response": {
+                    "status_code": response.status_code,
+                    "headers": response_headers,
+                },
+                "metrics": {
+                    "duration_seconds": duration,
+                    "status_code": response.status_code,
+                    "success": response.status_code < 400,
+                },
             },
         )
 
         return response
     except Exception as e:
+        duration = (datetime.utcnow() - start_time).total_seconds()
         logger.error(
-            f"Request failed: {e!s}", extra={"request_id": request_id}, exc_info=True
+            "API request failed",
+            extra={
+                "request_id": request_id,
+                "error": {
+                    "type": type(e).__name__,
+                    "message": str(e),
+                },
+                "metrics": {
+                    "duration_seconds": duration,
+                    "success": False,
+                },
+            },
+            exc_info=True,
         )
         raise
 
@@ -228,7 +245,7 @@ async def recording_started(
         recording_event = event_request.to_event()
 
         # Store in database
-        recording_event.save()
+        await recording_event.save()
 
         return {"status": "success", "recording_id": recording_event.recording_id}
     except Exception as e:
@@ -242,7 +259,6 @@ async def recording_ended(
     event_request: RecordingEndRequest,
     api_key: str = Depends(get_api_key),
 ) -> dict[str, Any]:
-    """Handle a recording ended event."""
     request_id = request.headers.get("X-Request-ID") or generate_request_id()
     logger.info(
         "Processing recording ended event",
@@ -257,7 +273,7 @@ async def recording_ended(
         recording_event = event_request.to_event()
         
         # Store in database
-        recording_event.save()
+        await recording_event.save()
         
         # Publish to event bus
         await event_bus.publish(recording_event)

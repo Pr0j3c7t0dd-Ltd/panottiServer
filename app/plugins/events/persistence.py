@@ -23,9 +23,11 @@ class EventStore:
 
     async def store_event(self, event: Event) -> str:
         """Store an event in memory and return its ID."""
-        if event.plugin_id not in self._events:
-            self._events[event.plugin_id] = []
-        self._events[event.plugin_id].append(event)
+        # Handle events without plugin_id (like RecordingEvent)
+        plugin_id = getattr(event, 'plugin_id', 'system')
+        if plugin_id not in self._events:
+            self._events[plugin_id] = []
+        self._events[plugin_id].append(event)
 
         # Initialize event status
         self._status[event.event_id] = {
@@ -38,7 +40,7 @@ class EventStore:
             "Stored event",
             extra={
                 "event_id": event.event_id,
-                "plugin_id": event.plugin_id,
+                "plugin_id": plugin_id,
                 "event_name": event.name,
             },
         )
