@@ -4,12 +4,13 @@ import os
 import uuid
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
+from typing import Any
 
 
 class JSONFormatter(logging.Formatter):
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         # Create the base log record
-        log_record = {
+        log_record: dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
@@ -57,12 +58,12 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_record)
 
 
-def generate_request_id():
+def generate_request_id() -> str:
     """Generate a unique request ID"""
     return str(uuid.uuid4())
 
 
-def setup_logging():
+def setup_logging() -> None:
     """
     Configure logging with JSON formatting, log rotation, and appropriate handlers.
     Environment variables:
@@ -127,7 +128,7 @@ if __name__ == "__main__":
     logger = get_logger(__name__)
 
     # Simulate an HTTP request with headers
-    request_headers = {
+    request_headers: dict[str, str] = {
         "Content-Type": "application/json",
         "Authorization": "Bearer token",
     }

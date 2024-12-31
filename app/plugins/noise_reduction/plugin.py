@@ -1,11 +1,12 @@
 import asyncio
 import json
-import logging
 import os
 import threading
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Final, cast
 
 import numpy as np
 from scipy import signal
@@ -15,15 +16,23 @@ from scipy.signal import butter, filtfilt
 from app.models.database import DatabaseManager
 from app.plugins.base import PluginBase
 from app.plugins.events.models import Event, EventContext, EventPriority
+from app.utils.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+# Constants for speech frequency range
+SPEECH_FREQ_MIN_HZ: Final[int] = 300
+SPEECH_FREQ_MAX_HZ: Final[int] = 3000
 
 
 class NoiseReductionPlugin(PluginBase):
     """Plugin for reducing background noise from microphone recordings"""
 
-    def __init__(self, config, event_bus=None):
-        super().__init__(config, event_bus)
+    def __init__(self, config: Any) -> None:
+        """Initialize the plugin"""
+        super().__init__(config)
+        self.output_dir = Path(config.config.get("output_dir", "data/cleaned"))
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self._executor = None
         self._processing_lock = threading.Lock()
         self._db_initialized = False
@@ -186,7 +195,7 @@ class NoiseReductionPlugin(PluginBase):
         # Apply frequency-dependent weighting
         # Emphasize frequencies in speech range (300-3000 Hz)
         speech_mask = np.ones_like(freqs)
-        speech_range = (freqs >= 300) & (freqs <= 3000)
+        speech_range = (freqs >= SPEECH_FREQ_MIN_HZ) & (freqs <= SPEECH_FREQ_MAX_HZ)
         speech_mask[speech_range] = 1.2  # Boost speech frequencies
 
         noise_profile = noise_profile * speech_mask
@@ -337,7 +346,7 @@ class NoiseReductionPlugin(PluginBase):
                 extra={"plugin": "noise_reduction", "output_file": output_file},
             )
         except Exception as e:
-            raise OSError(f"Failed to save cleaned audio: {e!s}")
+            raise OSError(f"Failed to save cleaned audio: {e!s}") from e
 
     async def handle_recording_ended(self, event: Event) -> None:
         """Handle recording_ended events"""
@@ -528,3 +537,180 @@ class NoiseReductionPlugin(PluginBase):
                 "noise_reduced_audio_path": output_file,
             },
         )
+
+    def _process_audio(
+        self, input_file: str, output_file: str
+    ) -> tuple[float, float, float]:
+        """Process audio file to reduce noise"""
+        # Read the WAV file
+        sample_rate, audio_data = wavfile.read(input_file)
+
+        # Convert to float32 for processing
+        audio_data = audio_data.astype(np.float32)
+
+        # Normalize audio
+        audio_data = audio_data / np.max(np.abs(audio_data))
+
+        # Apply noise reduction
+        cleaned_audio = self._reduce_noise(audio_data, sample_rate)
+
+        # Save the cleaned audio
+        self._save_audio(cleaned_audio, sample_rate, output_file)
+
+        # Calculate metrics
+        snr = self._calculate_snr(audio_data, cleaned_audio)
+        noise_reduction = self._calculate_noise_reduction(audio_data, cleaned_audio)
+        speech_clarity = self._calculate_speech_clarity(cleaned_audio, sample_rate)
+
+        return snr, noise_reduction, speech_clarity
+
+    def _reduce_noise(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+        """Apply noise reduction to audio data"""
+        # Get noise profile from first 1000 samples
+        noise_profile = self._estimate_noise_profile(audio_data[:1000])
+
+        # Apply spectral subtraction
+        cleaned_audio = self._spectral_subtraction(
+            audio_data, noise_profile, sample_rate
+        )
+
+        return cleaned_audio
+
+    def _estimate_noise_profile(self, noise_data: np.ndarray) -> np.ndarray:
+        """Estimate noise profile from noise samples"""
+        # Calculate power spectrum of noise
+        noise_spectrum = np.abs(np.fft.rfft(noise_data))
+        return noise_spectrum
+
+    def _spectral_subtraction(
+        self, audio_data: np.ndarray, noise_profile: np.ndarray, sample_rate: int
+    ) -> np.ndarray:
+        """Apply spectral subtraction"""
+        # Get frequency components
+        freqs = np.fft.rfftfreq(len(audio_data), 1 / sample_rate)
+
+        # Apply frequency-dependent weighting
+        speech_mask = np.ones_like(freqs)
+        speech_range = (freqs >= SPEECH_FREQ_MIN_HZ) & (freqs <= SPEECH_FREQ_MAX_HZ)
+        speech_mask[speech_range] = 1.2  # Boost speech frequencies
+
+        noise_profile = noise_profile * speech_mask
+
+        # Apply spectral subtraction
+        audio_spectrum = np.fft.rfft(audio_data)
+        magnitude_spectrum = np.abs(audio_spectrum)
+        phase_spectrum = np.angle(audio_spectrum)
+
+        # Subtract noise profile
+        cleaned_magnitude = np.maximum(
+            magnitude_spectrum - noise_profile, 0.01 * magnitude_spectrum
+        )
+
+        # Reconstruct signal
+        cleaned_spectrum = cleaned_magnitude * np.exp(1j * phase_spectrum)
+        cleaned_audio = np.fft.irfft(cleaned_spectrum)
+
+        return cleaned_audio
+
+    def _save_audio(
+        self, audio_data: np.ndarray, sample_rate: int, output_file: str
+    ) -> None:
+        """Save audio data to WAV file"""
+        try:
+            # Normalize audio
+            audio_data = audio_data / np.max(np.abs(audio_data))
+
+            # Convert to 16-bit PCM
+            audio_data = (audio_data * 32767).astype(np.int16)
+
+            # Save to file
+            wavfile.write(output_file, sample_rate, audio_data)
+        except Exception as e:
+            raise OSError(f"Failed to save cleaned audio: {e!s}") from e
+
+    def _calculate_snr(self, original: np.ndarray, cleaned: np.ndarray) -> float:
+        """Calculate Signal-to-Noise Ratio"""
+        noise = original - cleaned
+        signal_power = np.mean(cleaned**2)
+        noise_power = np.mean(noise**2)
+        snr = 10 * np.log10(signal_power / noise_power)
+        return float(snr)
+
+    def _calculate_noise_reduction(
+        self, original: np.ndarray, cleaned: np.ndarray
+    ) -> float:
+        """Calculate noise reduction in dB"""
+        original_power = np.mean(original**2)
+        cleaned_power = np.mean(cleaned**2)
+        reduction = 10 * np.log10(original_power / cleaned_power)
+        return float(reduction)
+
+    def _calculate_speech_clarity(
+        self, audio_data: np.ndarray, sample_rate: int
+    ) -> float:
+        """Calculate speech clarity metric"""
+        # Get frequency components
+        freqs = np.fft.rfftfreq(len(audio_data), 1 / sample_rate)
+        spectrum = np.abs(np.fft.rfft(audio_data))
+
+        # Calculate energy in speech range
+        speech_range = (freqs >= SPEECH_FREQ_MIN_HZ) & (freqs <= SPEECH_FREQ_MAX_HZ)
+        speech_energy = np.sum(spectrum[speech_range] ** 2)
+        total_energy = np.sum(spectrum**2)
+
+        # Calculate clarity as ratio of speech energy to total energy
+        clarity = speech_energy / total_energy
+        return float(clarity)
+
+    async def handle_event(self, event: Event) -> None:
+        """Handle recording events"""
+        if event.event_type != "recording_ended":
+            return
+
+        recording_id = event.data.get("recording_id")
+        if not recording_id:
+            logger.warning("No recording ID in event")
+            return
+
+        input_file = event.data.get("file_path")
+        if not input_file:
+            logger.warning("No input file path in event")
+            return
+
+        try:
+            # Generate output filename
+            output_file = str(self.output_dir / f"{recording_id}_cleaned.wav")
+
+            # Process audio
+            snr, noise_reduction, clarity = self._process_audio(
+                cast(str, input_file), output_file
+            )
+
+            # Log metrics
+            logger.info(
+                "Audio processing complete",
+                extra={
+                    "recording_id": recording_id,
+                    "metrics": {
+                        "snr": snr,
+                        "noise_reduction": noise_reduction,
+                        "clarity": clarity,
+                    },
+                },
+            )
+
+            # Emit completion event
+            await self._emit_completion_event(
+                cast(str, recording_id),
+                output_file,
+                snr,
+                noise_reduction,
+                clarity,
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to process audio: {e!s}",
+                extra={"recording_id": recording_id},
+                exc_info=True,
+            )

@@ -45,7 +45,7 @@ class EventStore:
         return event.event_id
 
     async def mark_processed(
-        self, event_id: str, success: bool = True, error: str = None
+        self, event_id: str, success: bool = True, error: str | None = None
     ) -> None:
         """Mark an event as processed or failed."""
         if event_id not in self._status:

@@ -1,26 +1,27 @@
-import importlib.util
+import importlib
 from pathlib import Path
+from typing import Any
 
 import yaml
 
+from app.plugins.base import PluginBase, PluginConfig
 from app.utils.logging_config import get_logger
-
-from .base import PluginBase, PluginConfig
 
 logger = get_logger(__name__)
 
 
 class PluginManager:
-    """Manages plugin lifecycle and dependencies"""
+    """Manages plugin lifecycle and event routing"""
 
-    def __init__(self, plugin_dir: str, event_bus=None):
+    def __init__(self, plugin_dir: str, event_bus: Any = None) -> None:
+        """Initialize the plugin manager with the plugin directory"""
         self.plugin_dir = Path(plugin_dir)
         self.plugins: dict[str, PluginBase] = {}
         self.configs: dict[str, PluginConfig] = {}
         self.event_bus = event_bus
         logger.info("Plugin manager initialized", extra={"plugin_dir": str(plugin_dir)})
 
-    async def discover_plugins(self) -> None:
+    async def discover_plugins(self) -> list[PluginConfig]:
         """Discover and load plugin configurations"""
         logger.info(
             "Starting plugin discovery", extra={"plugin_dir": str(self.plugin_dir)}
@@ -32,6 +33,7 @@ class PluginManager:
             extra={"config_files": [str(f) for f in config_files]},
         )
 
+        configs: list[PluginConfig] = []
         for config_file in config_files:
             try:
                 plugin_dir = config_file.parent
@@ -51,6 +53,7 @@ class PluginManager:
 
                 config = PluginConfig(**config_data)
                 self.configs[config.name] = config
+                configs.append(config)
 
                 if not config.enabled:
                     logger.info(
@@ -88,13 +91,12 @@ class PluginManager:
 
                     # Get plugin class from the module
                     plugin_class = getattr(module, "Plugin", None)
+                    plugin_name = plugin_class.__name__ if plugin_class else None
                     logger.debug(
-                        f"Found plugin class {plugin_class.__name__ if plugin_class else None}",
+                        f"Found plugin class {plugin_name}",
                         extra={
                             "plugin_name": config.name,
-                            "plugin_class": (
-                                plugin_class.__name__ if plugin_class else None
-                            ),
+                            "plugin_class": plugin_name,
                             "plugin_module": module.__name__,
                         },
                     )
@@ -115,7 +117,7 @@ class PluginManager:
                     "Verifying plugin class",
                     extra={
                         "plugin_name": config.name,
-                        "plugin_class": plugin_class.__name__ if plugin_class else None,
+                        "plugin_class": plugin_name,
                     },
                 )
 
@@ -124,9 +126,7 @@ class PluginManager:
                         "Invalid plugin class",
                         extra={
                             "plugin_name": config.name,
-                            "plugin_class": (
-                                plugin_class.__name__ if plugin_class else None
-                            ),
+                            "plugin_class": plugin_name,
                         },
                     )
                     continue
@@ -151,6 +151,8 @@ class PluginManager:
                     "Error loading plugin",
                     extra={"config_file": str(config_file), "error": str(e)},
                 )
+
+        return configs
 
     async def initialize_plugins(self) -> None:
         """Initialize all plugins in dependency order"""

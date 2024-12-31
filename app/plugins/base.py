@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from ..utils import get_logger, setup_logging
 
 # Initialize logging when the module is imported
-setup_logging()
+logger = setup_logging()
 
 
 class PluginConfig(BaseModel):
@@ -16,13 +16,13 @@ class PluginConfig(BaseModel):
     version: str
     enabled: bool = True
     dependencies: list[str] = []
-    config: dict[str, Any] = {}
+    config: dict[str, Any] | None = {}
 
 
 class PluginBase(ABC):
     """Base class for all plugins"""
 
-    def __init__(self, config: PluginConfig, event_bus=None):
+    def __init__(self, config: PluginConfig, event_bus=None) -> None:
         self.config = config
         self.logger = get_logger(f"plugin.{config.name}")
         self._initialized = False
