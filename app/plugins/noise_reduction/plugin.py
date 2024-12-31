@@ -32,6 +32,32 @@ class NoiseReductionPlugin(PluginBase):
         """Get plugin name."""
         return "noise_reduction"
 
+    async def _initialize(self) -> None:
+        """Initialize the plugin.
+
+        This method is called during plugin startup to perform any necessary
+        initialization.
+        """
+        logger.info(
+            "Initializing noise reduction plugin",
+            extra={
+                "plugin_name": self.name,
+                "plugin_version": self.config.version,
+                "output_dir": str(self._output_dir),
+            },
+        )
+        await self._register_handlers()
+
+    async def _shutdown(self) -> None:
+        """Clean up plugin resources.
+
+        This method is called during plugin shutdown to perform cleanup.
+        """
+        logger.info(
+            "Shutting down noise reduction plugin",
+            extra={"plugin_name": self.name},
+        )
+
     async def _register_handlers(self) -> None:
         """Register event handlers."""
         await self.subscribe("recording.ended", self._handle_recording_ended)
