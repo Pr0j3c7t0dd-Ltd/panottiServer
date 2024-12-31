@@ -124,6 +124,10 @@ class EventBus:
                 event_id, success=False, error=error_msg
             )
 
+    async def emit(self, event: Event) -> None:
+        # Adding a type hint to test editing
+        pass
+
     def subscribe(self, event_name: str, handler: EventHandler) -> None:
         """Subscribe to an event"""
         if event_name not in self.handlers:

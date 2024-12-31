@@ -3,14 +3,16 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+from sqlite3 import Connection, Cursor
 
 
 class DatabaseManager:
-    _instance = None
+    _instance: Optional['DatabaseManager'] = None
     _lock = threading.Lock()
     _local = threading.local()
 
-    def __init__(self):
+    def __init__(self) -> None:
         if DatabaseManager._instance is not None:
             raise RuntimeError("Use DatabaseManager.get_instance() instead")
 
@@ -24,23 +26,23 @@ class DatabaseManager:
         self.db_path = str(data_dir / "panotti.db")
         self._init_db()
 
-    def __enter__(self):
+    def __enter__(self) -> Connection:
         return self.get_connection()
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Optional[Any]) -> None:
         if hasattr(self._local, "connection"):
             self._local.connection.close()
             del self._local.connection
 
     @classmethod
-    def get_instance(cls):
+    def get_instance(cls) -> 'DatabaseManager':
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         """Initialize the database schema"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
@@ -72,7 +74,7 @@ class DatabaseManager:
             # Add any other tables as needed
             conn.commit()
 
-    def get_active_recordings(self):
+    def get_active_recordings(self) -> Dict[str, str]:
         """Get all active recordings (started but not ended)"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -91,13 +93,14 @@ class DatabaseManager:
             )
             return {row["recording_id"]: row["timestamp"] for row in cursor.fetchall()}
 
-    def get_connection(self):
+    def get_connection(self, name: str = "default") -> Connection:
+        """Get a database connection by name."""
         if not hasattr(self._local, "connection"):
             self._local.connection = sqlite3.connect(self.db_path)
             self._local.connection.row_factory = sqlite3.Row
         return self._local.connection
 
-    def close_connections(self):
+    def close_connections(self) -> None:
         """Close all connections - useful for cleanup"""
         if hasattr(self._local, "connection"):
             self._local.connection.close()
