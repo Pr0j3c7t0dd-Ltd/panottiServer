@@ -4,12 +4,18 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ..plugins.events.bus import EventBus
-from ..plugins.events.models import Event
-from ..utils import get_logger
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
+from app.plugins.events.bus import EventBus
+from app.utils.logging_config import get_logger
 
-# Type alias for event data
-EventData = Event | dict[str, Any]
+# Define a type for all possible event types
+EventType = (
+    dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest
+)
 
 # Initialize logging when the module is imported
 logger = get_logger(__name__)
@@ -104,25 +110,25 @@ class PluginBase(ABC):
         return value
 
     async def subscribe(
-        self, event_type: str, callback: Callable[[EventData], Any]
+        self, event_type: str, callback: Callable[[EventType], Any]
     ) -> None:
         """Subscribe to events safely."""
         if self.event_bus is not None:
             await self.event_bus.subscribe(event_type, callback)
 
     async def unsubscribe(
-        self, event_type: str, callback: Callable[[EventData], Any]
+        self, event_type: str, callback: Callable[[EventType], Any]
     ) -> None:
         """Unsubscribe from events safely."""
         if self.event_bus is not None:
             await self.event_bus.unsubscribe(event_type, callback)
 
-    async def publish(self, event: EventData) -> None:
+    async def publish(self, event: EventType) -> None:
         """Publish an event safely."""
         if self.event_bus is not None:
             await self.event_bus.publish(event)
 
-    async def emit(self, event: EventData) -> None:
+    async def emit(self, event: EventType) -> None:
         """Emit an event safely."""
         if self.event_bus is not None:
             await self.event_bus.emit(event)
@@ -135,13 +141,14 @@ class PluginBase(ABC):
             self.logger.warning(f"Cannot emit event {name}: no event bus available")
             return
 
-        event = Event.create(
-            name=name,
-            data=data,
-            correlation_id=correlation_id or "unknown",
-            source_plugin=self.name,
-        )
-        await self.event_bus.emit(event)
+        # Convert the event to a dict type that EventBus accepts
+        event_data = {
+            "name": name,
+            "data": data,
+            "correlation_id": correlation_id or "unknown",
+            "source_plugin": self.name,
+        }
+        await self.event_bus.emit(event_data)
 
     @abstractmethod
     async def _initialize(self) -> None:

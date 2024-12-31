@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -8,11 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from sqlite3 import Connection
-from typing import Any
+from typing import Any, TypeVar, cast
+
+T = TypeVar("T")
 
 
 class DatabaseManager:
-    _instance: "DatabaseManager | None" = None
+    _instance: DatabaseManager | None = None
     _lock = threading.Lock()
     _local = threading.local()
     _executor = ThreadPoolExecutor(max_workers=4)
@@ -45,7 +49,7 @@ class DatabaseManager:
             del self._local.connection
 
     @classmethod
-    def get_instance(cls) -> "DatabaseManager":
+    def get_instance(cls) -> DatabaseManager:
         """Get the singleton instance."""
         if cls._instance is None:
             with cls._lock:
@@ -92,22 +96,28 @@ class DatabaseManager:
 
             conn.commit()
 
-    def get_connection(self, name: str = "default") -> Connection:
-        """Get a database connection by name."""
+    def get_connection(self, name: str = "default") -> sqlite3.Connection:
+        """Get a database connection by name.
+
+        Args:
+            name: Connection name identifier, defaults to "default"
+
+        Returns:
+            sqlite3.Connection: SQLite database connection object
+        """
         if not hasattr(self._local, "connection"):
-            self._local.connection = sqlite3.connect(
-                self.db_path, check_same_thread=False
-            )
+            connection = sqlite3.connect(self.db_path, check_same_thread=False)
             # Enable foreign keys
-            self._local.connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA foreign_keys = ON")
             # Row factory for dictionary-like access
-            self._local.connection.row_factory = sqlite3.Row
-        return self._local.connection
+            connection.row_factory = sqlite3.Row
+            self._local.connection = connection
+        return cast(sqlite3.Connection, self._local.connection)
 
     async def execute(self, sql: str, parameters: tuple = ()) -> None:
         """Execute a SQL query asynchronously."""
 
-        def _execute():
+        def _execute() -> None:
             conn = self.get_connection()
             conn.execute(sql, parameters)
             conn.commit()
@@ -119,7 +129,7 @@ class DatabaseManager:
     ) -> list[sqlite3.Row]:
         """Execute a SQL query and fetch all results asynchronously."""
 
-        def _execute_fetchall():
+        def _execute_fetchall() -> list[sqlite3.Row]:
             conn = self.get_connection()
             cursor = conn.execute(sql, parameters)
             return cursor.fetchall()
@@ -131,7 +141,7 @@ class DatabaseManager:
     async def insert(self, sql: str, parameters: tuple = ()) -> None:
         """Insert a record into the database."""
 
-        def _insert():
+        def _insert() -> None:
             conn = self.get_connection()
             conn.execute(sql, parameters)
             conn.commit()
@@ -139,12 +149,21 @@ class DatabaseManager:
         await asyncio.get_event_loop().run_in_executor(self._executor, _insert)
 
     async def fetch_one(self, sql: str, parameters: tuple = ()) -> sqlite3.Row | None:
-        """Fetch a single row from the database."""
+        """Fetch a single row from the database.
 
-        def _fetch_one():
+        Args:
+            sql: SQL query to execute
+            parameters: Query parameters
+
+        Returns:
+            sqlite3.Row | None: Single row result or None if no results
+        """
+
+        def _fetch_one() -> sqlite3.Row | None:
             conn = self.get_connection()
             cursor = conn.execute(sql, parameters)
-            return cursor.fetchone()
+            result = cursor.fetchone()
+            return cast(sqlite3.Row | None, result)
 
         return await asyncio.get_event_loop().run_in_executor(
             self._executor, _fetch_one
@@ -153,7 +172,7 @@ class DatabaseManager:
     async def fetch_all(self, sql: str, parameters: tuple = ()) -> list[sqlite3.Row]:
         """Fetch all records from the database."""
 
-        def _fetch_all():
+        def _fetch_all() -> list[sqlite3.Row]:
             conn = self.get_connection()
             cursor = conn.execute(sql, parameters)
             return cursor.fetchall()
@@ -165,7 +184,7 @@ class DatabaseManager:
     async def commit(self) -> None:
         """Commit the current transaction asynchronously."""
 
-        def _commit():
+        def _commit() -> None:
             conn = self.get_connection()
             conn.commit()
 
@@ -174,7 +193,7 @@ class DatabaseManager:
     async def close(self) -> None:
         """Close the database connection asynchronously."""
 
-        def _close():
+        def _close() -> None:
             if hasattr(self._local, "connection"):
                 self._local.connection.close()
                 del self._local.connection

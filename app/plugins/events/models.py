@@ -1,13 +1,15 @@
-import uuid
+"""Event system models."""
+
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, cast
+from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class EventPriority(str, Enum):
-    """Event priority levels"""
+    """Event priority levels."""
 
     LOW = "low"
     NORMAL = "normal"
@@ -16,26 +18,60 @@ class EventPriority(str, Enum):
 
 
 class EventContext(BaseModel):
-    """Context information for an event"""
+    """Context information for an event."""
 
-    correlation_id: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    correlation_id: str = Field(default_factory=lambda: str(uuid4()))
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     source_plugin: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class Event(BaseModel):
-    """Base event model"""
+    """Base event model."""
 
-    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    plugin_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    data: dict[str, Any]
-    context: EventContext
+    event_id: str = Field(default_factory=lambda: str(uuid4()))
+    plugin_id: str = Field(default="system")
+    name: str = Field(...)  # Required field
+    data: dict[str, Any] = Field(default_factory=dict)
+    context: EventContext = Field(default_factory=EventContext)
     priority: EventPriority = Field(default=EventPriority.NORMAL)
     payload: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @field_validator("event_id", mode="before")
+    @classmethod
+    def validate_event_id(cls, value: Any) -> str:
+        """Ensure event has an ID."""
+        if value is None:
+            return str(uuid4())
+        return str(value)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, value: Any) -> str:
+        """Ensure event has a name."""
+        if value is None:
+            return cls.__name__.lower()
+        return str(value)
+
+    @field_validator("plugin_id", mode="before")
+    @classmethod
+    def validate_plugin_id(cls, value: Any) -> str:
+        """Ensure event has a plugin ID."""
+        if value is None:
+            return "system"
+        return str(value)
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def validate_context(cls, value: Any) -> EventContext:
+        """Ensure event has a context."""
+        if value is None:
+            return EventContext()
+        if isinstance(value, dict):
+            return EventContext(**value)
+        return cast(EventContext, value)
 
     @classmethod
     def create(
@@ -58,23 +94,35 @@ class Event(BaseModel):
 
 
 def get_event_name(event: Any) -> str:
-    """Get event name from event object."""
+    """Get event name from event object.
+
+    Args:
+        event: Any object that might contain event information
+
+    Returns:
+        str: The event name or 'unknown' if not found
+    """
     if hasattr(event, "event"):
-        return event.event
+        return str(event.event)
     elif isinstance(event, dict):
-        return event.get("event", "unknown")
-    else:
-        return "unknown"
+        return str(event.get("event", "unknown"))
+    return "unknown"
 
 
 def get_event_id(event: Any) -> str:
-    """Get event ID from event object."""
+    """Get event ID from event object.
+
+    Args:
+        event: Any object that might contain event ID information
+
+    Returns:
+        str: The event ID or 'unknown' if not found
+    """
     if hasattr(event, "recording_id"):
-        return event.recording_id
+        return str(event.recording_id)
     elif isinstance(event, dict):
-        return event.get("recording_id", "unknown")
-    else:
-        return "unknown"
+        return str(event.get("recording_id", "unknown"))
+    return "unknown"
 
 
 class EventError(BaseModel):

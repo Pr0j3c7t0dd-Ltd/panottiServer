@@ -1,172 +1,132 @@
 """Event bus implementation."""
 
 import asyncio
-import uuid
-from asyncio import Task
-from collections.abc import Callable
-from typing import Any, overload
+from collections import defaultdict
+from collections.abc import Callable, Coroutine
+from typing import Any
 
-from app.core.events import EventBus as EventBusProtocol
-from app.core.events import EventData
 from app.models.recording.events import (
     RecordingEndRequest,
     RecordingEvent,
     RecordingStartRequest,
 )
-from app.plugins.events.models import Event
-from app.plugins.events.persistence import EventStore
 from app.utils.logging_config import get_logger
 
+logger = get_logger(__name__)
 
-@overload
-def get_event_name(event: Event) -> str: ...
-
-
-@overload
-def get_event_name(
-    event: RecordingEvent | RecordingStartRequest | RecordingEndRequest,
-) -> str: ...
+# Type alias for event handler functions
+EventHandler = Callable[
+    [dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest],
+    Coroutine[Any, Any, None],
+]
 
 
-@overload
-def get_event_name(event: dict[str, Any]) -> str: ...
+class EventBus:
+    """Event bus for handling event subscriptions and publishing."""
 
+    def __init__(self) -> None:
+        """Initialize event bus."""
+        self._subscribers: defaultdict[str, list[EventHandler]] = defaultdict(list)
+        self._lock = asyncio.Lock()
+        logger.info("Event bus initialized")
 
-def get_event_name(event: Event | EventData) -> str:
-    """Get event name from different event types"""
-    if isinstance(event, Event):
-        return event.name
-    elif isinstance(
-        event, RecordingEvent | RecordingStartRequest | RecordingEndRequest
-    ):
-        return event.event
-    elif isinstance(event, dict):
-        return str(event.get("name", "unknown"))
-    return "unknown"
+    async def subscribe(self, event_name: str, handler: EventHandler) -> None:
+        """Subscribe to an event.
 
+        Args:
+            event_name: Name of the event to subscribe to
+            handler: Async function to handle the event
+        """
+        async with self._lock:
+            if handler not in self._subscribers[event_name]:
+                self._subscribers[event_name].append(handler)
+                logger.info(
+                    "Subscribing to event",
+                    extra={
+                        "event_name": event_name,
+                        "subscriber": handler.__name__,
+                    },
+                )
 
-@overload
-def get_event_id(event: Event) -> str: ...
+    async def unsubscribe(self, event_name: str, handler: EventHandler) -> None:
+        """Unsubscribe from an event.
 
+        Args:
+            event_name: Name of the event to unsubscribe from
+            handler: Handler function to remove
+        """
+        async with self._lock:
+            if handler in self._subscribers[event_name]:
+                self._subscribers[event_name].remove(handler)
+                logger.info(
+                    "Unsubscribed from event",
+                    extra={
+                        "event_name": event_name,
+                        "subscriber": handler.__name__,
+                    },
+                )
 
-@overload
-def get_event_id(
-    event: RecordingEvent | RecordingStartRequest | RecordingEndRequest,
-) -> str: ...
-
-
-@overload
-def get_event_id(event: dict[str, Any]) -> str: ...
-
-
-def get_event_id(event: Event | EventData) -> str:
-    """Get event ID from different event types"""
-    if isinstance(event, Event):
-        return event.event_id
-    elif isinstance(
-        event, RecordingEvent | RecordingStartRequest | RecordingEndRequest
-    ):
-        return event.recording_id
-    elif isinstance(event, dict):
-        return str(event.get("event_id", str(uuid.uuid4())))
-    return str(uuid.uuid4())
-
-
-class EventBus(EventBusProtocol):
-    """Concrete implementation of the event bus."""
-
-    def __init__(self, event_store: EventStore):
-        self.event_store = event_store
-        self._subscribers: dict[str, list[Callable[[EventData], Any]]] = {}
-        self.plugins: dict[str, Any] = {}
-        self.tasks: list[Task[Any]] = []
-        self.logger = get_logger("event_bus")
-        self.logger.info("Event bus initialized")
-
-    async def publish(self, event: Any) -> None:
-        """Publish an event to all subscribers."""
-        event_name = get_event_name(event)
-        event_type = type(event).__name__
-
-        try:
-            # Store the event
-            await self.event_store.store_event(event)
-
-            # Get subscribers for this event
-            subscribers = self._subscribers.get(event_name, [])
-
-            # Notify subscribers
-            self.logger.debug(
-                "Publishing event",
-                extra={
-                    "event_name": event_name,
-                    "event_type": event_type,
-                    "subscriber_count": len(subscribers),
-                },
-            )
-            for subscriber in subscribers:
-                try:
-                    await subscriber(event)
-                except Exception as e:
-                    self.logger.error(
-                        "Error in subscriber",
-                        extra={
-                            "error": str(e),
-                            "subscriber": subscriber.__name__,
-                            "event_name": event_name,
-                            "event_type": event_type,
-                        },
-                        exc_info=True,
-                    )
-        except Exception as e:
-            self.logger.error(
-                "Error publishing event",
-                extra={
-                    "error": str(e),
-                    "event_name": event_name,
-                    "event_type": event_type,
-                },
-                exc_info=True,
-            )
-            raise
-
-    async def emit(self, event: EventData) -> None:
-        """Emit an event to all registered handlers"""
-        await self.publish(event)
-
-    async def subscribe(
+    async def publish(
         self,
-        event_type: str,
-        callback: Callable[[EventData], Any],
+        event: (
+            dict[str, Any]
+            | RecordingEvent
+            | RecordingStartRequest
+            | RecordingEndRequest
+        ),
     ) -> None:
-        """Subscribe a handler to an event"""
-        self.logger.info(
-            "Subscribing to event",
-            extra={
-                "event_name": event_type,
-                "subscriber": callback.__name__,
-            },
+        """Publish an event to all subscribers.
+
+        Args:
+            event: Event data to publish
+        """
+        event_name = (
+            event.name
+            if hasattr(event, "name")
+            else (event.event if hasattr(event, "event") else event.get("name"))
         )
-        if event_type not in self._subscribers:
-            self._subscribers[event_type] = []
-        self._subscribers[event_type].append(callback)
+        if not event_name:
+            logger.error("Event has no name", extra={"event": str(event)})
+            return
 
-    async def unsubscribe(
-        self,
-        event_type: str,
-        callback: Callable[[EventData], Any],
-    ) -> None:
-        """Unsubscribe a handler from an event"""
-        if event_type in self._subscribers:
-            self._subscribers[event_type].remove(callback)
-            self.logger.debug(
-                "Handler unsubscribed",
-                extra={"event_name": event_type, "handler": callback.__qualname__},
+        handlers = self._subscribers.get(event_name, [])
+        if not handlers:
+            logger.debug(
+                "No subscribers for event",
+                extra={"event_name": event_name},
             )
+            return
 
-    async def wait_for_pending_events(self) -> None:
-        """Wait for all pending event processing to complete"""
-        if self.tasks:
-            self.logger.debug(f"Waiting for {len(self.tasks)} pending events")
-            await asyncio.gather(*self.tasks)
-            self.logger.debug("All pending events processed")
+        tasks = []
+        for handler in handlers:
+            try:
+                task = asyncio.create_task(handler(event))
+                tasks.append(task)
+            except Exception as e:
+                logger.error(
+                    "Error creating task for event handler",
+                    extra={
+                        "event_name": event_name,
+                        "handler": handler.__name__,
+                        "error": str(e),
+                    },
+                )
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def emit(
+        self,
+        event: (
+            dict[str, Any]
+            | RecordingEvent
+            | RecordingStartRequest
+            | RecordingEndRequest
+        ),
+    ) -> None:
+        """Emit an event (alias for publish).
+
+        Args:
+            event: Event data to emit
+        """
+        await self.publish(event)

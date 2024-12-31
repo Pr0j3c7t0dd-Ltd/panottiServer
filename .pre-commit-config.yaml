@@ -32,13 +32,18 @@ repos:
                 .*\.mdx
             )$
 
--   repo: https://github.com/psf/black
-    rev: 24.10.0
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.9
     hooks:
-    -   id: black
-        language_version: python3
+    -   id: ruff
         types: [python]
-        args: [--line-length=88]
+        args: [--fix]
+        exclude: |
+            (?x)^(
+                .*\.md
+            )$
+    -   id: ruff-format
+        types: [python]
         exclude: |
             (?x)^(
                 .*\.md
@@ -49,68 +54,37 @@ repos:
     hooks:
     -   id: isort
         types: [python]
-        args: ["--profile", "black", "--filter-files"]
-        exclude: |
-            (?x)^(
-                .*\.md
-            )$
-
--   repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.8.4
-    hooks:
-    -   id: ruff
-        types: [python]
-        args: [--fix, --exit-non-zero-on-fix]
-        exclude: |
-            (?x)^(
-                .*\.md
-            )$
-    -   id: ruff-format
-        types: [python]
-        args: [--check]
-        exclude: |
-            (?x)^(
-                .*\.md
-            )$
 
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
+    rev: v1.8.0
     hooks:
     -   id: mypy
         types: [python]
         additional_dependencies:
-        - types-PyYAML
         - types-requests
-        - types-python-jose
-        - pydantic>=2.5.3
-        - typing-extensions>=4.9.0
-        args: [--ignore-missing-imports, --install-types, --non-interactive]
+        - types-PyYAML
+        - types-setuptools
+        - types-toml
+        - types-ujson
+        - pydantic>=2.0.0
         exclude: |
             (?x)^(
-                .*\.md
+                .*test.*|
+                .*setup.py
             )$
 
 -   repo: https://github.com/PyCQA/bandit
-    rev: 1.8.0
+    rev: 1.7.6
     hooks:
     -   id: bandit
-        types: [python]
-        args: ["-ll", "-i"]
-        exclude: |
-            (?x)^(
-                .*\.md
-            )$
+        args: ["-c", "pyproject.toml"]
+        additional_dependencies: ["bandit[toml]"]
 
 -   repo: https://github.com/asottile/pyupgrade
-    rev: v3.19.1
+    rev: v3.15.0
     hooks:
     -   id: pyupgrade
-        types: [python]
-        args: [--py312-plus]
-        exclude: |
-            (?x)^(
-                .*\.md
-            )$
+        args: [--py39-plus]
 
 default_language_version:
     python: python3.12

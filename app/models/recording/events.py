@@ -4,9 +4,9 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from app.models.database import DatabaseManager
 from app.plugins.events.models import EventContext
@@ -25,7 +25,7 @@ ISO_FORMATS = [
 
 
 def parse_timestamp(timestamp_str: str) -> datetime:
-    """Parse timestamp string in various formats to datetime object."""
+    """Parse timestamp string into datetime object."""
     # Try compact format first (YYYYMMDDHHMMSS)
     if len(timestamp_str) == COMPACT_TIMESTAMP_LENGTH and timestamp_str.isdigit():
         try:
@@ -40,12 +40,6 @@ def parse_timestamp(timestamp_str: str) -> datetime:
             return datetime.strptime(clean_ts, fmt)
         except ValueError:
             continue
-
-    # Try parsing as numeric timestamp
-    try:
-        return datetime.fromtimestamp(float(timestamp_str))
-    except ValueError as err:
-        raise ValueError(f"Unable to parse timestamp: {timestamp_str}") from err
 
     # Try parsing as numeric timestamp
     try:
@@ -68,7 +62,10 @@ class EventMetadata(BaseModel):
 
     def to_db_format(self) -> dict[str, Any]:
         """Convert event to database format."""
-        return json.loads(self.model_dump_json())
+        return dict(json.loads(self.model_dump_json()))
+
+
+T = TypeVar("T")
 
 
 class RecordingEvent(BaseModel):
@@ -88,28 +85,41 @@ class RecordingEvent(BaseModel):
         default_factory=lambda: EventContext(correlation_id=str(uuid.uuid4()))
     )
 
-    @field_validator("name", mode="before")
+    @field_validator("name")
     @classmethod
-    def set_name_from_event(cls, v: str, values: dict[str, Any]) -> str:
+    def set_name_from_event(cls, v: str, info: ValidationInfo) -> str:
         """Set the name field based on the event type."""
-        if not v and "event" in values:
-            return values["event"]
+        if not v and "event" in info.data:
+            return str(info.data["event"])
         return v
 
-    @field_validator("data", mode="before")
+    @field_validator("data")
     @classmethod
-    def set_data(cls, v: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
+    def set_data(cls, v: dict[str, Any] | None, info: ValidationInfo) -> dict[str, Any]:
         """Set the data field with relevant event information."""
-        if not v:
-            data = {
-                "recording_id": values.get("recording_id", ""),
-                "recording_timestamp": values.get("recording_timestamp", ""),
-                "system_audio_path": values.get("system_audio_path"),
-                "microphone_audio_path": values.get("microphone_audio_path"),
+        if v is None or not v:
+            data: dict[str, Any] = {
+                "recording_id": info.data.get("recording_id", ""),
+                "recording_timestamp": info.data.get("recording_timestamp", ""),
+                "system_audio_path": info.data.get("system_audio_path"),
+                "microphone_audio_path": info.data.get("microphone_audio_path"),
             }
-            if values.get("metadata"):
-                data["metadata"] = values["metadata"]
+            if info.data.get("metadata"):
+                data["metadata"] = info.data["metadata"]
             return data
+        return v
+
+    @field_validator("recording_timestamp")
+    @classmethod
+    def set_recording_timestamp(cls, v: str | None, info: ValidationInfo) -> str:
+        """Use timestamp field if recording_timestamp is not provided."""
+        if v is None:
+            timestamp = info.data.get("recording_timestamp") or info.data.get(
+                "timestamp"
+            )
+            if timestamp is None:
+                raise ValueError("recording_timestamp is required")
+            return str(timestamp)
         return v
 
     def _get_metadata_field(self, field: str) -> Any:
@@ -191,23 +201,24 @@ class RecordingStartRequest(BaseModel):
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
 
-    @field_validator("recording_timestamp", mode="before")
-    # pylint: disable=no-self-argument  # Pydantic validators use cls instead of self
-    # ruff: noqa: N805
+    @field_validator("recording_timestamp")
     @classmethod
-    def set_recording_timestamp(cls, value: str | None, info: Any) -> str:
+    def set_recording_timestamp(cls, value: str | None, info: ValidationInfo) -> str:
         """Use timestamp field if recording_timestamp is not provided."""
-        data = info.data
-        if value is None and data.get("timestamp"):
-            return RecordingEvent.from_timestamp(data["timestamp"])
+        if value is None and "timestamp" in info.data:
+            return RecordingEvent.from_timestamp(info.data["timestamp"])
         elif value:
             return RecordingEvent.from_timestamp(value)
         return datetime.utcnow().isoformat()
 
     def to_event(self) -> RecordingEvent:
         """Convert request to RecordingEvent."""
+        timestamp = self.recording_timestamp or self.timestamp
+        if timestamp is None:
+            timestamp = datetime.utcnow().isoformat()
+
         return RecordingEvent(
-            recording_timestamp=self.recording_timestamp or self.timestamp,
+            recording_timestamp=timestamp,
             recording_id=self.recording_id,
             system_audio_path=self.system_audio_path,
             microphone_audio_path=self.microphone_audio_path,
@@ -216,7 +227,7 @@ class RecordingStartRequest(BaseModel):
             name=self.event,  # Set name to event type
             data={  # Populate data field
                 "recording_id": self.recording_id,
-                "recording_timestamp": self.recording_timestamp or self.timestamp,
+                "recording_timestamp": timestamp,
                 "system_audio_path": self.system_audio_path,
                 "microphone_audio_path": self.microphone_audio_path,
                 "metadata": self.metadata,
@@ -235,29 +246,36 @@ class RecordingEndRequest(BaseModel):
     event: Literal["Recording Ended"] = Field(default="Recording Ended")
     metadata: dict[str, Any]
 
-    @field_validator("recording_timestamp", mode="before")
-    # pylint: disable=no-self-argument  # Pydantic validators use cls instead of self
-    # ruff: noqa: N805
-    def set_recording_timestamp(cls, value: str | None, info: Any) -> str | None:
+    @field_validator("recording_timestamp")
+    @classmethod
+    def set_recording_timestamp(cls, value: str | None, info: ValidationInfo) -> str:
         """Use timestamp field if recording_timestamp is not provided."""
-        data = info.data
-        if value is None and "timestamp" in data:
-            return data["timestamp"]
-        return value
+        if value is None and "timestamp" in info.data:
+            timestamp = info.data["timestamp"]
+            return (
+                str(timestamp)
+                if timestamp is not None
+                else datetime.utcnow().isoformat()
+            )
+        return str(value) if value is not None else datetime.utcnow().isoformat()
 
     def to_event(self) -> RecordingEvent:
         """Convert request to RecordingEvent."""
+        timestamp = self.recording_timestamp or self.timestamp
+        if timestamp is None:
+            timestamp = datetime.utcnow().isoformat()
+
         return RecordingEvent(
-            recording_timestamp=self.recording_timestamp or self.timestamp,
+            recording_timestamp=timestamp,
             recording_id=self.recording_id,
             system_audio_path=self.system_audio_path,
             microphone_audio_path=self.microphone_audio_path,
             event=self.event,
             metadata=self.metadata,
-            name=self.event,  # Set name to event type
-            data={  # Populate data field
+            name=self.event,
+            data={
                 "recording_id": self.recording_id,
-                "recording_timestamp": self.recording_timestamp or self.timestamp,
+                "recording_timestamp": timestamp,
                 "system_audio_path": self.system_audio_path,
                 "microphone_audio_path": self.microphone_audio_path,
                 "metadata": self.metadata,

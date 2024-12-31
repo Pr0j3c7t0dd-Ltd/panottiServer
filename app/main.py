@@ -31,7 +31,7 @@ PORT = int(os.getenv("API_PORT", "8001"))
 
 # Initialize event system
 event_store: EventStore = EventStore()
-event_bus = bus.EventBus(event_store)
+event_bus = bus.EventBus()
 plugin_manager = PluginManager("app/plugins", event_bus=event_bus)
 
 app = FastAPI(
