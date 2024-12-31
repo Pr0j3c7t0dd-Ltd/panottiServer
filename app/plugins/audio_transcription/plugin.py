@@ -458,10 +458,34 @@ class AudioTranscriptionPlugin(PluginBase):
             event = Event(
                 name="transcription.completed",
                 payload={
+                    # Recording identifiers
                     "recording_id": recording_id,
-                    "output_files": output_files,
-                    "merged_output": merged_output,
-                    "original_event": original_event
+                    "recording_timestamp": original_event.get("recording_timestamp"),
+                    
+                    # Audio file paths
+                    "raw_system_audio_path": original_event.get("system_audio_path"),
+                    "raw_microphone_audio_path": original_event.get("microphone_audio_path"),
+                    "noise_reduced_audio_path": original_event.get("microphone_audio_path"),
+                    
+                    # Transcript file paths
+                    "system_transcript_path": output_files[0] if len(output_files) > 0 else None,
+                    "microphone_transcript_path": output_files[1] if len(output_files) > 1 else None,
+                    "merged_transcript_path": merged_output,
+                    
+                    # Meeting metadata
+                    "meeting_title": original_event.get("metadata", {}).get("eventTitle"),
+                    "meeting_provider": original_event.get("metadata", {}).get("eventProvider"),
+                    "meeting_provider_id": original_event.get("metadata", {}).get("eventProviderId"),
+                    "meeting_attendees": original_event.get("metadata", {}).get("eventAttendees", []),
+                    "meeting_start_time": original_event.get("metadata", {}).get("recordingStarted"),
+                    "meeting_end_time": original_event.get("metadata", {}).get("recordingEnded"),
+                    
+                    # Audio source labels
+                    "system_audio_label": original_event.get("metadata", {}).get("systemLabel", "Meeting Participants"),
+                    "microphone_audio_label": original_event.get("metadata", {}).get("microphoneLabel", "Speaker"),
+                    
+                    # Processing status
+                    "transcription_status": "completed"
                 },
                 context=EventContext(
                     correlation_id=recording_id,
@@ -486,10 +510,30 @@ class AudioTranscriptionPlugin(PluginBase):
             error_event = Event(
                 name="transcription.completed",
                 payload={
+                    # Recording identifiers
                     "recording_id": recording_id,
-                    "status": "error",
-                    "error_message": str(e),
-                    "original_event": original_event
+                    "recording_timestamp": original_event.get("recording_timestamp"),
+                    
+                    # Audio file paths
+                    "raw_system_audio_path": original_event.get("system_audio_path"),
+                    "raw_microphone_audio_path": original_event.get("microphone_audio_path"),
+                    "noise_reduced_audio_path": original_event.get("microphone_audio_path"),
+                    
+                    # Meeting metadata
+                    "meeting_title": original_event.get("metadata", {}).get("eventTitle"),
+                    "meeting_provider": original_event.get("metadata", {}).get("eventProvider"),
+                    "meeting_provider_id": original_event.get("metadata", {}).get("eventProviderId"),
+                    "meeting_attendees": original_event.get("metadata", {}).get("eventAttendees", []),
+                    "meeting_start_time": original_event.get("metadata", {}).get("recordingStarted"),
+                    "meeting_end_time": original_event.get("metadata", {}).get("recordingEnded"),
+                    
+                    # Audio source labels
+                    "system_audio_label": original_event.get("metadata", {}).get("systemLabel", "Meeting Participants"),
+                    "microphone_audio_label": original_event.get("metadata", {}).get("microphoneLabel", "Speaker"),
+                    
+                    # Processing status and error
+                    "transcription_status": "error",
+                    "error_message": str(e)
                 },
                 context=EventContext(
                     correlation_id=original_event.get("correlation_id") if original_event else None,

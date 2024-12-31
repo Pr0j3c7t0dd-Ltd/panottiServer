@@ -72,61 +72,57 @@ class MeetingNotesPlugin(PluginBase):
     async def handle_transcription_completed(self, event: Event) -> None:
         """Handle transcription completed event"""
         try:
-            # Extract data from event payload
-            recording_id = event.payload.get("recording_id")
-            merged_output = event.payload.get("merged_output")
+            # Extract data from flattened event payload
+            recording_id = event.payload["recording_id"]
+            merged_transcript_path = event.payload["merged_transcript_path"]
+            transcription_status = event.payload["transcription_status"]
             
-            if not merged_output or not os.path.exists(merged_output):
-                raise ValueError(f"Invalid merged transcript path: {merged_output}")
+            if transcription_status == "error":
+                error_message = event.payload.get("error_message", "Unknown error in transcription")
+                self.logger.error(
+                    "Transcription failed, skipping meeting notes generation",
+                    extra={
+                        "recording_id": recording_id,
+                        "error": error_message
+                    }
+                )
+                return
+            
+            if not merged_transcript_path or not os.path.exists(merged_transcript_path):
+                raise ValueError(f"Invalid merged transcript path: {merged_transcript_path}")
 
             self.logger.info(
                 "Processing transcript",
                 extra={
                     "recording_id": recording_id,
                     "correlation_id": event.context.correlation_id,
-                    "input_path": merged_output
+                    "input_path": merged_transcript_path,
+                    "meeting_title": event.payload.get("meeting_title"),
+                    "meeting_provider": event.payload.get("meeting_provider")
                 }
             )
 
             # Create task record
-            self._update_task_created(recording_id, merged_output)
+            self._update_task_created(recording_id, merged_transcript_path)
 
             # Process in thread pool
             self._executor.submit(
                 self._process_transcript,
                 recording_id,
-                merged_output,
+                merged_transcript_path,
                 event
             )
 
         except Exception as e:
-            error_event = Event(
-                type="meeting_notes.error",
-                priority=EventPriority.HIGH,
-                context=EventContext(
-                    recording_id=recording_id,
-                    correlation_id=event.context.correlation_id,
-                    source_plugin="meeting_notes"
-                ),
-                payload={
+            self.logger.error(
+                "Failed to handle transcription completion",
+                extra={
+                    "recording_id": recording_id if 'recording_id' in locals() else None,
                     "error": str(e),
-                    "recording_id": recording_id
+                    "event_payload": event.payload
                 }
             )
-            
-            asyncio.run(self.event_bus.emit(error_event))
-
-            self.logger.error(
-                "Error handling transcription completed event",
-                extra={
-                    "plugin": "meeting_notes",
-                    "error": str(e),
-                    "event_id": event.id,
-                    "correlation_id": event.context.correlation_id if hasattr(event, 'context') else None,
-                    "payload": event.payload
-                },
-                exc_info=True
-            )
+            raise
 
     def _update_task_created(self, recording_id: str, input_path: str) -> None:
         """Create task record in database"""
