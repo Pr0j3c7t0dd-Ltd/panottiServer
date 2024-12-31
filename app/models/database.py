@@ -81,6 +81,23 @@ class DatabaseManager:
                     microphone_audio_path TEXT,
                     metadata TEXT,  -- JSON object with event metadata
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (
+                        recording_id,
+                        event_type,
+                        event_timestamp
+                    )  -- Composite unique key
+                )
+                """
+            )
+
+            # Create recordings table to track all recordings
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS recordings (
+                    recording_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,  -- 'active', 'completed', etc.
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -100,7 +117,7 @@ class DatabaseManager:
                     metadata TEXT,  -- JSON object for plugin-specific metadata
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (recording_id) REFERENCES recording_events(recording_id)
+                    FOREIGN KEY (recording_id) REFERENCES recordings(recording_id)
                 )
                 """
             )
