@@ -1,29 +1,32 @@
 """Noise reduction plugin optimized for speech audio."""
 
+import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from scipy.io import wavfile
-from scipy.signal import istft, stft
+from scipy.signal import butter, filtfilt, istft, stft
 
-from app.models.database import DatabaseManager, get_db_async
-from app.models.recording.events import (
-    RecordingEndRequest,
-    RecordingEvent,
-    RecordingStartRequest,
-)
+from app.models.database import DatabaseManager
 from app.plugins.base import EventType, PluginBase, PluginConfig
 from app.plugins.events.bus import EventBus as PluginEventBus
-from app.utils.logging_config import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
+
+class AudioPaths(NamedTuple):
+    """Container for audio file paths."""
+
+    recording_id: str
+    system_audio: str | None
+    mic_audio: str | None
 
 
 class NoiseReductionPlugin(PluginBase):
-    """Plugin for reducing noise in speech audio recordings
-    while preserving voice quality."""
+    """Plugin for reducing noise in speech audio recordings."""
 
     def __init__(
         self, config: PluginConfig, event_bus: PluginEventBus | None = None
@@ -74,13 +77,219 @@ class NoiseReductionPlugin(PluginBase):
             },
         )
 
+    def _apply_highpass_filter(
+        self, data: np.ndarray, cutoff_freq: float, sample_rate: int, order: int = 3
+    ) -> np.ndarray:
+        """Apply a Butterworth highpass filter to the audio data."""
+        nyquist = sample_rate * 0.5
+        normalized_cutoff = cutoff_freq / nyquist
+        b, a = butter(order, normalized_cutoff, btype="high", analog=False)
+        return filtfilt(b, a, data)
+
+    def _compute_noise_profile(
+        self,
+        noise_data: np.ndarray,
+        sample_rate: int,
+        nperseg: int,
+        noverlap: int,
+        smooth_factor: int,
+    ) -> np.ndarray:
+        """Compute smoothed noise profile from noise sample."""
+        _, _, noise_spec = stft(
+            noise_data,
+            fs=sample_rate,
+            nperseg=nperseg,
+            noverlap=noverlap,
+            boundary="even",
+            window="hann",
+        )
+
+        # Compute power spectrum and apply smoothing
+        noise_power = np.mean(np.abs(noise_spec) ** 2, axis=1)
+        kernel = np.ones(smooth_factor) / smooth_factor
+        noise_power = np.convolve(noise_power, kernel, mode="same")
+
+        return noise_power[:, np.newaxis]
+
+    def _wiener_filter(
+        self, spec: np.ndarray, noise_power: np.ndarray, alpha: float = 1.5
+    ) -> np.ndarray:
+        """Apply speech-optimized Wiener filter."""
+        # Estimate signal power
+        sig_power = np.abs(spec) ** 2
+
+        # Calculate Wiener filter with speech-preserving modifications
+        wiener_gain = 1 - (alpha * noise_power / (sig_power + 1e-10))
+
+        # Softer noise reduction curve
+        wiener_gain = 0.5 * (1 + np.tanh(2 * wiener_gain))
+
+        # Ensure minimum gain to preserve speech
+        wiener_gain = np.maximum(wiener_gain, 0.2)
+
+        return spec * wiener_gain
+
+    def _reduce_noise_worker(
+        self,
+        mic_file: str,
+        noise_file: str,
+        output_file: str,
+    ) -> None:
+        """Worker function for speech-optimized noise reduction processing."""
+        import warnings
+
+        from scipy.io.wavfile import WavFileWarning
+
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=WavFileWarning)
+                mic_rate, mic_data = wavfile.read(mic_file)
+                noise_rate, noise_data = wavfile.read(noise_file)
+
+            # Ensure mono audio
+            if len(mic_data.shape) > 1:
+                mic_data = mic_data[:, 0]
+            if len(noise_data.shape) > 1:
+                noise_data = noise_data[:, 0]
+
+            # Convert to float32 and normalize
+            mic_data = mic_data.astype(np.float32)
+            noise_data = noise_data.astype(np.float32)
+            mic_data = mic_data / np.max(np.abs(mic_data))
+            noise_data = noise_data / np.max(np.abs(noise_data))
+
+            # Apply gentle highpass filter
+            mic_data = self._apply_highpass_filter(
+                mic_data,
+                self._highpass_cutoff,
+                mic_rate,
+                order=self._highpass_order,
+            )
+            noise_data = self._apply_highpass_filter(
+                noise_data,
+                self._highpass_cutoff,
+                noise_rate,
+                order=self._highpass_order,
+            )
+
+            # STFT parameters optimized for speech
+            nperseg = self._stft_window_size
+            noverlap = nperseg * self._stft_overlap_percent // 100
+
+            # Speech-optimized noise profile computation
+            noise_profile = self._compute_noise_profile(
+                noise_data,
+                noise_rate,
+                nperseg=nperseg,
+                noverlap=noverlap,
+                smooth_factor=self._noise_smooth_factor,
+            )
+
+            # Compute STFT of microphone signal
+            _, _, mic_spec = stft(
+                mic_data,
+                fs=mic_rate,
+                nperseg=nperseg,
+                noverlap=noverlap,
+                boundary="even",
+                window="hann",
+            )
+
+            # Apply gentler Wiener filter
+            filtered_spec = self._wiener_filter(
+                mic_spec,
+                noise_profile,
+                alpha=self._wiener_alpha,
+            )
+
+            # Apply speech-preserving spectral floor
+            filtered_spec = np.maximum(
+                filtered_spec,
+                self._min_magnitude_threshold * np.max(np.abs(filtered_spec)),
+            )
+
+            # Inverse STFT with same parameters
+            _, cleaned_data = istft(
+                filtered_spec,
+                fs=mic_rate,
+                nperseg=nperseg,
+                noverlap=noverlap,
+                boundary="even",
+                window="hann",
+            )
+
+            # Normalize while preserving dynamic range
+            cleaned_data = cleaned_data / np.max(np.abs(cleaned_data))
+
+            # Apply subtle compression to preserve speech
+            cleaned_data = np.sign(cleaned_data) * np.power(np.abs(cleaned_data), 0.9)
+
+            # Convert to int16 with dithering for better speech quality
+            cleaned_data = (cleaned_data * 32767).astype(np.float32)
+            cleaned_data += np.random.normal(0, 0.5, cleaned_data.shape)
+            cleaned_data = np.clip(cleaned_data, -32767, 32767).astype(np.int16)
+
+            # Write output file
+            wavfile.write(output_file, mic_rate, cleaned_data)
+
+        except Exception as e:
+            logger.error(
+                "Error in noise reduction worker",
+                extra={
+                    "error": str(e),
+                    "mic_file": mic_file,
+                    "noise_file": noise_file,
+                    "output_file": output_file,
+                },
+                exc_info=True,
+            )
+            raise
+
+    def _extract_paths(self, event: EventType) -> AudioPaths:
+        """Extract audio paths from event.
+
+        Args:
+            event: Event containing audio paths
+
+        Returns:
+            AudioPaths containing recording_id and audio paths
+        """
+        recording_id = str(uuid.uuid4())
+
+        if isinstance(event, dict):
+            recording_id = event.get("recording_id", recording_id)
+            system_audio = event.get("system_audio_path")
+            mic_audio = event.get("microphone_audio_path")
+        else:
+            recording_id = event.recording_id
+            system_audio = event.system_audio_path
+            mic_audio = event.microphone_audio_path
+
+        return AudioPaths(recording_id, system_audio, mic_audio)
+
+    def _get_input_paths(self, paths: AudioPaths) -> list[str]:
+        """Get list of valid input paths.
+
+        Args:
+            paths: AudioPaths containing potential input paths
+
+        Returns:
+            List of valid file paths as strings
+        """
+        input_paths: list[str] = []
+        if paths.system_audio:
+            input_paths.append(str(Path(paths.system_audio)))
+        if paths.mic_audio:
+            input_paths.append(str(Path(paths.mic_audio)))
+        return input_paths
+
     async def _initialize(self) -> None:
         """Initialize plugin-specific resources and subscribe to events."""
         if self.event_bus is None:
             return
 
         # Initialize database connection
-        self.db = await get_db_async()
+        self.db = DatabaseManager()
 
         # Subscribe to relevant events
         self.logger.info("Subscribing to recording events")
@@ -117,118 +326,33 @@ class NoiseReductionPlugin(PluginBase):
 
         self.logger.info("Noise reduction plugin shutdown complete")
 
-    def _apply_highpass_filter(
-        self, data: np.ndarray, cutoff_freq: float, sample_rate: int, order: int = 3
-    ) -> np.ndarray:
-        """Apply a Butterworth highpass filter to the audio data.
-
-        Args:
-            data: Input audio data as numpy array
-            cutoff_freq: Cutoff frequency in Hz
-            sample_rate: Audio sample rate in Hz
-            order: Filter order, controls steepness of cutoff
-
-        Returns:
-            Filtered audio data as numpy array
-        """
-        from scipy.signal import butter, filtfilt
-
-        nyquist = sample_rate * 0.5
-        normalized_cutoff = cutoff_freq / nyquist
-        b, a = butter(order, normalized_cutoff, btype="high", analog=False)
-        return filtfilt(b, a, data)
-
-    def _reduce_noise_worker(
-        self, mic_file: str, output_file: str, noise_file: str | None = None
-    ) -> None:
-        """Worker function for speech-optimized noise reduction processing."""
-        import warnings
-
-        from scipy.io.wavfile import WavFileWarning
-
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", WavFileWarning)
-                sample_rate, mic_data = wavfile.read(mic_file)
-
-            # Apply highpass filter to remove low frequency noise
-            mic_data = self._apply_highpass_filter(
-                mic_data,
-                self._highpass_cutoff,
-                sample_rate,
-                self._highpass_order,
-            )
-
-            # If noise file provided, use it for noise profile
-            if noise_file:
-                _, noise_data = wavfile.read(noise_file)
-                noise_profile = self._compute_noise_profile(noise_data)
-            else:
-                # Use first 1 second of audio as noise profile if no noise file
-                noise_profile = self._compute_noise_profile(
-                    mic_data[: min(len(mic_data), sample_rate)]
-                )
-
-            # Perform noise reduction
-            cleaned_data = self._reduce_noise(mic_data, noise_profile)
-
-            # Save output
-            wavfile.write(output_file, sample_rate, cleaned_data.astype(np.int16))
-
-        except Exception as e:
-            logger.error(
-                "Error in noise reduction worker",
-                extra={
-                    "error": str(e),
-                    "input_file": mic_file,
-                    "output_file": output_file,
-                },
-            )
-            raise
-
     async def _handle_recording_ended(self, event: EventType) -> None:
         """Handle recording ended event by processing audio for noise reduction.
 
         Args:
             event: Recording ended event containing recording_id and file paths
         """
-        # Extract recording ID and validate event
-        recording_id = (
-            event.recording_id
-            if isinstance(
-                event, RecordingEvent | RecordingStartRequest | RecordingEndRequest
-            )
-            else event["recording_id"]
-            if isinstance(event, dict)
-            else None
-        )
-        if not recording_id:
+        # Extract paths from event
+        paths = self._extract_paths(event)
+        if not paths.recording_id:
             self.logger.error("No recording ID in event")
             return
 
         # Get input file paths
-        input_paths = (
-            [event.system_audio_path, event.microphone_audio_path]
-            if isinstance(
-                event, RecordingEvent | RecordingStartRequest | RecordingEndRequest
-            )
-            else event.get("file_paths", [])
-            if isinstance(event, dict)
-            else []
-        )
-        input_paths = [p for p in input_paths if p]  # Filter out None values
-
+        input_paths = self._get_input_paths(paths)
         if not input_paths:
             self.logger.error(
-                "No input files to process", extra={"recording_id": recording_id}
+                "No valid audio paths found",
+                extra={"recording_id": paths.recording_id},
             )
             return
 
         # Create processing task
-        task_id = await self._create_task(recording_id, input_paths)
+        task_id = await self._create_task(paths.recording_id, input_paths)
         if not task_id:
             self.logger.error(
-                "Failed to create processing task", extra={"recording_id": recording_id}
+                "Failed to create processing task",
+                extra={"recording_id": paths.recording_id},
             )
             return
 
@@ -236,11 +360,12 @@ class NoiseReductionPlugin(PluginBase):
         try:
             futures = []
             for input_path in input_paths:
-                output_name = f"{recording_id}_{Path(input_path).name}"
+                output_name = f"{paths.recording_id}_{Path(input_path).name}"
                 output_path = str(self._output_dir / output_name)
                 future = self._thread_pool.submit(
                     self._reduce_noise_worker,
                     str(input_path),
+                    str(input_path),  # Use input file as noise file
                     output_path,
                 )
                 futures.append((future, output_path))
@@ -255,7 +380,7 @@ class NoiseReductionPlugin(PluginBase):
                     self.logger.error(
                         "Error processing file",
                         extra={
-                            "recording_id": recording_id,
+                            "recording_id": paths.recording_id,
                             "error": str(e),
                             "output_path": output_path,
                         },
@@ -267,9 +392,9 @@ class NoiseReductionPlugin(PluginBase):
                 await self.emit_event(
                     "noise_reduction.completed",
                     {
-                        "recording_id": recording_id,
-                        "input_paths": input_paths,
-                        "output_paths": output_paths,
+                        "recording_id": paths.recording_id,
+                        "input_paths": [str(p) for p in input_paths],
+                        "output_paths": [str(p) for p in output_paths],
                     },
                 )
             else:
@@ -283,7 +408,7 @@ class NoiseReductionPlugin(PluginBase):
             self.logger.error(
                 "Error during noise reduction",
                 extra={
-                    "recording_id": recording_id,
+                    "recording_id": paths.recording_id,
                     "error": str(e),
                 },
             )
@@ -382,121 +507,3 @@ class NoiseReductionPlugin(PluginBase):
                     "error": str(e),
                 },
             )
-
-    def _compute_noise_profile(
-        self,
-        noise_data: np.ndarray,
-        sample_rate: int = 16000,
-        nperseg: int = 2048,
-        noverlap: int | None = None,
-        smooth_factor: int = 4,
-    ) -> np.ndarray:
-        """Compute noise profile from noise sample using spectral averaging.
-
-        Args:
-            noise_data: Noise audio data as numpy array
-            sample_rate: Audio sample rate in Hz
-            nperseg: Length of each STFT segment
-            noverlap: Number of points to overlap between segments
-            smooth_factor: Factor for spectral smoothing
-
-        Returns:
-            Noise power spectrum estimate as numpy array
-        """
-        # Compute STFT of noise
-        _, _, noise_spec = stft(
-            noise_data,
-            fs=sample_rate,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            boundary="even",
-            window="hann",
-        )
-
-        # Compute power spectrum
-        noise_power = np.mean(np.abs(noise_spec) ** 2, axis=1)
-
-        # Apply spectral smoothing
-        if smooth_factor > 1:
-            kernel = np.ones(smooth_factor) / smooth_factor
-            noise_power = np.convolve(noise_power, kernel, mode="same")
-
-        # Expand to match spectrogram shape
-        noise_profile = np.tile(noise_power[:, np.newaxis], (1, noise_spec.shape[1]))
-
-        return noise_profile
-
-    def _reduce_noise(
-        self,
-        mic_data: np.ndarray,
-        noise_profile: np.ndarray,
-        sample_rate: int = 16000,
-        nperseg: int = 2048,
-        noverlap: int | None = None,
-    ) -> np.ndarray:
-        """Perform noise reduction using Wiener filter.
-
-        Args:
-            mic_data: Microphone audio data as numpy array
-            noise_profile: Noise power spectrum estimate as numpy array
-            sample_rate: Audio sample rate in Hz
-            nperseg: Length of each STFT segment
-            noverlap: Number of points to overlap between segments
-
-        Returns:
-            Cleaned audio data as numpy array
-        """
-        # Compute STFT of microphone signal
-        _, _, mic_spec = stft(
-            mic_data,
-            fs=sample_rate,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            boundary="even",
-            window="hann",
-        )
-
-        # Apply Wiener filter
-        filtered_spec = self._wiener_filter(mic_spec, noise_profile)
-
-        # Apply speech-preserving spectral floor
-        filtered_spec = np.maximum(
-            filtered_spec,
-            self._min_magnitude_threshold * np.max(np.abs(filtered_spec)),
-        )
-
-        # Inverse STFT with same parameters
-        _, cleaned_data = istft(
-            filtered_spec,
-            fs=sample_rate,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            boundary="even",
-            window="hann",
-        )
-
-        # Normalize while preserving dynamic range
-        cleaned_data = cleaned_data / np.max(np.abs(cleaned_data))
-
-        # Apply subtle compression to preserve speech
-        cleaned_data = np.sign(cleaned_data) * np.power(np.abs(cleaned_data), 0.9)
-
-        return cleaned_data
-
-    def _wiener_filter(
-        self, spec: np.ndarray, noise_power: np.ndarray, alpha: float = 1.5
-    ) -> np.ndarray:
-        """Apply speech-optimized Wiener filter."""
-        # Estimate signal power
-        sig_power = np.abs(spec) ** 2
-
-        # Calculate Wiener filter with speech-preserving modifications
-        wiener_gain = 1 - (alpha * noise_power / (sig_power + 1e-10))
-
-        # Softer noise reduction curve
-        wiener_gain = 0.5 * (1 + np.tanh(2 * wiener_gain))
-
-        # Ensure minimum gain to preserve speech
-        wiener_gain = np.maximum(wiener_gain, 0.2)
-
-        return spec * wiener_gain
