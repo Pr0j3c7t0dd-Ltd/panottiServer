@@ -17,7 +17,7 @@ class EventProcessingStatus:
 class EventStore:
     """A simple in-memory event store for persisting and retrieving events."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._events: dict[str, list[Event]] = {}
         self._status: dict[str, dict] = {}  # event_id -> {status, timestamp, error}
 

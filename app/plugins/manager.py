@@ -163,7 +163,7 @@ class PluginManager:
             name: set(plugin.config.dependencies)
             for name, plugin in self.plugins.items()
         }
-        initialized = set()
+        initialized: set[str] = set()
 
         while graph:
             # Find plugins with no dependencies

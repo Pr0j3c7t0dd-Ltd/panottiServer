@@ -3,7 +3,7 @@ import sqlite3
 from app.models.database import DatabaseManager
 
 
-def check_schema():
+def check_schema() -> None:
     db = DatabaseManager.get_instance()
 
     with sqlite3.connect(db.db_path) as conn:
@@ -11,7 +11,7 @@ def check_schema():
 
         # Get table info
         cursor.execute("PRAGMA table_info(events)")
-        columns = cursor.fetchall()
+        columns: list[tuple] = cursor.fetchall()
 
         print("Events table schema:")
         for col in columns:

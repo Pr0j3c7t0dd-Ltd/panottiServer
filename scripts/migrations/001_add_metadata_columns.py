@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 
-def migrate():
+def migrate() -> None:
     # Get the database path
     root_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     db_path = str(root_dir / "data" / "panotti.db")

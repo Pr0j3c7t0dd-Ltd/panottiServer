@@ -1,14 +1,15 @@
 import os
 import sqlite3
 import threading
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from sqlite3 import Connection
-from typing import Any, Optional
+from typing import Any
 
 
 class DatabaseManager:
-    _instance: Optional["DatabaseManager"] = None
+    _instance: "DatabaseManager | None" = None
     _lock = threading.Lock()
     _local = threading.local()
 
@@ -31,8 +32,8 @@ class DatabaseManager:
 
     def __exit__(
         self,
-        exc_type: type | None,
-        exc_val: Exception | None,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
         exc_tb: Any | None,
     ) -> None:
         if hasattr(self._local, "connection"):
@@ -101,9 +102,13 @@ class DatabaseManager:
     def get_connection(self, name: str = "default") -> Connection:
         """Get a database connection by name."""
         if not hasattr(self._local, "connection"):
-            self._local.connection = sqlite3.connect(self.db_path)
-            self._local.connection.row_factory = sqlite3.Row
-        return self._local.connection
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            self._local.connection = conn
+        # Cast to Connection type to satisfy mypy
+        conn = self._local.connection
+        assert isinstance(conn, Connection)
+        return conn
 
     def close_connections(self) -> None:
         """Close all connections - useful for cleanup"""
@@ -113,10 +118,11 @@ class DatabaseManager:
 
 
 @contextmanager
-def get_db():
+def get_db() -> Generator[Connection, None, None]:
+    """Get a database connection from the manager."""
     db = DatabaseManager.get_instance()
     try:
-        yield db
+        yield db.get_connection()
     finally:
         if hasattr(db._local, "connection"):
             db._local.connection.close()

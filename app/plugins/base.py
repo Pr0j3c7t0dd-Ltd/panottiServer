@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel
 
-from ..utils import get_logger, setup_logging
+from ..models.event_bus import EventBus, EventData
+from ..utils import get_logger
 
 # Initialize logging when the module is imported
-logger = setup_logging()
+logger = get_logger(__name__)
 
 
 class PluginConfig(BaseModel):
@@ -16,13 +18,13 @@ class PluginConfig(BaseModel):
     version: str
     enabled: bool = True
     dependencies: list[str] = []
-    config: dict[str, Any] | None = {}
+    config: dict[str, Any] | None = None
 
 
 class PluginBase(ABC):
     """Base class for all plugins"""
 
-    def __init__(self, config: PluginConfig, event_bus=None) -> None:
+    def __init__(self, config: PluginConfig, event_bus: EventBus | None = None) -> None:
         self.config = config
         self.logger = get_logger(f"plugin.{config.name}")
         self._initialized = False
@@ -83,6 +85,41 @@ class PluginBase(ABC):
             )
             raise
 
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Get configuration value"""
+        if self.config.config is None:
+            return default
+        value = self.config.config.get(key, default)
+        self.logger.debug(
+            "Retrieved plugin config",
+            extra={"plugin_name": self.name, "config_key": key, "config_value": value},
+        )
+        return value
+
+    async def subscribe(
+        self, event_type: str, callback: Callable[[EventData], Any]
+    ) -> None:
+        """Subscribe to events safely."""
+        if self.event_bus is not None:
+            await self.event_bus.subscribe(event_type, callback)
+
+    async def unsubscribe(
+        self, event_type: str, callback: Callable[[EventData], Any]
+    ) -> None:
+        """Unsubscribe from events safely."""
+        if self.event_bus is not None:
+            await self.event_bus.unsubscribe(event_type, callback)
+
+    async def publish(self, event: EventData) -> None:
+        """Publish an event safely."""
+        if self.event_bus is not None:
+            await self.event_bus.publish(event)
+
+    async def emit(self, event: EventData) -> None:
+        """Emit an event safely."""
+        if self.event_bus is not None:
+            await self.event_bus.emit(event)
+
     @abstractmethod
     async def _initialize(self) -> None:
         """Custom initialization logic to be implemented by plugins"""
@@ -92,12 +129,3 @@ class PluginBase(ABC):
     async def _shutdown(self) -> None:
         """Custom shutdown logic to be implemented by plugins"""
         pass
-
-    def get_config(self, key: str, default: Any = None) -> Any:
-        """Get configuration value"""
-        value = self.config.config.get(key, default)
-        self.logger.debug(
-            "Retrieved plugin config",
-            extra={"plugin_name": self.name, "config_key": key, "config_value": value},
-        )
-        return value

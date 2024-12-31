@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def main():
+def main() -> None:
     # Get port from environment
     port = int(os.getenv("API_PORT", "8001"))
 

@@ -1,4 +1,5 @@
 .vscode
+output.txt
 *.DS_Store
 Thumbs.db
 logs/

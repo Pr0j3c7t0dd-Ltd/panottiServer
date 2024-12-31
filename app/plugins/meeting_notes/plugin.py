@@ -1,4 +1,3 @@
-import asyncio
 import os
 import re
 import threading
@@ -9,7 +8,7 @@ from typing import Any, TypedDict, cast
 import requests
 
 from app.plugins.base import PluginBase
-from app.plugins.events.models import Event, EventContext, EventPriority
+from app.plugins.events.models import Event
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -170,82 +169,67 @@ Participants: [Extract speaker names from transcript]
             logger.error(f"Failed to generate meeting notes: {e}", exc_info=True)
             return f"Error generating meeting notes: {e}"
 
-    def _process_transcript(
-        self, recording_id: str, transcript_text: str, event: Event
+    async def _process_transcript(
+        self, recording_id: str, transcript_text: str, original_event: Event
     ) -> None:
         """Process transcript and generate meeting notes"""
         try:
-            notes = self._generate_meeting_notes(transcript_text)
-            if notes:
-                output_file = self.output_dir / f"{recording_id}_notes.md"
-                output_file.write_text(notes)
+            # Generate meeting notes synchronously since the API call is blocking
+            meeting_notes = self._generate_meeting_notes(transcript_text)
 
-                completion_event = Event(
-                    type="meeting_notes.completed",
-                    priority=EventPriority.NORMAL,
-                    context=EventContext(
-                        recording_id=recording_id,
-                        correlation_id=(
-                            event.context.correlation_id if event.context else None
-                        ),
-                    ),
-                    data={
-                        "output_path": str(output_file),
-                        "recording_id": recording_id,
-                    },
-                )
+            # Save to file
+            output_file = self.output_dir / f"{recording_id}_notes.txt"
+            output_file.write_text(meeting_notes)
 
-                asyncio.run(self.event_bus.emit(completion_event))
+            # Emit completion event
+            if self.event_bus:
+                event_data: dict[str, Any] = {
+                    "type": "meeting_notes_complete",
+                    "recording_id": recording_id,
+                    "output_path": str(output_file),
+                }
+                await self.event_bus.emit(event_data)
 
         except Exception as e:
-            error_event = Event(
-                type="meeting_notes.error",
-                priority=EventPriority.HIGH,
-                context=EventContext(
-                    recording_id=recording_id,
-                    correlation_id=(
-                        event.context.correlation_id if event.context else None
-                    ),
-                ),
-                data={
-                    "error": str(e),
+            if self.event_bus:
+                error_data: dict[str, Any] = {
+                    "type": "meeting_notes_error",
                     "recording_id": recording_id,
-                },
-            )
-
-            asyncio.run(self.event_bus.emit(error_event))
+                    "error": str(e),
+                }
+                await self.event_bus.emit(error_data)
             logger.error(f"Failed to process transcript: {e}", exc_info=True)
 
     async def handle_event(self, event: Event) -> None:
         """Handle an event"""
-        if event.event_type != "transcript_ready":
+        if not isinstance(event, Event) or event.name != "transcript_ready":
             return
 
-        transcript_text = event.data.get("transcript_text") if event.data else None
+        transcript_text = (
+            event.payload.get("transcript_text") if event.payload else None
+        )
         if not transcript_text:
             logger.warning("No transcript text in event")
             return
 
         recording_id = (
-            event.data.get("recording_id", "unknown") if event.data else "unknown"
+            event.payload.get("recording_id", "unknown") if event.payload else "unknown"
         )
 
         try:
-            if not self._executor:
-                logger.error("ThreadPoolExecutor not initialized")
-                return
-
-            self._executor.submit(
-                self._process_transcript, recording_id, transcript_text, event
-            )
-
+            if self._executor:
+                await self._process_transcript(recording_id, transcript_text, event)
         except Exception as e:
             logger.error(f"Failed to handle transcript event: {e}", exc_info=True)
 
     async def handle_transcription_completed(self, event: Event) -> None:
         """Handle transcription completed event"""
         try:
-            # Extract data from flattened event payload
+            if not event.payload:
+                logger.error("No payload in transcription completed event")
+                return
+
+            # Extract data from event payload
             recording_id = event.payload["recording_id"]
             merged_transcript_path = event.payload["merged_transcript_path"]
             transcription_status = event.payload["transcription_status"]
@@ -255,44 +239,47 @@ Participants: [Extract speaker names from transcript]
                     "error_message", "Unknown error in transcription"
                 )
                 logger.error(
-                    "Transcription failed, skipping meeting notes generation",
-                    extra={"recording_id": recording_id, "error": error_message},
+                    f"Transcription failed: {error_message}",
+                    extra={"recording_id": recording_id},
                 )
                 return
 
-            if not merged_transcript_path or not os.path.exists(merged_transcript_path):
-                raise ValueError(
-                    f"Invalid merged transcript path: {merged_transcript_path}"
+            # Read transcript file
+            try:
+                transcript_text = Path(merged_transcript_path).read_text()
+            except Exception as e:
+                logger.error(
+                    f"Failed to read transcript file: {e}",
+                    extra={"recording_id": recording_id},
+                    exc_info=True,
                 )
+                return
 
             logger.info(
                 "Processing transcript",
                 extra={
                     "recording_id": recording_id,
-                    "correlation_id": event.context.correlation_id,
+                    "correlation_id": (
+                        event.context.correlation_id if event.context else None
+                    ),
                     "input_path": merged_transcript_path,
                     "meeting_title": event.payload.get("meeting_title"),
                     "meeting_provider": event.payload.get("meeting_provider"),
                 },
             )
 
-            # Process in thread pool
-            with open(merged_transcript_path) as f:
-                transcript_text = f.read()
-
-            self._executor.submit(
-                self._process_transcript, recording_id, transcript_text, event
-            )
+            # Process transcript
+            await self._process_transcript(recording_id, transcript_text, event)
 
         except Exception as e:
             logger.error(
-                "Failed to handle transcription completion",
+                "Failed to handle transcription completed event",
                 extra={
                     "recording_id": (
                         recording_id if "recording_id" in locals() else None
                     ),
                     "error": str(e),
-                    "event_payload": event.payload,
+                    "event_payload": event.payload if event else None,
                 },
             )
             raise

@@ -1,28 +1,32 @@
-import asyncio
-import json
 import os
 import threading
 import warnings
+from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any
 
 import numpy as np
 from scipy import signal
 from scipy.io import wavfile
-from scipy.signal import butter, filtfilt
 
 from app.models.database import DatabaseManager
+from app.models.event import RecordingEndRequest, RecordingEvent, RecordingStartRequest
 from app.plugins.base import PluginBase
-from app.plugins.events.models import Event, EventContext, EventPriority
+from app.plugins.events.models import Event
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 # Constants for speech frequency range
-SPEECH_FREQ_MIN_HZ: Final[int] = 300
-SPEECH_FREQ_MAX_HZ: Final[int] = 3000
+SPEECH_FREQ_MIN_HZ: int = 300
+SPEECH_FREQ_MAX_HZ: int = 3000
+
+EventData = (
+    dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest
+)
+EventHandler = Callable[[EventData], Coroutine[Any, Any, None]]
 
 
 class NoiseReductionPlugin(PluginBase):
@@ -31,11 +35,11 @@ class NoiseReductionPlugin(PluginBase):
     def __init__(self, config: Any) -> None:
         """Initialize the plugin"""
         super().__init__(config)
-        self.output_dir = Path(config.config.get("output_dir", "data/cleaned"))
+        self.output_dir: Path = Path(config.config.get("output_dir", "data/cleaned"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._executor = None
-        self._processing_lock = threading.Lock()
-        self._db_initialized = False
+        self._executor: ThreadPoolExecutor | None = None
+        self._processing_lock: threading.Lock = threading.Lock()
+        self._db_initialized: bool = False
 
     async def _initialize(self) -> None:
         """Initialize plugin"""
@@ -47,7 +51,10 @@ class NoiseReductionPlugin(PluginBase):
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
         # Subscribe to recording_ended event
-        self.event_bus.subscribe("recording_ended", self.handle_recording_ended)
+        if self.event_bus:
+            await self.event_bus.subscribe(
+                "recording_ended", self.handle_recording_ended
+            )
 
         self.logger.info(
             "NoiseReductionPlugin initialized successfully",
@@ -65,7 +72,10 @@ class NoiseReductionPlugin(PluginBase):
     async def _shutdown(self) -> None:
         """Shutdown plugin"""
         # Unsubscribe from events
-        self.event_bus.unsubscribe("recording_ended", self.handle_recording_ended)
+        if self.event_bus:
+            await self.event_bus.unsubscribe(
+                "recording_ended", self.handle_recording_ended
+            )
 
         # Shutdown thread pool
         if self._executor:
@@ -96,7 +106,7 @@ class NoiseReductionPlugin(PluginBase):
             conn.commit()
         self._db_initialized = True
 
-    def _update_task_status(
+    async def _update_task_status(
         self,
         recording_id: str,
         status: str,
@@ -139,7 +149,9 @@ class NoiseReductionPlugin(PluginBase):
             )
             conn.commit()
 
-    def butter_highpass(self, cutoff: float, fs: float, order: int = 5) -> tuple:
+    def butter_highpass(
+        self, cutoff: float, fs: float, order: int = 5
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Design a highpass filter.
 
         Args:
@@ -152,7 +164,7 @@ class NoiseReductionPlugin(PluginBase):
         """
         nyq = 0.5 * fs
         normal_cutoff = cutoff / nyq
-        b, a = butter(order, normal_cutoff, btype="high", analog=False)
+        b, a = signal.butter(order, normal_cutoff, btype="high", analog=False)
         return b, a
 
     def apply_highpass_filter(
@@ -170,7 +182,7 @@ class NoiseReductionPlugin(PluginBase):
             Filtered audio data
         """
         b, a = self.butter_highpass(cutoff, fs, order=order)
-        return filtfilt(b, a, data)
+        return signal.filtfilt(b, a, data)
 
     def compute_noise_profile(
         self,
@@ -348,369 +360,245 @@ class NoiseReductionPlugin(PluginBase):
         except Exception as e:
             raise OSError(f"Failed to save cleaned audio: {e!s}") from e
 
-    async def handle_recording_ended(self, event: Event) -> None:
-        """Handle recording_ended events"""
+    async def handle_recording_ended(self, event_data: EventData) -> None:
+        """Handle recording ended event"""
         try:
-            # Extract recording information from event
-            recording_id = event.payload.get("recording_id")
-            mic_path = event.payload.get("microphone_audio_path")
-            sys_path = event.payload.get("system_audio_path")
+            if isinstance(event_data, dict):
+                recording_id = event_data.get("recording_id", "unknown")
+                mic_path = event_data.get("microphone_audio_path")
+                sys_path = event_data.get("system_audio_path")
+            else:
+                # Handle RecordingEvent, RecordingStartRequest, RecordingEndRequest
+                recording_id = getattr(event_data, "recording_id", "unknown")
+                mic_path = getattr(event_data, "microphone_audio_path", None)
+                sys_path = getattr(event_data, "system_audio_path", None)
 
-            self.logger.info(
-                "Processing recording",
-                extra={
-                    "recording_id": recording_id,
-                    "correlation_id": event.context.correlation_id,
-                },
-            )
-
-            # Skip processing if either audio path is missing
-            if not mic_path or not sys_path:
-                self.logger.warning(
-                    "Skipping noise reduction - missing audio paths",
+            if not mic_path and not sys_path:
+                logger.error(
+                    "No audio paths provided in recording ended event",
                     extra={
                         "recording_id": recording_id,
                         "mic_path": mic_path,
                         "sys_path": sys_path,
                     },
                 )
-                await self._emit_completion_event(recording_id, event, None, "skipped")
                 return
 
-            # Create output filename
-            output_dir = self.get_config("output_directory", "data/cleaned_audio")
-            output_file = os.path.join(
-                output_dir, f"{recording_id}_microphone_cleaned.wav"
-            )
-
-            # Process audio in thread pool
-            await self._process_audio(
-                recording_id, mic_path, sys_path, output_file, event
-            )
+            # Process each audio file
+            if mic_path:
+                await self._process_audio(recording_id, mic_path)
+            if sys_path:
+                await self._process_audio(recording_id, sys_path)
 
         except Exception as e:
-            self.logger.error(
-                "Error processing recording",
-                extra={"recording_id": recording_id, "error": str(e)},
+            logger.error(
+                f"Failed to handle recording ended: {e}",
+                extra={
+                    "recording_id": (
+                        recording_id if "recording_id" in locals() else "unknown"
+                    )
+                },
+                exc_info=True,
             )
-            self._update_task_status(recording_id, "failed", error_message=str(e))
 
     async def _process_audio(
         self,
         recording_id: str,
         mic_path: str,
-        sys_path: str,
-        output_file: str,
-        original_event: Event,
     ) -> None:
         """Process audio files in a separate thread"""
+        if not os.path.exists(mic_path):
+            logger.error(
+                "Audio files not found",
+                extra={
+                    "recording_id": recording_id,
+                    "mic_path": mic_path,
+                },
+            )
+            return
+
         try:
-            # Create output directory if it doesn't exist
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            # Get configuration
+            spectral_floor = float(self.get_config("spectral_floor", 0.15))
+            smoothing_factor = int(self.get_config("smoothing_factor", 0))
 
-            # Get noise reduction parameters from config
-            noise_reduce_factor = self.get_config("noise_reduce_factor", 0.3)
-            wiener_alpha = self.get_config("wiener_alpha", 0.0)
-            highpass_cutoff = self.get_config("highpass_cutoff", 0)
-            spectral_floor = self.get_config("spectral_floor", 0.15)
-            smoothing_factor = self.get_config("smoothing_factor", 0)
-
-            # Create task in database
-            self._create_task(recording_id, mic_path, sys_path)
-
-            # Process audio in thread pool
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
-                self.reduce_noise,
+            # Process audio
+            self.reduce_noise(
                 mic_path,
-                sys_path,
-                output_file,
-                noise_reduce_factor,
-                wiener_alpha,
-                highpass_cutoff,
-                spectral_floor,
-                smoothing_factor,
+                mic_path,
+                str(self.output_dir / f"{recording_id}_cleaned.wav"),
+                spectral_floor=spectral_floor,
+                smoothing_factor=smoothing_factor,
             )
 
-            # Update task status and emit completion event
-            self._update_task_status(recording_id, "completed", output_file)
+            # Emit completion event
             await self._emit_completion_event(
-                recording_id, original_event, output_file, "success"
+                recording_id,
+                {"recording_id": recording_id},
+                str(self.output_dir / f"{recording_id}_cleaned.wav"),
+                "completed",
+                metrics={"spectral_floor": spectral_floor},
             )
 
         except Exception as e:
-            error_msg = f"Failed to process audio: {e!s}"
-            self.logger.error(
-                error_msg,
-                extra={
-                    "plugin": "noise_reduction",
-                    "recording_id": recording_id,
-                    "error": str(e),
-                },
+            logger.error(
+                f"Error processing audio: {e}",
+                extra={"recording_id": recording_id},
                 exc_info=True,
             )
-            self._update_task_status(recording_id, "failed", error_message=error_msg)
             await self._emit_completion_event(
-                recording_id, original_event, None, "error"
+                recording_id,
+                {"recording_id": recording_id},
+                None,
+                "failed",
+                metrics=None,
             )
 
     async def _emit_completion_event(
         self,
         recording_id: str,
-        original_event: Event,
+        original_event: EventData,
         output_file: str | None,
         status: str,
+        metrics: dict[str, float] | None = None,
     ) -> None:
         """Emit event when processing is complete"""
-        # Extract metadata from the original event
-        metadata = {}
-        if original_event.payload.get("metadata_json"):
-            try:
-                metadata = json.loads(original_event.payload["metadata_json"])
-            except json.JSONDecodeError:
-                self.logger.warning("Failed to parse metadata_json")
+        if metrics is None:
+            metrics = {}
 
-        # Fallback to individual fields if metadata_json parsing failed
-        if not metadata:
-            metadata = {
-                "eventTitle": original_event.payload.get("event_title"),
-                "eventProvider": original_event.payload.get("event_provider"),
-                "eventProviderId": original_event.payload.get("event_provider_id"),
-                "eventAttendees": json.loads(
-                    original_event.payload.get("event_attendees", "[]")
-                ),
-                "systemLabel": original_event.payload.get("system_label"),
-                "microphoneLabel": original_event.payload.get("microphone_label"),
-                "recordingStarted": original_event.payload.get("recording_started"),
-                "recordingEnded": original_event.payload.get("recording_ended"),
-            }
+        event_data: dict[str, Any] = {
+            "recording_id": recording_id,
+            "status": status,
+            "output_file": output_file,
+            "metrics": metrics,
+        }
 
-        # Create flattened event payload with descriptive variable names
-        event = Event(
-            name="noise_reduction.completed",
-            payload={
-                # Recording identifiers
-                "recording_id": recording_id,
-                "recording_timestamp": original_event.payload.get(
-                    "recording_timestamp"
-                ),
-                # Audio file paths
-                "raw_system_audio_path": original_event.payload.get(
-                    "system_audio_path"
-                ),
-                "raw_microphone_audio_path": original_event.payload.get(
-                    "microphone_audio_path"
-                ),
-                "noise_reduced_audio_path": output_file,
-                # Processing status
-                "noise_reduction_status": status,
-                # Meeting metadata
-                "meeting_title": metadata.get("eventTitle"),
-                "meeting_provider": metadata.get("eventProvider"),
-                "meeting_provider_id": metadata.get("eventProviderId"),
-                "meeting_attendees": metadata.get("eventAttendees", []),
-                "meeting_start_time": metadata.get("recordingStarted"),
-                "meeting_end_time": metadata.get("recordingEnded"),
-                # Audio source labels
-                "system_audio_label": metadata.get(
-                    "systemLabel", "Meeting Participants"
-                ),
-                "microphone_audio_label": metadata.get("microphoneLabel", "Speaker"),
-            },
-            context=EventContext(
-                correlation_id=original_event.context.correlation_id,
-                source_plugin=self.name,
-                recording_id=recording_id,
-            ),
-            priority=EventPriority.LOW,
-        )
+        if self.event_bus:
+            await self.event_bus.emit(event_data)
 
-        await self.event_bus.publish(event)
-
-        self.logger.info(
-            "Emitted completion event",
-            extra={
-                "recording_id": recording_id,
-                "status": status,
-                "correlation_id": original_event.context.correlation_id,
-                "noise_reduced_audio_path": output_file,
-            },
-        )
-
-    def _process_audio(
-        self, input_file: str, output_file: str
-    ) -> tuple[float, float, float]:
-        """Process audio file to reduce noise"""
-        # Read the WAV file
-        sample_rate, audio_data = wavfile.read(input_file)
-
-        # Convert to float32 for processing
-        audio_data = audio_data.astype(np.float32)
-
-        # Normalize audio
-        audio_data = audio_data / np.max(np.abs(audio_data))
-
-        # Apply noise reduction
-        cleaned_audio = self._reduce_noise(audio_data, sample_rate)
-
-        # Save the cleaned audio
-        self._save_audio(cleaned_audio, sample_rate, output_file)
-
-        # Calculate metrics
-        snr = self._calculate_snr(audio_data, cleaned_audio)
-        noise_reduction = self._calculate_noise_reduction(audio_data, cleaned_audio)
-        speech_clarity = self._calculate_speech_clarity(cleaned_audio, sample_rate)
-
-        return snr, noise_reduction, speech_clarity
-
-    def _reduce_noise(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Apply noise reduction to audio data"""
-        # Get noise profile from first 1000 samples
-        noise_profile = self._estimate_noise_profile(audio_data[:1000])
-
-        # Apply spectral subtraction
-        cleaned_audio = self._spectral_subtraction(
-            audio_data, noise_profile, sample_rate
-        )
-
-        return cleaned_audio
-
-    def _estimate_noise_profile(self, noise_data: np.ndarray) -> np.ndarray:
-        """Estimate noise profile from noise samples"""
-        # Calculate power spectrum of noise
-        noise_spectrum = np.abs(np.fft.rfft(noise_data))
-        return noise_spectrum
-
-    def _spectral_subtraction(
-        self, audio_data: np.ndarray, noise_profile: np.ndarray, sample_rate: int
-    ) -> np.ndarray:
-        """Apply spectral subtraction"""
-        # Get frequency components
-        freqs = np.fft.rfftfreq(len(audio_data), 1 / sample_rate)
-
-        # Apply frequency-dependent weighting
-        speech_mask = np.ones_like(freqs)
-        speech_range = (freqs >= SPEECH_FREQ_MIN_HZ) & (freqs <= SPEECH_FREQ_MAX_HZ)
-        speech_mask[speech_range] = 1.2  # Boost speech frequencies
-
-        noise_profile = noise_profile * speech_mask
-
-        # Apply spectral subtraction
-        audio_spectrum = np.fft.rfft(audio_data)
-        magnitude_spectrum = np.abs(audio_spectrum)
-        phase_spectrum = np.angle(audio_spectrum)
-
-        # Subtract noise profile
-        cleaned_magnitude = np.maximum(
-            magnitude_spectrum - noise_profile, 0.01 * magnitude_spectrum
-        )
-
-        # Reconstruct signal
-        cleaned_spectrum = cleaned_magnitude * np.exp(1j * phase_spectrum)
-        cleaned_audio = np.fft.irfft(cleaned_spectrum)
-
-        return cleaned_audio
-
-    def _save_audio(
-        self, audio_data: np.ndarray, sample_rate: int, output_file: str
-    ) -> None:
-        """Save audio data to WAV file"""
-        try:
-            # Normalize audio
-            audio_data = audio_data / np.max(np.abs(audio_data))
-
-            # Convert to 16-bit PCM
-            audio_data = (audio_data * 32767).astype(np.int16)
-
-            # Save to file
-            wavfile.write(output_file, sample_rate, audio_data)
-        except Exception as e:
-            raise OSError(f"Failed to save cleaned audio: {e!s}") from e
-
-    def _calculate_snr(self, original: np.ndarray, cleaned: np.ndarray) -> float:
+    def _calculate_snr(self, original_file: str, cleaned_file: str) -> float:
         """Calculate Signal-to-Noise Ratio"""
-        noise = original - cleaned
-        signal_power = np.mean(cleaned**2)
-        noise_power = np.mean(noise**2)
-        snr = 10 * np.log10(signal_power / noise_power)
-        return float(snr)
+        try:
+            # Load audio files
+            _, original = wavfile.read(original_file)
+            _, cleaned = wavfile.read(cleaned_file)
+
+            # Convert to float32 and normalize
+            original = original.astype(np.float32) / np.iinfo(np.int16).max
+            cleaned = cleaned.astype(np.float32) / np.iinfo(np.int16).max
+
+            # Calculate signal power
+            signal_power = np.mean(cleaned**2)
+            noise_power = np.mean((original - cleaned) ** 2)
+
+            # Calculate SNR in dB
+            snr = 10 * np.log10(signal_power / noise_power) if noise_power > 0 else 0.0
+            return float(snr)
+        except Exception as e:
+            logger.error(f"Error calculating SNR: {e!s}")
+            return 0.0
 
     def _calculate_noise_reduction(
-        self, original: np.ndarray, cleaned: np.ndarray
+        self, original_file: str, cleaned_file: str
     ) -> float:
         """Calculate noise reduction in dB"""
-        original_power = np.mean(original**2)
-        cleaned_power = np.mean(cleaned**2)
-        reduction = 10 * np.log10(original_power / cleaned_power)
-        return float(reduction)
+        try:
+            # Load audio files
+            _, original = wavfile.read(original_file)
+            _, cleaned = wavfile.read(cleaned_file)
 
-    def _calculate_speech_clarity(
-        self, audio_data: np.ndarray, sample_rate: int
-    ) -> float:
+            # Convert to float32 and normalize
+            original = original.astype(np.float32) / np.iinfo(np.int16).max
+            cleaned = cleaned.astype(np.float32) / np.iinfo(np.int16).max
+
+            # Calculate RMS of original and cleaned signals
+            original_rms = np.sqrt(np.mean(original**2))
+            cleaned_rms = np.sqrt(np.mean(cleaned**2))
+
+            # Calculate noise reduction in dB
+            noise_reduction = (
+                20 * np.log10(original_rms / cleaned_rms) if cleaned_rms > 0 else 0.0
+            )
+            return float(noise_reduction)
+        except Exception as e:
+            logger.error(f"Error calculating noise reduction: {e!s}")
+            return 0.0
+
+    def _calculate_speech_clarity(self, audio_file: str) -> float:
         """Calculate speech clarity metric"""
-        # Get frequency components
-        freqs = np.fft.rfftfreq(len(audio_data), 1 / sample_rate)
-        spectrum = np.abs(np.fft.rfft(audio_data))
+        try:
+            # Load audio file
+            sample_rate, audio_data = wavfile.read(audio_file)
 
-        # Calculate energy in speech range
-        speech_range = (freqs >= SPEECH_FREQ_MIN_HZ) & (freqs <= SPEECH_FREQ_MAX_HZ)
-        speech_energy = np.sum(spectrum[speech_range] ** 2)
-        total_energy = np.sum(spectrum**2)
+            # Convert to float32 and normalize
+            audio_data = audio_data.astype(np.float32) / np.iinfo(np.int16).max
 
-        # Calculate clarity as ratio of speech energy to total energy
-        clarity = speech_energy / total_energy
-        return float(clarity)
+            # Calculate spectrogram
+            frequencies, _, spectrogram = signal.spectrogram(
+                audio_data,
+                fs=sample_rate,
+                nperseg=2048,
+                noverlap=1024,
+                scaling="spectrum",
+            )
+
+            # Focus on speech frequencies (300-3000 Hz)
+            speech_mask = (frequencies >= SPEECH_FREQ_MIN_HZ) & (
+                frequencies <= SPEECH_FREQ_MAX_HZ
+            )
+            speech_power = np.mean(np.abs(spectrogram[speech_mask]))
+
+            # Calculate clarity metric (normalized speech power)
+            total_power = np.mean(np.abs(spectrogram))
+            clarity = speech_power / total_power if total_power > 0 else 0.0
+            return float(clarity)
+        except Exception as e:
+            logger.error(f"Error calculating speech clarity: {e!s}")
+            return 0.0
 
     async def handle_event(self, event: Event) -> None:
         """Handle recording events"""
-        if event.event_type != "recording_ended":
-            return
-
-        recording_id = event.data.get("recording_id")
-        if not recording_id:
-            logger.warning("No recording ID in event")
-            return
-
-        input_file = event.data.get("file_path")
-        if not input_file:
-            logger.warning("No input file path in event")
-            return
-
         try:
+            # Check event name
+            if event.name != "recording_ended":
+                return
+
+            # Extract recording information from event payload
+            recording_id = str(event.payload.get("recording_id", ""))
+            input_file = str(event.payload.get("file_path", ""))
+
+            if not recording_id or not input_file:
+                self.logger.warning(
+                    "Missing required fields",
+                    extra={
+                        "recording_id": recording_id,
+                        "input_file": input_file,
+                    },
+                )
+                return
+
             # Generate output filename
             output_file = str(self.output_dir / f"{recording_id}_cleaned.wav")
 
             # Process audio
-            snr, noise_reduction, clarity = self._process_audio(
-                cast(str, input_file), output_file
+            await self._process_audio(
+                recording_id=recording_id,
+                mic_path=input_file,
             )
 
-            # Log metrics
-            logger.info(
-                "Audio processing complete",
+            # Log completion
+            self.logger.info(
+                "Audio processing initiated",
                 extra={
                     "recording_id": recording_id,
-                    "metrics": {
-                        "snr": snr,
-                        "noise_reduction": noise_reduction,
-                        "clarity": clarity,
-                    },
+                    "input_file": input_file,
+                    "output_file": output_file,
                 },
             )
 
-            # Emit completion event
-            await self._emit_completion_event(
-                cast(str, recording_id),
-                output_file,
-                snr,
-                noise_reduction,
-                clarity,
-            )
-
         except Exception as e:
-            logger.error(
-                f"Failed to process audio: {e!s}",
-                extra={"recording_id": recording_id},
+            self.logger.error(
+                f"Failed to handle event: {e!s}",
+                extra={"error": str(e)},
                 exc_info=True,
             )

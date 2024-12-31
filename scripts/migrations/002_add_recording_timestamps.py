@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 
-def migrate():
+def migrate() -> None:
     """Add recording_started and recording_ended columns to events table"""
     # Get the project root directory (three levels up from this file)
     root_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -40,7 +40,8 @@ def migrate():
             """
             )
 
-            # Copy existing data to new table, extracting recording timestamps from metadata_json
+            # Copy existing data to new table, extracting recording timestamps
+            # from metadata_json
             cursor.execute(
                 """
                 INSERT INTO events_new (

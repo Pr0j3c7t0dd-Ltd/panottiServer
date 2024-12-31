@@ -82,6 +82,8 @@ repos:
         - types-PyYAML
         - types-requests
         - types-python-jose
+        - pydantic>=2.5.3
+        - typing-extensions>=4.9.0
         args: [--ignore-missing-imports, --install-types, --non-interactive]
         exclude: |
             (?x)^(

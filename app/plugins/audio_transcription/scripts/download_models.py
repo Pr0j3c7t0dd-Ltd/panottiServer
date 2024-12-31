@@ -11,13 +11,13 @@ from pathlib import Path
 from faster_whisper import download_model
 
 
-def get_project_root():
+def get_project_root() -> Path:
     """Get the project root directory."""
     current_dir = Path(__file__).resolve().parent
     return current_dir.parent.parent.parent.parent
 
 
-def download_whisper_model(model_name: str, output_dir: str):
+def download_whisper_model(model_name: str, output_dir: str) -> None:
     """
     Download a Whisper model for offline use.
 
@@ -45,7 +45,7 @@ def download_whisper_model(model_name: str, output_dir: str):
         sys.exit(1)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Download Whisper models for offline use"
     )

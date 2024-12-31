@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, validator
 
@@ -10,8 +10,8 @@ from .database import get_db
 logger = logging.getLogger(__name__)
 
 # Constants for timestamp formats
-COMPACT_TIMESTAMP_LENGTH: ClassVar[int] = 14
-ISO_FORMATS: ClassVar[list[str]] = [
+COMPACT_TIMESTAMP_LENGTH = 14
+ISO_FORMATS = [
     "%Y-%m-%dT%H:%M:%S.%f",  # With microseconds
     "%Y-%m-%dT%H:%M:%S.%fZ",  # With microseconds and Z
     "%Y-%m-%dT%H:%M:%S",  # Without microseconds
@@ -103,35 +103,66 @@ class RecordingEvent(BaseModel):
     event: Literal["Recording Started", "Recording Ended"]
     metadata: dict[str, Any] | EventMetadata | None = None
 
+    def _get_metadata_field(self, field: str) -> Any:
+        """Safely get a field from metadata whether it's a dict or EventMetadata."""
+        if self.metadata is None:
+            return None
+        if isinstance(self.metadata, EventMetadata):
+            return getattr(self.metadata, field, None)
+        return self.metadata.get(field)
+
     def save(self) -> None:
         """Save the event to the database"""
-        logger.debug("Starting save operation for RecordingEvent")
-        metadata_json = None
-        if self.metadata:
-            if isinstance(self.metadata, EventMetadata):
-                metadata_json = json.dumps(self.metadata.to_db_format())
-            else:
-                metadata_json = json.dumps(self.metadata)
+        # Convert metadata to JSON if needed
+        if self.metadata is None:
+            metadata_json = None
+        elif isinstance(self.metadata, EventMetadata):
+            metadata_json = json.dumps(self.metadata.dict())
+        else:
+            metadata_json = json.dumps(self.metadata)
+
+        # Extract metadata fields safely
+        event_title = self._get_metadata_field("event_title")
+        event_provider_id = self._get_metadata_field("event_provider_id")
+        event_provider = self._get_metadata_field("event_provider")
+
+        # Handle event_attendees specially
+        attendees = self._get_metadata_field("event_attendees")
+        event_attendees = json.dumps(attendees) if attendees else None
+
+        system_label = self._get_metadata_field("system_label")
+        microphone_label = self._get_metadata_field("microphone_label")
+        recording_started = self._get_metadata_field("recording_started")
+        recording_ended = self._get_metadata_field("recording_ended")
 
         with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+            conn.execute(
                 """
                 INSERT INTO events (
                     recording_id,
                     recording_timestamp,
-                    event_type,
-                    system_audio_path,
-                    microphone_audio_path,
+                    event_title,
+                    event_provider_id,
+                    event_provider,
+                    event_attendees,
+                    system_label,
+                    microphone_label,
+                    recording_started,
+                    recording_ended,
                     metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self.recording_id,
                     self.recording_timestamp,
-                    self.event,
-                    self.system_audio_path,
-                    self.microphone_audio_path,
+                    event_title,
+                    event_provider_id,
+                    event_provider,
+                    event_attendees,
+                    system_label,
+                    microphone_label,
+                    recording_started,
+                    recording_ended,
                     metadata_json,
                 ),
             )
@@ -141,27 +172,19 @@ class RecordingEvent(BaseModel):
     def get_by_recording_id(cls, recording_id: str) -> list[dict[str, Any]]:
         """Retrieve all events for a specific recording."""
         with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT * FROM events
-                WHERE json_extract(data, "$.recordingId") = ?
-                ORDER BY recording_timestamp
-                """,
-                (recording_id,),
+            cursor = conn.execute(
+                "SELECT * FROM events WHERE recording_id = ?", (recording_id,)
             )
-            return cursor.fetchall()
+            events = [dict(row) for row in cursor.fetchall()]
+            return events
 
     @classmethod
-    def from_timestamp(cls, timestamp_str: str) -> datetime:
-        """Parse timestamp string to datetime.
-
-        Supported formats:
-        - ISO 8601 with microseconds and timezone
-        - ISO 8601 without microseconds
-        - ISO 8601 with timezone offset
-        """
-        return parse_timestamp(timestamp_str)
+    def from_timestamp(cls, timestamp_str: str) -> str:
+        """Parse timestamp string to datetime and return ISO format."""
+        dt = parse_timestamp(timestamp_str)
+        if not isinstance(dt, datetime):
+            raise ValueError(f"Invalid timestamp format: {timestamp_str}")
+        return dt.isoformat()
 
 
 class RecordingStartRequest(BaseModel):
@@ -186,7 +209,10 @@ class RecordingStartRequest(BaseModel):
     def set_recording_timestamp(self, value: str | None, values: dict[str, Any]) -> str:
         """Use timestamp field if recording_timestamp is not provided"""
         if value is None:
-            return values.get("timestamp", "")
+            timestamp = str(values.get("timestamp", ""))
+            if not timestamp:
+                return datetime.utcnow().isoformat()
+            return timestamp
         try:
             return parse_timestamp(value).isoformat()
         except ValueError as e:
@@ -195,13 +221,17 @@ class RecordingStartRequest(BaseModel):
 
     def to_event(self) -> RecordingEvent:
         """Convert request to RecordingEvent"""
+        recording_timestamp = (
+            self.recording_timestamp or self.timestamp or datetime.utcnow().isoformat()
+        )
+
         return RecordingEvent(
-            recording_timestamp=self.recording_timestamp or self.timestamp,
             recording_id=self.recording_id,
-            event=self.event,
-            metadata=self.metadata,
+            recording_timestamp=recording_timestamp,
             system_audio_path=self.system_audio_path,
             microphone_audio_path=self.microphone_audio_path,
+            event=self.event,
+            metadata=self.metadata,
         )
 
 
@@ -229,7 +259,10 @@ class RecordingEndRequest(BaseModel):
     def set_recording_timestamp(self, value: str | None, values: dict[str, Any]) -> str:
         """Use timestamp field if recording_timestamp is not provided"""
         if value is None:
-            return values.get("timestamp", "")
+            timestamp = str(values.get("timestamp", ""))
+            if not timestamp:
+                return datetime.utcnow().isoformat()
+            return timestamp
         try:
             return parse_timestamp(value).isoformat()
         except ValueError as e:
@@ -238,11 +271,15 @@ class RecordingEndRequest(BaseModel):
 
     def to_event(self) -> RecordingEvent:
         """Convert request to RecordingEvent"""
+        recording_timestamp = (
+            self.recording_timestamp or self.timestamp or datetime.utcnow().isoformat()
+        )
+
         return RecordingEvent(
-            recording_timestamp=self.recording_timestamp or self.timestamp,
             recording_id=self.recording_id,
-            event=self.event,
-            metadata=self.metadata,
+            recording_timestamp=recording_timestamp,
             system_audio_path=self.system_audio_path,
             microphone_audio_path=self.microphone_audio_path,
+            event=self.event,
+            metadata=self.metadata,
         )

@@ -101,13 +101,20 @@ Run the server using uvicorn:
 uvicorn app.main:app --reload
 ```
 
-#### Production
-For production deployment, use Gunicorn with Uvicorn workers:
+### Pre-commit Hooks
+
+This project uses pre-commit hooks to ensure code quality and consistency. To run the pre-commit checks manually:
+
 ```bash
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+pre-commit run --all-files > output.txt 2>&1
 ```
 
-The server will start at `http://localhost:8000`
+This command will:
+- Run all configured pre-commit hooks
+- Save both standard output and error messages to `output.txt`
+- Help identify any issues before committing code
+
+Make sure to review `output.txt` for any warnings or errors that need to be addressed.
 
 ### Stopping the Server
 

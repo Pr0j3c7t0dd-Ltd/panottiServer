@@ -3,16 +3,16 @@ import sqlite3
 from pathlib import Path
 
 
-def migrate():
+def migrate() -> None:
     """Remove recording_datetime column from events table"""
     # Get the project root directory (three levels up from this file)
-    root_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    data_dir = root_dir / "data"
-    db_path = str(data_dir / "panotti.db")
+    root_dir: Path = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    data_dir: Path = root_dir / "data"
+    db_path: str = str(data_dir / "panotti.db")
 
     # Connect to the database
     with sqlite3.connect(db_path) as conn:
-        cursor = conn.cursor()
+        cursor: sqlite3.Cursor = conn.cursor()
 
         try:
             # Create new table without recording_datetime

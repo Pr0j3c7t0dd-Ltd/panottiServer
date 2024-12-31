@@ -3,7 +3,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel as PydanticBaseModel
+from pydantic import ConfigDict, Field
 
 
 class EventPriority(str, Enum):
@@ -15,7 +16,7 @@ class EventPriority(str, Enum):
     CRITICAL = "critical"
 
 
-class EventContext(BaseModel):
+class EventContext(PydanticBaseModel):
     """Context information for events"""
 
     correlation_id: str = Field(..., description="Unique ID for tracing related events")
@@ -28,7 +29,7 @@ class EventContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class Event(BaseModel):
+class Event(PydanticBaseModel):
     """Base event model"""
 
     name: str = Field(..., description="Event name")
@@ -53,13 +54,12 @@ class Event(BaseModel):
         return self._get_plugin_id()
 
 
-class EventError(BaseModel):
+class EventError(PydanticBaseModel):
     """Model for event processing errors"""
 
     event_id: int
     error_message: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    retry_count: int = Field(default=0)
-    plugin_name: str | None = None
+    stack_trace: str | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

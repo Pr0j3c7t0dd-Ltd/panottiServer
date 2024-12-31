@@ -16,7 +16,7 @@ python-dotenv = "^1.0.0"
 httpx = "^0.26.0"
 typing-extensions = "^4.9.0"
 requests = "^2.31.0"
-pydantic = "^2.5.3"
+pydantic = {extras = ["typing"], version = "^2.5.3"}
 PyYAML = "^6.0.1"
 structlog = "^24.1.0"
 python-json-logger = "^2.0.7"
@@ -55,19 +55,20 @@ multi_line_output = 3
 
 [tool.mypy]
 python_version = "3.12"
+plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
-disallow_untyped_decorators = false  # Allow untyped decorators for FastAPI
+disallow_untyped_decorators = true
 no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
-show_error_codes = true
+strict_equality = true
 
 # Ignore certain errors in test files
 [[tool.mypy.overrides]]
@@ -82,6 +83,17 @@ module = [
     "scipy.*",
     "numpy.*"
 ]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+warn_untyped_fields = true
+
+[[tool.mypy.overrides]]
+module = "sqlalchemy.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
