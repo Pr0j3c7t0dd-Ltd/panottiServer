@@ -243,17 +243,52 @@ async def recording_ended(
     api_key: str = Depends(get_api_key),
 ) -> dict[str, Any]:
     """Handle a recording ended event."""
+    request_id = request.headers.get("X-Request-ID") or generate_request_id()
+    logger.info(
+        "Processing recording ended event",
+        extra={
+            "request_id": request_id,
+            "recording_id": event_request.recording_id,
+        },
+    )
+
     try:
         # Create recording event
         recording_event = event_request.to_event()
-
+        
         # Store in database
         recording_event.save()
-
-        return {"status": "success", "recording_id": recording_event.recording_id}
+        
+        # Publish to event bus
+        await event_bus.publish(recording_event)
+        
+        logger.info(
+            "Successfully processed recording ended event",
+            extra={
+                "request_id": request_id,
+                "recording_id": recording_event.recording_id,
+            },
+        )
+        
+        return {
+            "status": "success",
+            "recording_id": recording_event.recording_id,
+            "request_id": request_id,
+        }
     except Exception as e:
-        logger.error(f"Error handling recording ended event: {e!s}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error(
+            "Error handling recording ended event",
+            extra={
+                "request_id": request_id,
+                "recording_id": event_request.recording_id,
+                "error": str(e),
+            },
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process recording ended event: {str(e)}",
+        ) from e
 
 
 if __name__ == "__main__":
