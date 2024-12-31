@@ -436,7 +436,7 @@ class NoiseReductionPlugin(PluginBase):
         try:
             task_id = str(uuid.uuid4())
             sql = """
-                INSERT INTO tasks (
+                INSERT INTO plugin_tasks (
                     id, plugin_name, recording_id, status, input_paths, created_at
                 ) VALUES (?, ?, ?, ?, ?, datetime('now'))
             """
@@ -483,7 +483,7 @@ class NoiseReductionPlugin(PluginBase):
         try:
             await self.db.execute(
                 """
-                UPDATE tasks
+                UPDATE plugin_tasks
                 SET status = ?,
                     output_paths = ?,
                     error_message = ?,

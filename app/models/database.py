@@ -86,11 +86,44 @@ class DatabaseManager:
                 """
             )
 
-            # Create index on recording_id for faster lookups
+            # Create plugin_tasks table for tracking plugin processing tasks
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS plugin_tasks (
+                    id TEXT PRIMARY KEY,
+                    plugin_name TEXT NOT NULL,
+                    recording_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    input_paths TEXT,  -- Comma-separated list of input file paths
+                    output_paths TEXT,  -- Comma-separated list of output file paths
+                    error_message TEXT,
+                    metadata TEXT,  -- JSON object for plugin-specific metadata
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (recording_id) REFERENCES recording_events(recording_id)
+                )
+                """
+            )
+
+            # Create indexes
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_recording_events_recording_id
                 ON recording_events(recording_id)
+                """
+            )
+
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_plugin_tasks_recording_id
+                ON plugin_tasks(recording_id)
+                """
+            )
+
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_plugin_tasks_plugin_name
+                ON plugin_tasks(plugin_name)
                 """
             )
 
