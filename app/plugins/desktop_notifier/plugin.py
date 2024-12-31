@@ -29,7 +29,7 @@ class DesktopNotifierPlugin(PluginBase):
         await self._init_database()
         
         # Initialize thread pool executor
-        max_workers = getattr(self.config, "max_concurrent_tasks", 4)
+        max_workers = self.config.get("config", {}).get("max_concurrent_tasks", 4)
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         
         # Subscribe to meeting notes completed event
@@ -40,7 +40,7 @@ class DesktopNotifierPlugin(PluginBase):
             extra={
                 "plugin": "desktop_notifier",
                 "max_workers": max_workers,
-                "auto_open_notes": getattr(self.config, "auto_open_notes", False),
+                "auto_open_notes": self.config.get("config", {}).get("auto_open_notes", False),
                 "db_initialized": self._db_initialized
             }
         )
@@ -121,7 +121,7 @@ class DesktopNotifierPlugin(PluginBase):
         ])
 
         # Open file if configured
-        auto_open = getattr(self.config, "auto_open_notes", False)
+        auto_open = self.config.get("config", {}).get("auto_open_notes", False)
         if auto_open:
             os.system(f'open "{abs_path}"')
 
