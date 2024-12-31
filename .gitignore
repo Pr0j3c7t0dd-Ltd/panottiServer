@@ -4,7 +4,9 @@ Thumbs.db
 logs/
 ssl/
 data/
-models/
+/models/
+/models/**
+!/app/models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
