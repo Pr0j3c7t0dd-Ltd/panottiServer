@@ -153,6 +153,7 @@ class RecordingStartRequest(BaseModel):
     microphone_audio_path: str | None = None
 
     @field_validator("recording_timestamp", mode="before")
+    # pylint: disable=no-self-argument  # Pydantic validators use cls instead of self
     @classmethod
     def set_recording_timestamp(cls, value: str | None, info: Any) -> str:
         """Use timestamp field if recording_timestamp is not provided."""
@@ -186,6 +187,7 @@ class RecordingEndRequest(BaseModel):
     metadata: dict[str, Any]
 
     @field_validator("recording_timestamp", mode="before")
+    # pylint: disable=no-self-argument  # Pydantic validators use cls instead of self
     def set_recording_timestamp(cls, value: str | None, info: Any) -> str | None:
         """Use timestamp field if recording_timestamp is not provided."""
         data = info.data

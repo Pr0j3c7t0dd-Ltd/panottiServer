@@ -7,6 +7,7 @@ from typing import Any, TypedDict, cast
 
 import requests
 
+from app.core.events import EventBus
 from app.plugins.base import PluginBase
 from app.plugins.events.models import Event
 from app.utils.logging_config import get_logger

@@ -11,6 +11,7 @@ import numpy as np
 from scipy import signal
 from scipy.io import wavfile
 
+from app.core.events import EventBus
 from app.models.database import DatabaseManager
 from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
 from app.plugins.base import PluginBase
