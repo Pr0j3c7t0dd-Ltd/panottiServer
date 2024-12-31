@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import Any, Literal, Dict, List, Optional, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, validator
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Constants for timestamp formats
 COMPACT_TIMESTAMP_LENGTH: ClassVar[int] = 14
-ISO_FORMATS: ClassVar[List[str]] = [
+ISO_FORMATS: ClassVar[list[str]] = [
     "%Y-%m-%dT%H:%M:%S.%f",  # With microseconds
     "%Y-%m-%dT%H:%M:%S.%fZ",  # With microseconds and Z
     "%Y-%m-%dT%H:%M:%S",  # Without microseconds
@@ -19,11 +19,12 @@ ISO_FORMATS: ClassVar[List[str]] = [
     "%Y-%m-%dT%H:%M:%S%z",  # With timezone offset
 ]
 
+
 def parse_timestamp(timestamp_str: str) -> datetime:
     """Parse timestamp string in various formats to datetime object.
 
     Supported formats:
-    - ISO 8601 with microseconds and optional timezone 
+    - ISO 8601 with microseconds and optional timezone
       (e.g., "2024-12-27T14:24:46.123456Z")
     - ISO 8601 without microseconds (e.g., "2024-12-27T14:24:46Z")
     - ISO 8601 with timezone offset (e.g., "2024-12-27T14:24:46+00:00")
@@ -34,7 +35,7 @@ def parse_timestamp(timestamp_str: str) -> datetime:
     if len(timestamp_str) == COMPACT_TIMESTAMP_LENGTH and timestamp_str.isdigit():
         try:
             return datetime.strptime(timestamp_str, "%Y%m%d%H%M%S")
-        except ValueError as e:
+        except ValueError:
             pass
 
     # First, try parsing as ISO format with various patterns
@@ -68,16 +69,17 @@ class EventMetadata(BaseModel):
         recording_started: Recording start timestamp
         recording_ended: Recording end timestamp
     """
-    event_provider_id: Optional[str] = None
-    event_title: Optional[str] = None
-    event_provider: Optional[str] = None
-    event_attendees: Optional[List[str]] = None
-    system_label: Optional[str] = None
-    microphone_label: Optional[str] = None
-    recording_started: Optional[str] = None
-    recording_ended: Optional[str] = None
 
-    def to_db_format(self) -> Dict[str, Any]:
+    event_provider_id: str | None = None
+    event_title: str | None = None
+    event_provider: str | None = None
+    event_attendees: list[str] | None = None
+    system_label: str | None = None
+    microphone_label: str | None = None
+    recording_started: str | None = None
+    recording_ended: str | None = None
+
+    def to_db_format(self) -> dict[str, Any]:
         """Convert event to database format."""
         return self.dict(exclude_none=True)
 
@@ -93,12 +95,13 @@ class RecordingEvent(BaseModel):
         event: Type of recording event
         metadata: Additional event metadata
     """
+
     recording_timestamp: str
     recording_id: str
-    system_audio_path: Optional[str] = None
-    microphone_audio_path: Optional[str] = None
+    system_audio_path: str | None = None
+    microphone_audio_path: str | None = None
     event: Literal["Recording Started", "Recording Ended"]
-    metadata: Optional[Dict[str, Any] | EventMetadata] = None
+    metadata: dict[str, Any] | EventMetadata | None = None
 
     def save(self) -> None:
         """Save the event to the database"""
@@ -135,14 +138,14 @@ class RecordingEvent(BaseModel):
             conn.commit()
 
     @classmethod
-    def get_by_recording_id(cls, recording_id: str) -> List[Dict[str, Any]]:
+    def get_by_recording_id(cls, recording_id: str) -> list[dict[str, Any]]:
         """Retrieve all events for a specific recording."""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT * FROM events 
-                WHERE json_extract(data, "$.recordingId") = ? 
+                SELECT * FROM events
+                WHERE json_extract(data, "$.recordingId") = ?
                 ORDER BY recording_timestamp
                 """,
                 (recording_id,),
@@ -165,21 +168,22 @@ class RecordingStartRequest(BaseModel):
     """Request model for starting a recording session.
 
     Attributes:
-        recording_timestamp: ISO8601 formatted timestamp of the event 
+        recording_timestamp: ISO8601 formatted timestamp of the event
         recording_id: Unique identifier for the recording session
         event: Type of recording event (always "Recording Started")
         metadata: Optional metadata about the recording
     """
-    timestamp: Optional[str] = None
-    recording_timestamp: Optional[str] = None
+
+    timestamp: str | None = None
+    recording_timestamp: str | None = None
     recording_id: str
     event: Literal["Recording Started"] = Field(default="Recording Started")
-    metadata: Optional[Dict[str, Any]] = None
-    system_audio_path: Optional[str] = None
-    microphone_audio_path: Optional[str] = None
+    metadata: dict[str, Any] | None = None
+    system_audio_path: str | None = None
+    microphone_audio_path: str | None = None
 
     @validator("recording_timestamp", pre=True, always=True)
-    def set_recording_timestamp(self, value: Optional[str], values: Dict[str, Any]) -> str:
+    def set_recording_timestamp(self, value: str | None, values: dict[str, Any]) -> str:
         """Use timestamp field if recording_timestamp is not provided"""
         if value is None:
             return values.get("timestamp", "")
@@ -205,23 +209,24 @@ class RecordingEndRequest(BaseModel):
     """Request model for ending a recording session.
 
     Attributes:
-        recording_timestamp: ISO8601 formatted timestamp of the event 
+        recording_timestamp: ISO8601 formatted timestamp of the event
         recording_id: Unique identifier for the recording session
         event: Type of recording event (always "Recording Ended")
         metadata: Metadata about the recording
         system_audio_path: Path to system audio file
         microphone_audio_path: Path to microphone audio file
     """
-    timestamp: Optional[str] = None
-    recording_timestamp: Optional[str] = None
+
+    timestamp: str | None = None
+    recording_timestamp: str | None = None
     recording_id: str
     system_audio_path: str
     microphone_audio_path: str
     event: Literal["Recording Ended"] = Field(default="Recording Ended")
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
 
     @validator("recording_timestamp", pre=True, always=True)
-    def set_recording_timestamp(self, value: Optional[str], values: Dict[str, Any]) -> str:
+    def set_recording_timestamp(self, value: str | None, values: dict[str, Any]) -> str:
         """Use timestamp field if recording_timestamp is not provided"""
         if value is None:
             return values.get("timestamp", "")
