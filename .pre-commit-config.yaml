@@ -3,12 +3,14 @@ repos:
     rev: v5.0.0
     hooks:
     -   id: trailing-whitespace
+        types: [python]
         exclude: |
             (?x)^(
                 .*\.md|
                 .*\.mdx
             )$
     -   id: end-of-file-fixer
+        types: [python]
         exclude: |
             (?x)^(
                 .*\.md|
@@ -17,10 +19,12 @@ repos:
     -   id: check-yaml
     -   id: check-added-large-files
     -   id: check-ast
+        types: [python]
     -   id: check-json
     -   id: check-merge-conflict
     -   id: detect-private-key
     -   id: mixed-line-ending
+        types: [python]
         args: [--fix=lf]
         exclude: |
             (?x)^(
@@ -33,6 +37,7 @@ repos:
     hooks:
     -   id: black
         language_version: python3
+        types: [python]
         args: [--line-length=88]
         exclude: |
             (?x)^(
@@ -43,6 +48,7 @@ repos:
     rev: 5.13.2
     hooks:
     -   id: isort
+        types: [python]
         args: ["--profile", "black", "--filter-files"]
         exclude: |
             (?x)^(
@@ -53,12 +59,14 @@ repos:
     rev: v0.8.4
     hooks:
     -   id: ruff
+        types: [python]
         args: [--fix, --exit-non-zero-on-fix]
         exclude: |
             (?x)^(
                 .*\.md
             )$
     -   id: ruff-format
+        types: [python]
         args: [--check]
         exclude: |
             (?x)^(
@@ -69,6 +77,7 @@ repos:
     rev: v1.14.1
     hooks:
     -   id: mypy
+        types: [python]
         additional_dependencies:
         - types-PyYAML
         - types-requests
@@ -83,6 +92,7 @@ repos:
     rev: 1.8.0
     hooks:
     -   id: bandit
+        types: [python]
         args: ["-ll", "-i"]
         exclude: |
             (?x)^(
@@ -93,6 +103,7 @@ repos:
     rev: v3.19.1
     hooks:
     -   id: pyupgrade
+        types: [python]
         args: [--py312-plus]
         exclude: |
             (?x)^(
