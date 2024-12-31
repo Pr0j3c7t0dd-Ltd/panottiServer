@@ -335,6 +335,12 @@ class MeetingNotesPlugin(PluginBase):
         if not transcript_lines:
             raise ValueError("Could not extract transcript lines")
 
+        # Format transcript lines as text
+        formatted_transcript = "\n".join(
+            f"[{line['start_time']}s - {line['end_time']}s] ({line['speaker']}) {line['content']}"
+            for line in transcript_lines
+        )
+
         # Prepare prompt
         prompt = f"""Please analyze the meeting metadata and transcript below and create comprehensive meeting notes in markdown format. Please ensure the notes are clear and concise. 
      
@@ -348,7 +354,7 @@ Meeting Metadata:
 
 Meeting Transcript:
 
-{transcript_lines}
+{formatted_transcript}
 
 ---
 
