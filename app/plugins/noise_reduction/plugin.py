@@ -12,8 +12,12 @@ from scipy.io import wavfile
 from scipy.signal import butter, filtfilt
 
 from app.models.database import DatabaseManager
-from app.models.recording.events import RecordingEvent
-from app.plugins.base import PluginBase, PluginConfig
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
+from app.plugins.base import EventType, PluginBase, PluginConfig
 from app.plugins.events.bus import EventBus as PluginEventBus
 from app.plugins.events.models import EventContext
 
@@ -135,6 +139,33 @@ class NoiseReductionPlugin(PluginBase):
             )
             raise
 
+    async def _handle_recording_ended(self, event: EventType) -> None:
+        """Handle recording ended event."""
+        recording_id = (
+            event.recording_id
+            if isinstance(
+                event, RecordingEvent | RecordingStartRequest | RecordingEndRequest
+            )
+            else event["recording_id"]
+            if isinstance(event, dict)
+            else None
+        )
+        if not recording_id:
+            logger.error("No recording ID in event")
+            return
+
+        try:
+            await self.process_recording(recording_id)
+        except Exception as e:
+            logger.error(
+                "Failed to process recording",
+                extra={
+                    "plugin_name": self._plugin_name,
+                    "recording_id": recording_id,
+                    "error": str(e),
+                },
+            )
+
     async def process_recording(self, recording_id: str) -> None:
         """Process a recording with the noise reduction plugin."""
         if not self.db:
@@ -192,3 +223,31 @@ class NoiseReductionPlugin(PluginBase):
                 },
             )
             raise
+
+    async def _initialize(self) -> None:
+        """Initialize plugin."""
+        if self.event_bus is None:
+            return
+
+        logger.info("Subscribing to events")
+        await self.event_bus.subscribe("recording.ended", self._handle_recording_ended)
+
+        logger.info(
+            "Noise reduction plugin initialized",
+            extra={"plugin_name": self._plugin_name},
+        )
+
+    async def _shutdown(self) -> None:
+        """Shutdown plugin."""
+        if self.event_bus is None:
+            return
+
+        logger.info("Unsubscribing from events")
+        await self.event_bus.unsubscribe(
+            "recording.ended", self._handle_recording_ended
+        )
+
+        logger.info(
+            "Noise reduction plugin shutdown",
+            extra={"plugin_name": self._plugin_name},
+        )
