@@ -317,13 +317,10 @@ class AudioTranscriptionPlugin(PluginBase):
     async def handle_noise_reduction_completed(self, event: Event) -> None:
         """Handle noise reduction completion events"""
         try:
-            # Get recording ID and paths from event
-            recording_id = event.payload.get("recording_id")
-            original_event = event.payload.get("original_event", {})
-            
-            # Get audio paths
-            system_audio = original_event.get("system_audio_path")
-            microphone_audio = event.payload.get("microphone_cleaned_file")  # Use cleaned file from noise reduction
+            # Get recording ID and paths from flattened event payload
+            recording_id = event.payload["recording_id"]
+            system_audio = event.payload["raw_system_audio_path"]
+            microphone_audio = event.payload["noise_reduced_audio_path"]
             
             if not system_audio or not microphone_audio:
                 raise ValueError(f"Missing audio paths: system_audio={system_audio}, microphone_audio={microphone_audio}")
@@ -336,21 +333,21 @@ class AudioTranscriptionPlugin(PluginBase):
             microphone_transcript = os.path.join(transcripts_dir, f"{recording_id}_microphone_transcript.md")
             merged_transcript = os.path.join(transcripts_dir, f"{recording_id}_transcript.md")
 
-            # Get labels from original event metadata
-            metadata = original_event.get("metadata", {})
+            # Get labels from flattened event payload
+            system_label = event.payload.get("system_audio_label", "Meeting Participants")
+            microphone_label = event.payload.get("microphone_audio_label", "Speaker")
             
-            # Log the metadata for debugging
-            self.logger.debug(
-                "Processing metadata from noise reduction event",
-                extra={
-                    "recording_id": recording_id,
-                    "original_event": original_event,
-                    "metadata": metadata
-                }
-            )
-            
-            system_label = metadata.get("systemLabel", "Meeting Participants")  # Default for system audio
-            microphone_label = metadata.get("microphoneLabel", "Speaker")  # Default for microphone
+            # Create metadata dictionary from flattened fields
+            metadata = {
+                "eventTitle": event.payload.get("meeting_title"),
+                "eventProvider": event.payload.get("meeting_provider"),
+                "eventProviderId": event.payload.get("meeting_provider_id"),
+                "eventAttendees": event.payload.get("meeting_attendees", []),
+                "systemLabel": system_label,
+                "microphoneLabel": microphone_label,
+                "recordingStarted": event.payload.get("meeting_start_time"),
+                "recordingEnded": event.payload.get("meeting_end_time")
+            }
 
             self.logger.info(
                 "Starting audio transcription",
@@ -371,13 +368,22 @@ class AudioTranscriptionPlugin(PluginBase):
             # Create task entry
             self._create_task(recording_id, [system_audio, microphone_audio])
 
+            # Create original event format for backward compatibility with merge_transcripts
+            original_event = {
+                "recording_id": recording_id,
+                "recording_timestamp": event.payload.get("recording_timestamp"),
+                "system_audio_path": system_audio,
+                "microphone_audio_path": microphone_audio,
+                "metadata": metadata
+            }
+
             # Process audio files
             await self._process_audio(
                 recording_id=recording_id,
                 input_files=[system_audio, microphone_audio],
                 output_files=[system_transcript, microphone_transcript],
                 merged_output=merged_transcript,
-                original_event=original_event,  # Pass original_event instead of noise reduction event
+                original_event=original_event,
                 input_labels=[system_label, microphone_label]
             )
 
@@ -388,9 +394,7 @@ class AudioTranscriptionPlugin(PluginBase):
                     "recording_id": recording_id if 'recording_id' in locals() else None,
                     "error": str(e),
                     "config": str(self.config) if hasattr(self, 'config') else None,
-                    "event_payload": event.payload,
-                    "original_event": original_event if 'original_event' in locals() else None,
-                    "metadata": metadata if 'metadata' in locals() else None
+                    "event_payload": event.payload
                 }
             )
             raise

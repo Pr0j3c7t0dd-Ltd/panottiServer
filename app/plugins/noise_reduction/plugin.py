@@ -410,7 +410,7 @@ class NoiseReductionPlugin(PluginBase):
                                    output_file: Optional[str],
                                    status: str) -> None:
         """Emit event when processing is complete"""
-        # Reconstruct metadata from the original event
+        # Extract metadata from the original event
         metadata = {}
         if original_event.payload.get("metadata_json"):
             try:
@@ -430,32 +430,34 @@ class NoiseReductionPlugin(PluginBase):
                 "recordingStarted": original_event.payload.get("recording_started"),
                 "recordingEnded": original_event.payload.get("recording_ended")
             }
-        
-        # Construct the event data with proper metadata
-        original_event_data = {
-            "recording_id": original_event.payload.get("recording_id"),
-            "recording_timestamp": original_event.payload.get("recording_timestamp"),
-            "system_audio_path": original_event.payload.get("system_audio_path"),
-            "microphone_audio_path": original_event.payload.get("microphone_audio_path"),
-            "metadata": metadata
-        }
-        
-        self.logger.debug(
-            "Emitting completion event with metadata",
-            extra={
-                "recording_id": recording_id,
-                "metadata": metadata,
-                "original_event_data": original_event_data
-            }
-        )
-        
+
+        # Create flattened event payload with descriptive variable names
         event = Event(
             name="noise_reduction.completed",
             payload={
+                # Recording identifiers
                 "recording_id": recording_id,
-                "original_event": original_event_data,
-                "microphone_cleaned_file": output_file,
-                "status": status
+                "recording_timestamp": original_event.payload.get("recording_timestamp"),
+                
+                # Audio file paths
+                "raw_system_audio_path": original_event.payload.get("system_audio_path"),
+                "raw_microphone_audio_path": original_event.payload.get("microphone_audio_path"),
+                "noise_reduced_audio_path": output_file,
+                
+                # Processing status
+                "noise_reduction_status": status,
+                
+                # Meeting metadata
+                "meeting_title": metadata.get("eventTitle"),
+                "meeting_provider": metadata.get("eventProvider"),
+                "meeting_provider_id": metadata.get("eventProviderId"),
+                "meeting_attendees": metadata.get("eventAttendees", []),
+                "meeting_start_time": metadata.get("recordingStarted"),
+                "meeting_end_time": metadata.get("recordingEnded"),
+                
+                # Audio source labels
+                "system_audio_label": metadata.get("systemLabel", "Meeting Participants"),
+                "microphone_audio_label": metadata.get("microphoneLabel", "Speaker")
             },
             context=EventContext(
                 correlation_id=original_event.context.correlation_id,
@@ -473,6 +475,6 @@ class NoiseReductionPlugin(PluginBase):
                 "recording_id": recording_id,
                 "status": status,
                 "correlation_id": original_event.context.correlation_id,
-                "original_event_data": original_event_data
+                "noise_reduced_audio_path": output_file
             }
         )
