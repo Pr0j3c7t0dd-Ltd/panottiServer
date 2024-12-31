@@ -22,7 +22,8 @@ def download_whisper_model(model_name: str, output_dir: str):
     Download a Whisper model for offline use.
 
     Args:
-        model_name: Name of the model to download (e.g., 'base.en', 'small.en', 'medium.en', 'large-v2')
+        model_name: Name of the model to download 
+            (e.g., 'base.en', 'small.en', 'medium.en', 'large-v2')
         output_dir: Directory to save the model
     """
     print(f"Downloading model '{model_name}' to {output_dir}...")

@@ -64,7 +64,8 @@ class AudioTranscriptionPlugin(PluginBase):
         config_path = os.path.join(model_dir, "config.json")
         if not os.path.exists(config_path):
             raise RuntimeError(
-                f"Model files not found in {model_dir}. Please run the download script first."
+                "Model files not found in {}. "
+                "Please run the download script first.".format(model_dir)
             )
         else:
             self.logger.info(
@@ -257,7 +258,7 @@ class AudioTranscriptionPlugin(PluginBase):
 
             # Create mapping of files to labels
             for file_path, label in zip(transcript_files, labels, strict=False):
-                # Use appropriate fallback based on whether it's system or microphone audio
+                # Use appropriate fallback based on audio type
                 fallback = (
                     "Meeting Participants" if "system_audio" in file_path else "Speaker"
                 )
@@ -294,21 +295,16 @@ class AudioTranscriptionPlugin(PluginBase):
                 for file_path in transcript_files:
                     label = file_labels[file_path]
                     with open(file_path) as tf:
-                        for line in tf:
-                            line = line.strip()
+                        for raw_line in tf:
+                            line = raw_line.strip()
                             if line and not line.startswith("#"):  # Skip header
                                 # Parse timestamp and text
                                 timestamp_end = line.find("]")
                                 if timestamp_end != -1:
                                     timestamp = line[1:timestamp_end]
 
-                                    # Extract text after timestamp, removing any existing label
+                                    # Extract text after timestamp
                                     text = line[timestamp_end + 2 :]
-                                    label_start = text.find("(")
-                                    label_end = text.find(")")
-                                    if label_start != -1 and label_end != -1:
-                                        # Remove the existing label
-                                        text = text[label_end + 2 :].strip()
 
                                     # Parse start and end times
                                     times = timestamp.split(" - ")
@@ -343,7 +339,9 @@ class AudioTranscriptionPlugin(PluginBase):
 
             if not system_audio or not microphone_audio:
                 raise ValueError(
-                    f"Missing audio paths: system_audio={system_audio}, microphone_audio={microphone_audio}"
+                    "Missing audio paths: "
+                    f"system_audio={system_audio}, "
+                    f"microphone_audio={microphone_audio}"
                 )
 
             # Create output paths in the transcripts directory
@@ -399,7 +397,7 @@ class AudioTranscriptionPlugin(PluginBase):
             # Create task entry
             self._create_task(recording_id, [system_audio, microphone_audio])
 
-            # Create original event format for backward compatibility with merge_transcripts
+            # Create original event format for backward compatibility
             original_event = {
                 "recording_id": recording_id,
                 "recording_timestamp": event.payload.get("recording_timestamp"),
@@ -447,12 +445,12 @@ class AudioTranscriptionPlugin(PluginBase):
             self._update_task_status(recording_id, "processing")
 
             # Transcribe each file
-            for i, (input_file, output_file, label) in enumerate(
+            for _i, (input_file, output_file, label) in enumerate(
                 zip(input_files, output_files, input_labels, strict=False)
             ):
                 if not os.path.exists(input_file):
                     raise FileNotFoundError(f"Audio file not found: {input_file}")
-                # Use appropriate fallback based on whether it's system or microphone audio
+                # Use appropriate fallback based on audio type
                 fallback = (
                     "Meeting Participants"
                     if "system_audio" in input_file

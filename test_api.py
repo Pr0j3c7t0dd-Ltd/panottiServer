@@ -1,5 +1,6 @@
 import os
 from datetime import UTC, datetime
+import uuid
 
 import requests
 from dotenv import load_dotenv
@@ -21,14 +22,14 @@ if not SSL_VERIFY:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-def generate_recording_id():
+def generate_recording_id() -> str:
     """Generate a recording ID with timestamp and random hex"""
     timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     random_hex = os.urandom(4).hex()[:8].upper()
     return f"{timestamp}_{random_hex}"
 
 
-def test_basic_recording_flow():
+def test_basic_recording_flow() -> None:
     """Test recording flow with basic metadata"""
     recording_id = generate_recording_id()
     start_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -69,7 +70,7 @@ def test_basic_recording_flow():
     assert end_response.status_code == 200, f"End recording failed: {end_response.text}"
 
 
-def test_calendar_event_recording_flow():
+def test_calendar_event_recording_flow() -> None:
     """Test recording flow with calendar event metadata"""
     recording_id = generate_recording_id()
     start_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -116,7 +117,7 @@ def test_calendar_event_recording_flow():
     assert end_response.status_code == 200, f"End recording failed: {end_response.text}"
 
 
-def test_invalid_recording_flow():
+def test_invalid_recording_flow() -> None:
     """Test invalid recording scenarios"""
     # Test starting an already active recording
     recording_id = generate_recording_id()

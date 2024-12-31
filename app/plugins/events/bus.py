@@ -1,5 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import Dict, Any, Optional, List
+from asyncio import Task
 
 from app.plugins.events.models import Event, EventPriority
 from app.plugins.events.persistence import EventStore
@@ -13,9 +15,10 @@ class EventBus:
 
     def __init__(self, event_store: EventStore):
         self.event_store = event_store
-        self.handlers: dict[str, list[EventHandler]] = {}
+        self.handlers: Dict[str, List[EventHandler]] = {}
+        self.plugins: Dict[str, Any] = {}
+        self.tasks: List[Task[Any]] = []
         self.logger = get_logger("event_bus")
-        self._tasks: list[asyncio.Task] = []
         self.logger.info("Event bus initialized")
 
     async def publish(self, event: Event) -> None:
@@ -66,8 +69,8 @@ class EventBus:
                     task = asyncio.create_task(
                         self._process_event(handler, event, event_id)
                     )
-                    self._tasks.append(task)
-                    task.add_done_callback(self._tasks.remove)
+                    self.tasks.append(task)
+                    task.add_done_callback(self.tasks.remove)
 
         except Exception as e:
             self.logger.error(
@@ -81,7 +84,10 @@ class EventBus:
             raise
 
     async def _process_event(
-        self, handler: EventHandler, event: Event, event_id: int
+        self,
+        handler: EventHandler,
+        event: Event,
+        event_id: str,
     ) -> None:
         """Process a single event with error handling"""
         try:
@@ -94,7 +100,7 @@ class EventBus:
                 },
             )
             await handler(event)
-            await self.event_store.mark_processed(event_id, success=True)
+            await self.event_store.mark_processed(event_id)
             self.logger.debug(
                 "Event processed successfully",
                 extra={
@@ -145,8 +151,8 @@ class EventBus:
 
     async def wait_for_pending_events(self) -> None:
         """Wait for all pending event processing to complete"""
-        if self._tasks:
+        if self.tasks:
             self.logger.info(
-                "Waiting for pending events", extra={"pending_count": len(self._tasks)}
+                "Waiting for pending events", extra={"pending_count": len(self.tasks)}
             )
-            await asyncio.gather(*self._tasks)
+            await asyncio.gather(*self.tasks)
