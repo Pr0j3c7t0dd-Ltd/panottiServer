@@ -51,7 +51,7 @@ class NoiseReductionPlugin(PluginBase):
         self._stft_window_size = config_dict.get("stft_window_size", 2048)
         self._stft_overlap_percent = config_dict.get("stft_overlap_percent", 75)
         self._noise_reduce_factor = config_dict.get("noise_reduce_factor", 0.3)
-        self._wiener_alpha = config_dict.get("wiener_alpha", 1.2)
+        self._wiener_alpha = config_dict.get("wiener_alpha", 0.8)
         self._min_magnitude_threshold = config_dict.get("spectral_floor", 0.1)
         self._noise_smooth_factor = config_dict.get("smoothing_factor", 4)
 
@@ -112,21 +112,28 @@ class NoiseReductionPlugin(PluginBase):
         return noise_power[:, np.newaxis]
 
     def _wiener_filter(
-        self, spec: np.ndarray, noise_power: np.ndarray, alpha: float = 1.5
+        self, spec: np.ndarray, noise_power: np.ndarray, alpha: float = 0.8
     ) -> np.ndarray:
-        """Apply speech-optimized Wiener filter."""
-        # Estimate signal power
+        """Apply classical Wiener filter.
+
+        Args:
+            spec: Input spectrogram
+            noise_power: Noise power spectrum
+            alpha: Wiener filter parameter (default: 0.8 for minimal filtering)
+
+        Returns:
+            Filtered spectrogram
+        """
+        # Compute signal power
         sig_power = np.abs(spec) ** 2
 
-        # Calculate Wiener filter with speech-preserving modifications
-        wiener_gain = 1 - (alpha * noise_power / (sig_power + 1e-10))
+        # Classical Wiener filter formula
+        wiener_gain = sig_power / (sig_power + alpha * noise_power)
 
-        # Softer noise reduction curve
-        wiener_gain = 0.5 * (1 + np.tanh(2 * wiener_gain))
+        # Apply minimum gain floor of 0.5 to preserve more speech
+        wiener_gain = np.maximum(wiener_gain, 0.5)
 
-        # Ensure minimum gain to preserve speech
-        wiener_gain = np.maximum(wiener_gain, 0.2)
-
+        # Apply gain to spectrogram
         return spec * wiener_gain
 
     def _reduce_noise_worker(

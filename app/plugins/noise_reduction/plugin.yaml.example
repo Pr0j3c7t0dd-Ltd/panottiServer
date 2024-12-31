@@ -3,11 +3,11 @@ version: "1.0.0"
 enabled: true
 dependencies: []
 config:
-  noise_reduce_factor: 0.5  # Balanced between noise reduction and speech preservation
-  wiener_alpha: 1.5        # Moderate filtering that preserves speech characteristics
-  spectral_floor: 0.12     # Slightly higher to better preserve speech harmonics
-  highpass_cutoff: 70      # Better balance for removing rumble while keeping voice
-  highpass_order: 3        # Gentle slope for natural sound
-  stft_window_size: 1024   # Better for speech transients
-  stft_overlap_percent: 50 # Reduced artifacts while maintaining smoothness
-  smoothing_factor: 2      # Less smoothing to preserve speech dynamics
+  noise_reduce_factor: 0.2  # Very light noise reduction
+  wiener_alpha: 0.8        # Minimal filtering
+  spectral_floor: 0.15     # Higher floor preserves more speech
+  highpass_cutoff: 50      # Only remove very low rumble
+  highpass_order: 2        # Very gentle slope
+  stft_window_size: 2048   # Standard for speech
+  stft_overlap_percent: 75 # Smooth transitions
+  smoothing_factor: 1      # Minimal smoothing
