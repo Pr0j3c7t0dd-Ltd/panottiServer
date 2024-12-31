@@ -26,9 +26,9 @@ class TranscriptLine(TypedDict):
 class MeetingNotesPlugin(PluginBase):
     """Plugin for generating meeting notes from transcripts using Ollama LLM"""
 
-    def __init__(self, config: Any) -> None:
+    def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin"""
-        super().__init__(config)
+        super().__init__(config, event_bus)
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         self.model = "mistral"  # Default model
         self.output_dir = Path("data/meeting_notes")  # Default output directory

@@ -3,8 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel as PydanticBaseModel
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EventPriority(str, Enum):
@@ -16,45 +15,49 @@ class EventPriority(str, Enum):
     CRITICAL = "critical"
 
 
-class EventContext(PydanticBaseModel):
-    """Context information for events"""
+class EventContext(BaseModel):
+    """Context information for an event"""
 
-    correlation_id: str = Field(..., description="Unique ID for tracing related events")
-    source_plugin: str = Field(
-        ..., description="Name of the plugin that generated the event"
-    )
+    correlation_id: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    source_plugin: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-
-class Event(PydanticBaseModel):
+class Event(BaseModel):
     """Base event model"""
 
-    name: str = Field(..., description="Event name")
-    payload: dict[str, Any] = Field(..., description="Event data")
-    context: EventContext = Field(..., description="Event context")
+    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    plugin_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    data: dict[str, Any]
+    context: EventContext
     priority: EventPriority = Field(default=EventPriority.NORMAL)
-    event_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()), description="Unique event ID"
-    )
+    payload: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def _get_plugin_id(self) -> str:
-        """Internal method to get the source plugin ID"""
-        if not isinstance(self.context, EventContext):
-            raise ValueError("Context must be an instance of EventContext")
-        return self.context.source_plugin
+    @classmethod
+    def create(
+        cls,
+        name: str,
+        data: dict[str, Any],
+        correlation_id: str,
+        source_plugin: str | None = None,
+        priority: EventPriority = EventPriority.NORMAL,
+    ) -> "Event":
+        """Create a new event with default context"""
+        return cls(
+            name=name,
+            data=data,
+            context=EventContext(
+                correlation_id=correlation_id, source_plugin=source_plugin
+            ),
+            priority=priority,
+        )
 
-    @property
-    def plugin_id(self) -> str:
-        """Get the source plugin ID from the context"""
-        return self._get_plugin_id()
 
-
-class EventError(PydanticBaseModel):
+class EventError(BaseModel):
     """Model for event processing errors"""
 
     event_id: int

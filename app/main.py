@@ -13,8 +13,8 @@ from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 
 from .models.database import get_db
-from .models.event import RecordingEndRequest, RecordingStartRequest
-from .plugins.events.bus import EventBus
+from .models.recording.events import RecordingEndRequest, RecordingStartRequest
+from .plugins.events import bus
 from .plugins.events.persistence import EventStore
 from .plugins.manager import PluginManager
 from .utils.logging_config import setup_logging
@@ -31,7 +31,7 @@ PORT = int(os.getenv("API_PORT", "8001"))
 
 # Initialize event system
 event_store: EventStore = EventStore()
-event_bus = EventBus(event_store)
+event_bus = bus.EventBus(event_store)
 plugin_manager = PluginManager("app/plugins", event_bus=event_bus)
 
 app = FastAPI(

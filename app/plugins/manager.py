@@ -1,10 +1,10 @@
 import importlib
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 from app.plugins.base import PluginBase, PluginConfig
+from app.plugins.events.bus import EventBus
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -13,16 +13,22 @@ logger = get_logger(__name__)
 class PluginManager:
     """Manages plugin lifecycle and event routing"""
 
-    def __init__(self, plugin_dir: str, event_bus: Any = None) -> None:
+    def __init__(self, plugin_dir: str, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin manager with the plugin directory"""
         self.plugin_dir = Path(plugin_dir)
         self.plugins: dict[str, PluginBase] = {}
         self.configs: dict[str, PluginConfig] = {}
+        if event_bus is None:
+            logger.warning("No event bus provided to plugin manager")
         self.event_bus = event_bus
         logger.info("Plugin manager initialized", extra={"plugin_dir": str(plugin_dir)})
 
     async def discover_plugins(self) -> list[PluginConfig]:
         """Discover and load plugin configurations"""
+        if self.event_bus is None:
+            logger.error("Cannot discover plugins without event bus")
+            return []
+
         logger.info(
             "Starting plugin discovery", extra={"plugin_dir": str(self.plugin_dir)}
         )
@@ -90,7 +96,12 @@ class PluginManager:
                     module = importlib.import_module(plugin_package)
 
                     # Get plugin class from the module
-                    plugin_class = getattr(module, "Plugin", None)
+                    plugin_class = None
+                    for attr_name in dir(module):
+                        if attr_name.endswith('Plugin'):
+                            plugin_class = getattr(module, attr_name)
+                            break
+                    
                     plugin_name = plugin_class.__name__ if plugin_class else None
                     logger.debug(
                         f"Found plugin class {plugin_name}",
@@ -160,19 +171,34 @@ class PluginManager:
 
         # Build dependency graph and detect cycles
         graph = {
-            name: set(plugin.config.dependencies)
+            name: {dep for dep in plugin.config.dependencies if dep in self.plugins}
             for name, plugin in self.plugins.items()
         }
-        initialized: set[str] = set()
+        logger.debug("Plugin dependency graph", extra={"graph": str(graph)})
 
+        # Check for missing dependencies
+        for name, plugin in self.plugins.items():
+            missing = set(plugin.config.dependencies) - set(self.plugins.keys())
+            if missing:
+                logger.warning(
+                    "Plugin has missing dependencies",
+                    extra={"plugin_name": name, "missing_dependencies": list(missing)},
+                )
+
+        initialized: set[str] = set()
         while graph:
-            # Find plugins with no dependencies
+            # Find plugins with no dependencies or only satisfied dependencies
             ready = {name for name, deps in graph.items() if not deps - initialized}
             if not ready:
                 remaining = ", ".join(graph.keys())
+                dependency_info = {name: list(deps) for name, deps in graph.items()}
                 logger.error(
                     "Circular plugin dependencies detected",
-                    extra={"remaining_plugins": remaining},
+                    extra={
+                        "remaining_plugins": remaining,
+                        "dependency_info": dependency_info,
+                        "initialized_plugins": list(initialized),
+                    },
                 )
                 raise ValueError(f"Circular plugin dependencies detected: {remaining}")
 

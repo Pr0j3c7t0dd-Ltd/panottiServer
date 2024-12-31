@@ -25,33 +25,46 @@ Use a modular and scalable structure for the project.
 
 ### Recommended Layout
 ```
-project_name/
-├── src/
-│   ├── module1/
-│   │   ├── __init__.py
-│   │   ├── models.py
-│   │   ├── services.py
-│   │   ├── routes.py
-│   │   └── tests/
-│   │       ├── __init__.py
-│   │       └── test_module1.py
-│   ├── common/
-│   │   ├── logging_config.py
-│   │   ├── utils.py
-│   │   └── config.py
-│   └── tests/
-│       ├── conftest.py
-│       ├── test_integration/
-│       └── test_unit/
-├── scripts/
-│   ├── migrations/
-│   └── data_processing.py
-├── Dockerfile
-├── requirements.txt
-├── pyproject.toml
-├── README.md
-└── .env
+app/
+├── core/                     # Core system interfaces and protocols
+│   ├── __init__.py
+│   └── events/              # Event system interfaces
+│       ├── __init__.py      # EventBus protocol
+│       └── models.py        # Core event models
+├── models/                  # Domain models
+│   ├── __init__.py
+│   ├── database.py         # Database functionality
+│   └── recording/          # Recording-related models
+│       ├── __init__.py
+│       └── events.py       # Recording event models
+├── plugins/                # Plugin implementations
+│   └── events/            # Event system plugin
+│       ├── __init__.py
+│       ├── models.py      # Event, EventContext, EventPriority
+│       ├── bus.py         # EventBus implementation
+│       └── persistence.py # Event persistence
+└── tests/                 # Test directory
+    ├── conftest.py
+    ├── test_integration/
+    └── test_unit/
 ```
+
+### Directory Responsibilities
+
+#### core/
+- Contains interfaces and protocols that define system contracts
+- No implementation details, only abstract definitions
+- Used to enforce dependency inversion principle
+
+#### models/
+- Contains domain models that represent business entities
+- Pure data structures with minimal business logic
+- Organized by domain concepts (e.g., recording, user, etc.)
+
+#### plugins/
+- Contains concrete implementations of core interfaces
+- Each plugin is a self-contained module
+- Follows dependency injection principles
 
 ## Architecture Guidelines
 

@@ -4,15 +4,19 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ..models.event_bus import EventBus, EventData
+from ..plugins.events.bus import EventBus
+from ..plugins.events.models import Event
 from ..utils import get_logger
+
+# Type alias for event data
+EventData = Event | dict[str, Any]
 
 # Initialize logging when the module is imported
 logger = get_logger(__name__)
 
 
 class PluginConfig(BaseModel):
-    """Base configuration model for plugins"""
+    """Plugin configuration"""
 
     name: str
     version: str
@@ -26,17 +30,14 @@ class PluginBase(ABC):
 
     def __init__(self, config: PluginConfig, event_bus: EventBus | None = None) -> None:
         self.config = config
+        self.event_bus = event_bus
+        self.version = config.version
         self.logger = get_logger(f"plugin.{config.name}")
         self._initialized = False
-        self.event_bus = event_bus
 
     @property
     def name(self) -> str:
         return self.config.name
-
-    @property
-    def version(self) -> str:
-        return self.config.version
 
     @property
     def is_initialized(self) -> bool:
@@ -44,6 +45,12 @@ class PluginBase(ABC):
 
     async def initialize(self) -> None:
         """Initialize the plugin"""
+        if self.event_bus is None:
+            self.logger.warning(
+                "No event bus available, plugin will not receive events"
+            )
+            return
+
         try:
             self.logger.info(
                 "Initializing plugin",
@@ -120,12 +127,28 @@ class PluginBase(ABC):
         if self.event_bus is not None:
             await self.event_bus.emit(event)
 
+    async def emit_event(
+        self, name: str, data: dict[str, Any], correlation_id: str | None = None
+    ) -> None:
+        """Helper method to emit events with proper context"""
+        if self.event_bus is None:
+            self.logger.warning(f"Cannot emit event {name}: no event bus available")
+            return
+
+        event = Event.create(
+            name=name,
+            data=data,
+            correlation_id=correlation_id or "unknown",
+            source_plugin=self.name,
+        )
+        await self.event_bus.emit(event)
+
     @abstractmethod
     async def _initialize(self) -> None:
-        """Custom initialization logic to be implemented by plugins"""
+        """Plugin-specific initialization"""
         pass
 
     @abstractmethod
     async def _shutdown(self) -> None:
-        """Custom shutdown logic to be implemented by plugins"""
+        """Plugin-specific shutdown"""
         pass

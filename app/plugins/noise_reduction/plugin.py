@@ -12,7 +12,7 @@ from scipy import signal
 from scipy.io import wavfile
 
 from app.models.database import DatabaseManager
-from app.models.event import RecordingEndRequest, RecordingEvent, RecordingStartRequest
+from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
 from app.plugins.base import PluginBase
 from app.plugins.events.models import Event
 from app.utils.logging_config import get_logger
@@ -32,9 +32,9 @@ EventHandler = Callable[[EventData], Coroutine[Any, Any, None]]
 class NoiseReductionPlugin(PluginBase):
     """Plugin for reducing background noise from microphone recordings"""
 
-    def __init__(self, config: Any) -> None:
+    def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin"""
-        super().__init__(config)
+        super().__init__(config, event_bus)
         self.output_dir: Path = Path(config.config.get("output_dir", "data/cleaned"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._executor: ThreadPoolExecutor | None = None

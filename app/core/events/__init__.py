@@ -1,22 +1,31 @@
-"""Event bus interface and implementation."""
-from abc import ABC, abstractmethod
-from typing import Any, Callable, Protocol, TypeVar, Dict, Union
+"""Core event system interfaces."""
 
-from .event import RecordingEvent, RecordingStartRequest, RecordingEndRequest
+from abc import abstractmethod
+from collections.abc import Callable
+from typing import Any, Protocol
+
+from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
 
 # Type for any event data
-EventData = Union[Dict[str, Any], RecordingEvent, RecordingStartRequest, RecordingEndRequest]
+EventData = (
+    dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest
+)
+
 
 class EventBus(Protocol):
     """Event bus interface."""
 
     @abstractmethod
-    async def subscribe(self, event_type: str, callback: Callable[[EventData], Any]) -> None:
+    async def subscribe(
+        self, event_type: str, callback: Callable[[EventData], Any]
+    ) -> None:
         """Subscribe to events of a given type."""
         pass
 
     @abstractmethod
-    async def unsubscribe(self, event_type: str, callback: Callable[[EventData], Any]) -> None:
+    async def unsubscribe(
+        self, event_type: str, callback: Callable[[EventData], Any]
+    ) -> None:
         """Unsubscribe from events of a given type."""
         pass
 
