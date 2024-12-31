@@ -144,7 +144,7 @@ class AudioTranscriptionPlugin(PluginBase):
         if not self.event_bus:
             return
 
-        event_data: dict[str, Any] = {
+        event_data = {
             "type": "transcription.completed",
             "recording_id": recording_id,
             "status": status,
@@ -156,7 +156,17 @@ class AudioTranscriptionPlugin(PluginBase):
         if error:
             event_data["error"] = error
 
-        await self.event_bus.emit(event_data)
+        event = RecordingEvent(
+            recording_timestamp=datetime.utcnow().isoformat(),
+            recording_id=recording_id,
+            event="Recording Ended",
+            name="transcription.completed",
+            data=event_data,
+            output_file=output_file,
+            status=status,
+        )
+
+        await self.event_bus.emit(event)
 
     async def _init_database(self) -> None:
         """Initialize database table for tracking processing state"""
@@ -368,7 +378,16 @@ class AudioTranscriptionPlugin(PluginBase):
                     "transcription_status": "completed",
                     "timestamp": datetime.utcnow().isoformat(),
                 }
-                await self.event_bus.emit(event_data)
+                event = RecordingEvent(
+                    recording_timestamp=datetime.utcnow().isoformat(),
+                    recording_id=recording_id,
+                    event="Recording Ended",
+                    name="transcription.completed",
+                    data=event_data,
+                    output_file=merged_output,
+                    status="completed",
+                )
+                await self.event_bus.emit(event)
 
         except Exception as e:
             self.logger.error(
@@ -414,4 +433,13 @@ class AudioTranscriptionPlugin(PluginBase):
                     "error_message": str(e),
                     "timestamp": datetime.utcnow().isoformat(),
                 }
-                await self.event_bus.emit(error_data)
+                event = RecordingEvent(
+                    recording_timestamp=datetime.utcnow().isoformat(),
+                    recording_id=recording_id,
+                    event="Recording Ended",
+                    name="transcription.error",
+                    data=error_data,
+                    output_file=merged_output,
+                    status="error",
+                )
+                await self.event_bus.emit(event)

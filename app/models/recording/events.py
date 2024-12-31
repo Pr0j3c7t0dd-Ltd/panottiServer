@@ -84,6 +84,8 @@ class RecordingEvent(BaseModel):
     context: EventContext = Field(
         default_factory=lambda: EventContext(correlation_id=str(uuid.uuid4()))
     )
+    output_file: str | None = None  # For plugin completion events
+    status: str | None = None  # For plugin completion events
 
     @field_validator("name")
     @classmethod

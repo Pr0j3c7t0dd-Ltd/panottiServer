@@ -151,7 +151,7 @@ class NoiseReductionPlugin(PluginBase):
                 recording_id,
                 original_event,
                 str(output_path),
-                "success",
+                "completed",
             )
 
         except Exception as e:
@@ -211,5 +211,7 @@ class NoiseReductionPlugin(PluginBase):
             event="Recording Ended",
             name="noise_reduction.completed",
             data=event_data,
+            output_file=output_file,
+            status=status,
         )
         await self.emit(event)
