@@ -10,12 +10,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import soundfile as sf
 from scipy import signal
 from scipy.io import wavfile
 
+from app.plugins.base import PluginBase
 from app.core.events import EventBus, EventData
-from app.core.plugins import PluginBase
 from app.models.database import DatabaseManager
 from app.models.recording.events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
 from app.plugins.events.models import Event
@@ -51,9 +50,9 @@ class NoiseReductionPlugin(PluginBase):
         
         # Subscribe to recording_ended event
         if self.event_bus:
-            self.logger.info("Subscribing to Recording Ended events")
-            await self.event_bus.subscribe("Recording Ended", self.handle_recording_ended)
-            self.logger.info("Successfully subscribed to Recording Ended events")
+            self.logger.info("Subscribing to recording.ended events")
+            await self.event_bus.subscribe("recording.ended", self.handle_event)
+            self.logger.info("Successfully subscribed to recording.ended events")
         else:
             self.logger.warning("No event bus available for noise reduction plugin")
         
@@ -63,7 +62,7 @@ class NoiseReductionPlugin(PluginBase):
         """Shutdown plugin"""
         # Unsubscribe from events
         if self.event_bus:
-            await self.event_bus.unsubscribe("Recording Ended", self.handle_recording_ended)
+            await self.event_bus.unsubscribe("recording.ended", self.handle_event)
 
         if self._executor:
             self._executor.shutdown()
@@ -309,51 +308,53 @@ class NoiseReductionPlugin(PluginBase):
         except Exception as e:
             raise OSError(f"Failed to save cleaned audio: {e!s}") from e
 
-    async def handle_recording_ended(self, event: EventData) -> None:
-        """Handle recording ended event"""
+    async def handle_event(self, event: Event) -> None:
+        """Handle recording events"""
         try:
-            # Check if event is a RecordingEvent
-            if not isinstance(event, RecordingEvent):
-                self.logger.warning(
-                    "Skipping event - not a RecordingEvent",
-                    extra={"event_type": type(event).__name__},
-                )
+            # Check event name
+            if event.name != "recording.ended":
                 return
 
-            # Extract recording information from event data
-            recording_id = event.data.get("recording_id")
-            mic_path = event.data.get("microphone_audio_path")
-            sys_path = event.data.get("system_audio_path")
+            # Extract recording information from event payload
+            recording_id = str(event.payload.get("recording_id", ""))
+            input_file = str(event.payload.get("file_path", ""))
 
-            if not recording_id or not mic_path or not sys_path:
+            if not recording_id or not input_file:
                 self.logger.warning(
                     "Missing required fields",
                     extra={
                         "recording_id": recording_id,
-                        "mic_path": mic_path,
-                        "sys_path": sys_path,
+                        "input_file": input_file,
                     },
                 )
                 return
 
+            # Generate output filename
+            output_file = str(self.output_dir / f"{recording_id}_cleaned.wav")
+
             # Process audio
-            await self._process_audio(recording_id=recording_id, mic_path=mic_path, sys_path=sys_path)
+            await self._process_audio(
+                recording_id=recording_id,
+                mic_path=input_file,
+                sys_path=input_file,
+            )
 
             # Log completion
             self.logger.info(
                 "Audio processing initiated",
                 extra={
                     "recording_id": recording_id,
+                    "input_file": input_file,
+                    "output_file": output_file,
                 },
             )
 
         except Exception as e:
             self.logger.error(
-                "Error processing recording ended event",
+                f"Failed to handle event: {e!s}",
                 extra={"error": str(e)},
                 exc_info=True,
             )
-            raise
 
     async def _process_audio(
         self,
@@ -532,51 +533,3 @@ class NoiseReductionPlugin(PluginBase):
         except Exception as e:
             logger.error(f"Error calculating speech clarity: {e!s}")
             return 0.0
-
-    async def handle_event(self, event: Event) -> None:
-        """Handle recording events"""
-        try:
-            # Check event name
-            if event.name != "Recording Ended":
-                return
-
-            # Extract recording information from event payload
-            recording_id = str(event.payload.get("recording_id", ""))
-            input_file = str(event.payload.get("file_path", ""))
-
-            if not recording_id or not input_file:
-                self.logger.warning(
-                    "Missing required fields",
-                    extra={
-                        "recording_id": recording_id,
-                        "input_file": input_file,
-                    },
-                )
-                return
-
-            # Generate output filename
-            output_file = str(self.output_dir / f"{recording_id}_cleaned.wav")
-
-            # Process audio
-            await self._process_audio(
-                recording_id=recording_id,
-                mic_path=input_file,
-                sys_path=input_file,
-            )
-
-            # Log completion
-            self.logger.info(
-                "Audio processing initiated",
-                extra={
-                    "recording_id": recording_id,
-                    "input_file": input_file,
-                    "output_file": output_file,
-                },
-            )
-
-        except Exception as e:
-            self.logger.error(
-                f"Failed to handle event: {e!s}",
-                extra={"error": str(e)},
-                exc_info=True,
-            )
