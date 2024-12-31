@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "product-requirements/meeting-note-plugin-requirements.md",
+                "file": "product-requirements/audio-preprocessing-plugin-requirement.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "meeting-note-plugin-requirements"
+              "title": "audio-preprocessing-plugin-requirement"
             }
           }
         ]
@@ -167,8 +167,8 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
-    "product-requirements/desktop-notifier-plugin.md",
     "product-requirements/meeting-note-plugin-requirements.md",
+    "product-requirements/desktop-notifier-plugin.md",
     "product-requirements/plugin-architecture-requirements.md",
     "product-requirements/plugin-requirements-example-cdoe.md",
     "product-requirements/basic-product-requirements.md",

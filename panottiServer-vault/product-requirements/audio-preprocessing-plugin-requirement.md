@@ -20,151 +20,209 @@ Look at the current example plugin in the /app/plugins/example directory to get 
 Working Function to impliment:
 
 ```
-def reduce_noise(mic_file, noise_file, output_file, noise_reduce_factor=0.7):
+"""Noise reduction plugin optimized for speech audio."""
 
-"""
+import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
 
-Reduce background noise from microphone audio using a noise profile.
+import numpy as np
+from scipy.io import wavfile
+from scipy.signal import butter, filtfilt, istft, stft
 
-Parameters:
-
-mic_file (str): Path to microphone recording WAV file
-
-noise_file (str): Path to system recording WAV file (noise profile)
-
-output_file (str): Path to save cleaned audio
-
-noise_reduce_factor (float): Amount of noise reduction (0 to 1)
-
-"""
-
-# Read both audio files
-
-mic_rate, mic_data = wavfile.read(mic_file)
-
-noise_rate, noise_data = wavfile.read(noise_file)
-
-print(f"Mic data shape: {mic_data.shape}, Noise data shape: {noise_data.shape}")
-
-print(f"Mic rate: {mic_rate}, Noise rate: {noise_rate}")
-
-# Convert stereo to mono by averaging channels
-
-if len(mic_data.shape) > 1:
-
-mic_data = np.mean(mic_data, axis=1)
-
-if len(noise_data.shape) > 1:
-
-noise_data = np.mean(noise_data, axis=1)
-
-print(f"After mono conversion - Mic data shape: {mic_data.shape}, Noise data shape: {noise_data.shape}")
-
-# Convert to float32 for processing
-
-mic_data = mic_data.astype(np.float32)
-
-noise_data = noise_data.astype(np.float32)
-
-# Normalize audio
-
-mic_data = mic_data / np.max(np.abs(mic_data))
-
-noise_data = noise_data / np.max(np.abs(noise_data))
-
-# Calculate STFT parameters based on input length
-
-nperseg = 2048 # Use fixed window size now that we have enough samples
-
-noverlap = nperseg // 2 # 50% overlap
-
-print(f"Using nperseg={nperseg}, noverlap={noverlap}")
-
-# Compute noise profile using Short-time Fourier Transform (STFT)
-
-_, _, noise_spectrogram = signal.stft(noise_data,
-
-fs=noise_rate,
-
-nperseg=nperseg,
-
-noverlap=noverlap)
-
-# Calculate noise profile magnitude
-
-noise_profile = np.mean(np.abs(noise_spectrogram), axis=1)
-
-# Compute STFT of microphone audio
-
-f, t, mic_spectrogram = signal.stft(mic_data,
-
-fs=mic_rate,
-
-nperseg=nperseg,
-
-noverlap=noverlap)
-
-# Apply spectral subtraction
-
-mic_mag = np.abs(mic_spectrogram)
-
-mic_phase = np.angle(mic_spectrogram)
-
-# Expand noise profile to match spectrogram shape
-
-noise_profile = noise_profile.reshape(-1, 1)
-
-# Subtract noise profile from magnitude spectrum
-
-cleaned_mag = np.maximum(
-
-mic_mag - noise_profile * noise_reduce_factor,
-
-mic_mag * 0.1 # Spectral floor to prevent complete silence
-
+from app.core.events.models import (
+    EventType,
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
 )
+from app.models.database import DatabaseManager
+from app.plugins.base import PluginBase, PluginConfig
+from app.plugins.events.bus import EventBus as PluginEventBus
 
-# Reconstruct complex spectrogram
+logger = logging.getLogger(__name__)
 
-cleaned_spectrogram = cleaned_mag * np.exp(1j * mic_phase)
 
-# Inverse STFT to get cleaned audio
+class NoiseReductionPlugin(PluginBase):
+    """Plugin for reducing noise in speech audio recordings while preserving voice quality."""
 
-_, cleaned_audio = signal.istft(cleaned_spectrogram,
+    def __init__(
+        self, config: PluginConfig, event_bus: PluginEventBus | None = None
+    ) -> None:
+        """Initialize plugin."""
+        super().__init__(config, event_bus)
+        self._plugin_name = "noise_reduction"
+        self.db: DatabaseManager | None = None
 
-fs=mic_rate,
+        # Load configuration values
+        config_dict = config.config or {}
+        self._output_dir = Path(
+            config_dict.get("output_directory", "data/cleaned_audio")
+        )
+        self._thread_pool = ThreadPoolExecutor(
+            max_workers=config_dict.get("max_concurrent_tasks", 4)
+        )
 
-nperseg=nperseg,
+        # Load values from config
+        self._highpass_cutoff = config_dict.get("highpass_cutoff", 60)
+        self._highpass_order = config_dict.get("highpass_order", 3)
+        self._stft_window_size = config_dict.get("stft_window_size", 2048)
+        self._stft_overlap_percent = config_dict.get("stft_overlap_percent", 75)
+        self._noise_reduce_factor = config_dict.get("noise_reduce_factor", 0.3)
+        self._wiener_alpha = config_dict.get("wiener_alpha", 1.2)
+        self._min_magnitude_threshold = config_dict.get("spectral_floor", 0.1)
+        self._noise_smooth_factor = config_dict.get("smoothing_factor", 4)
 
-noverlap=noverlap)
+        # Create output directory
+        self._output_dir.mkdir(parents=True, exist_ok=True)
 
-# Normalize output
+        logger.info(
+            "Speech-optimized noise reduction plugin initialized",
+            extra={
+                "plugin_name": self._plugin_name,
+                "config": {
+                    "output_directory": str(self._output_dir),
+                    "max_concurrent_tasks": self._thread_pool._max_workers,
+                    "highpass_cutoff": self._highpass_cutoff,
+                    "highpass_order": self._highpass_order,
+                    "stft_window_size": self._stft_window_size,
+                    "stft_overlap_percent": self._stft_overlap_percent,
+                    "noise_reduce_factor": self._noise_reduce_factor,
+                    "wiener_alpha": self._wiener_alpha,
+                    "spectral_floor": self._min_magnitude_threshold,
+                    "smoothing_factor": self._noise_smooth_factor,
+                },
+            },
+        )
 
-cleaned_audio = cleaned_audio / np.max(np.abs(cleaned_audio))
+    def _reduce_noise_worker(
+        self, mic_file: str, noise_file: str, output_file: str
+    ) -> None:
+        """Worker function for speech-optimized noise reduction processing."""
+        import warnings
+        from scipy.io.wavfile import WavFileWarning
 
-# Convert back to int16 for WAV file
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=WavFileWarning)
+                mic_rate, mic_data = wavfile.read(mic_file)
+                noise_rate, noise_data = wavfile.read(noise_file)
 
-cleaned_audio = (cleaned_audio * 32767).astype(np.int16)
+            # Ensure mono audio
+            if len(mic_data.shape) > 1:
+                mic_data = mic_data[:, 0]
+            if len(noise_data.shape) > 1:
+                noise_data = noise_data[:, 0]
 
-# Save cleaned audio
+            # Convert to float32 and normalize
+            mic_data = mic_data.astype(np.float32)
+            noise_data = noise_data.astype(np.float32)
+            mic_data = mic_data / np.max(np.abs(mic_data))
+            noise_data = noise_data / np.max(np.abs(noise_data))
 
-wavfile.write(output_file, mic_rate, cleaned_audio)
+            # Apply gentle highpass filter
+            mic_data = self._apply_highpass_filter(
+                mic_data, self._highpass_cutoff, mic_rate, order=self._highpass_order
+            )
+            noise_data = self._apply_highpass_filter(
+                noise_data,
+                self._highpass_cutoff,
+                noise_rate,
+                order=self._highpass_order,
+            )
 
-return cleaned_audio
+            # STFT parameters optimized for speech
+            nperseg = self._stft_window_size
+            noverlap = nperseg * self._stft_overlap_percent // 100
 
-  
+            # Speech-optimized noise profile computation
+            noise_profile = self._compute_noise_profile(
+                noise_data,
+                noise_rate,
+                nperseg=nperseg,
+                noverlap=noverlap,
+                smooth_factor=self._noise_smooth_factor,
+            )
 
-# Example usage
+            # Compute STFT of microphone signal
+            _, _, mic_spec = stft(
+                mic_data,
+                fs=mic_rate,
+                nperseg=nperseg,
+                noverlap=noverlap,
+                boundary="even",  # Changed to 'even' for better edge handling
+                window="hann",    # Explicit window type for speech
+            )
 
-mic_file = '~/Users/todd~/Library/Containers/com.pr0j3c7t0dd.PanottiAudio/Data/Documents/20241216140128_2096E65E_microphone.wav'
+            # Apply gentler Wiener filter
+            filtered_spec = self._wiener_filter(
+                mic_spec, 
+                noise_profile, 
+                alpha=self._wiener_alpha
+            )
 
-noise_file = '~/Library/Containers/com.pr0j3c7t0dd.PanottiAudio/Data/Documents/20241216140128_2096E65E_system_audio.wav'
+            # Apply speech-preserving spectral floor
+            filtered_spec = np.maximum(
+                filtered_spec,
+                self._min_magnitude_threshold * np.max(np.abs(filtered_spec)),
+            )
 
-output_file = 'cleaned.wav'
+            # Inverse STFT with same parameters
+            _, cleaned_data = istft(
+                filtered_spec,
+                fs=mic_rate,
+                nperseg=nperseg,
+                noverlap=noverlap,
+                boundary="even",
+                window="hann",
+            )
 
-noise_reduce_factor=.7 # Adjust this value between 0 and 1 to control noise reduction strength
+            # Normalize while preserving dynamic range
+            cleaned_data = cleaned_data / np.max(np.abs(cleaned_data))
+            
+            # Apply subtle compression to preserve speech
+            cleaned_data = np.sign(cleaned_data) * np.power(np.abs(cleaned_data), 0.9)
+            
+            # Convert to int16 with dithering for better speech quality
+            cleaned_data = (cleaned_data * 32767).astype(np.float32)
+            cleaned_data += np.random.normal(0, 0.5, cleaned_data.shape)
+            cleaned_data = np.clip(cleaned_data, -32767, 32767).astype(np.int16)
 
-cleaned_audio = reduce_noise(mic_file, noise_file, output_file, noise_reduce_factor)
+            # Write output file
+            wavfile.write(output_file, mic_rate, cleaned_data)
+
+        except Exception as e:
+            logger.error(
+                "Error in noise reduction worker",
+                extra={
+                    "error": str(e),
+                    "mic_file": mic_file,
+                    "noise_file": noise_file,
+                    "output_file": output_file,
+                },
+                exc_info=True,
+            )
+            raise
+
+    def _wiener_filter(
+        self, spec: np.ndarray, noise_power: np.ndarray, alpha: float = 1.5
+    ) -> np.ndarray:
+        """Apply speech-optimized Wiener filter."""
+        # Estimate signal power
+        sig_power = np.abs(spec) ** 2
+
+        # Calculate Wiener filter with speech-preserving modifications
+        wiener_gain = 1 - (alpha * noise_power / (sig_power + 1e-10))
+        
+        # Softer noise reduction curve
+        wiener_gain = 0.5 * (1 + np.tanh(2 * wiener_gain))
+        
+        # Ensure minimum gain to preserve speech
+        wiener_gain = np.maximum(wiener_gain, 0.2)
+
+        return spec * wiener_gain
 ```
 
 
