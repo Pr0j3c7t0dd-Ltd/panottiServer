@@ -1,0 +1,12 @@
+name: "noise_reduction"
+version: "1.0.0"
+enabled: true
+dependencies: []
+config:
+  output_directory: "data/cleaned_audio"
+  noise_reduce_factor: 1.0 # Maximum reduction
+  wiener_alpha: 2.5 # Very strong Wiener filtering
+  highpass_cutoff: 95 # Higher cutoff for more aggressive filtering
+  spectral_floor: 0.04 # Very low floor for maximum reduction
+  smoothing_factor: 2 # Keep moderate smoothing
+  max_concurrent_tasks: 4
