@@ -253,9 +253,9 @@ async def recording_ended(request: Request) -> dict[str, Any]:
         HTTPException: If recording_id is missing
     """
     data = await request.json()
-    recording_id = data.get("recording_id")
+    recording_id = data.get("recordingId") or data.get("recording_id")
     if not recording_id:
-        raise HTTPException(status_code=HTTP_BAD_REQUEST, detail="Missing recording_id")
+        raise HTTPException(status_code=HTTP_BAD_REQUEST, detail="Missing recordingId")
 
     logger.info(
         "Processing recording ended event",
@@ -280,14 +280,21 @@ async def recording_ended(request: Request) -> dict[str, Any]:
         (
             recording_id,
             "recording.ended",
-            data.get("system_audio_path"),
-            data.get("microphone_audio_path"),
+            data.get("systemAudioPath"),
+            data.get("microphoneAudioPath"),
             json.dumps(data.get("metadata", {})),
         ),
     )
 
     # Notify plugins
-    event_data = {"type": "recording.ended", **data}
+    event_data = {
+        "type": "recording.ended",
+        "recording_id": recording_id,
+        "system_audio_path": data.get("systemAudioPath"),
+        "microphone_audio_path": data.get("microphoneAudioPath"),
+        "metadata": data.get("metadata", {}),
+        "timestamp": data.get("timestamp"),
+    }
     await event_bus.emit(event_data)
 
     return {"status": "success", "recording_id": recording_id}
