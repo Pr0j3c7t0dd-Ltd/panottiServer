@@ -289,7 +289,7 @@ class NoiseReductionPlugin(PluginBase):
             return
 
         # Initialize database connection
-        self.db = DatabaseManager()
+        self.db = DatabaseManager.get_instance()
 
         # Subscribe to relevant events
         self.logger.info("Subscribing to recording events")

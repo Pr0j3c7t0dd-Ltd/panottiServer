@@ -18,6 +18,7 @@ from .models.database import DatabaseManager
 from .plugins.events import bus
 from .plugins.events.persistence import EventStore
 from .plugins.manager import PluginManager
+from .utils.logging_config import setup_logging
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -75,12 +76,14 @@ async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
 @app.on_event("startup")
 async def startup() -> None:
     """Initialize application components on startup."""
+    # Setup logging
+    setup_logging()
+
     try:
         # Set log level from environment
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         logging.basicConfig(level=log_level)
 
-        # Initialize database
         logger.info("Initializing database")
         db = DatabaseManager.get_instance()
         await db.execute("SELECT 1")  # Test database connection
