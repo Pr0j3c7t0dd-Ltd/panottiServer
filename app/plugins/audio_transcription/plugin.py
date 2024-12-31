@@ -342,12 +342,38 @@ class AudioTranscriptionPlugin(PluginBase):
 
         # Write merged transcript to file
         with open(output_path, "w") as f:
+            # Add metadata header
             f.write("# Merged Transcript\n\n")
+            f.write("## Metadata\n")
+            f.write(
+                f"- Recording ID: {original_event.get('recording_id', 'Unknown')}\n"
+            )
+            f.write(
+                f"- Timestamp: {original_event.get('recording_timestamp', 'Unknown')}\n"
+            )
+            f.write(f"- Meeting ID: {original_event.get('meeting_id', 'Unknown')}\n")
+            f.write(f"- User ID: {original_event.get('user_id', 'Unknown')}\n\n")
+
+            # Add transcripts
+            f.write("## Transcripts\n\n")
             for transcript_file, label in zip(transcript_files, labels, strict=False):
-                f.write(f"## {label}'s Transcript\n\n")
+                f.write(f"### {label}'s Transcript\n\n")
                 with open(transcript_file) as tf:
                     f.write(tf.read())
                 f.write("\n\n")
+
+            # Add any additional metadata from original event
+            additional_metadata = {
+                k: v
+                for k, v in original_event.items()
+                if k
+                not in ["recording_id", "recording_timestamp", "meeting_id", "user_id"]
+            }
+            if additional_metadata:
+                f.write("## Additional Metadata\n")
+                for key, value in additional_metadata.items():
+                    if isinstance(value, str | int | float | bool):
+                        f.write(f"- {key}: {value}\n")
 
     async def _process_audio(
         self,
@@ -392,6 +418,7 @@ class AudioTranscriptionPlugin(PluginBase):
 
             # Emit completion event
             if self.event_bus:
+                # Create base event data with original event metadata
                 event_data = {
                     "type": "transcription.completed",
                     "recording_id": recording_id,
@@ -399,41 +426,67 @@ class AudioTranscriptionPlugin(PluginBase):
                     "input_files": input_files,
                     "output_files": output_files,
                     "merged_output": merged_output,
-                    "meeting_title": original_event.get("metadata", {}).get(
-                        "eventTitle"
-                    ),
-                    "meeting_provider": original_event.get("metadata", {}).get(
-                        "eventProvider"
-                    ),
-                    "meeting_provider_id": original_event.get("metadata", {}).get(
-                        "eventProviderId"
-                    ),
-                    "meeting_attendees": original_event.get("metadata", {}).get(
-                        "eventAttendees", []
-                    ),
-                    "meeting_start_time": original_event.get("metadata", {}).get(
-                        "recordingStarted"
-                    ),
-                    "meeting_end_time": original_event.get("metadata", {}).get(
-                        "recordingEnded"
-                    ),
-                    "system_audio_label": original_event.get("metadata", {}).get(
-                        "systemLabel", "Meeting Participants"
-                    ),
-                    "microphone_audio_label": original_event.get("metadata", {}).get(
-                        "microphoneLabel", "Speaker"
-                    ),
                     "transcription_status": "completed",
                     "timestamp": datetime.utcnow().isoformat(),
+                    # Original event metadata
+                    "original_metadata": original_event,
+                    # Meeting metadata
+                    "meeting_metadata": {
+                        "title": original_event.get("metadata", {}).get("eventTitle"),
+                        "provider": original_event.get("metadata", {}).get(
+                            "eventProvider"
+                        ),
+                        "provider_id": original_event.get("metadata", {}).get(
+                            "eventProviderId"
+                        ),
+                        "attendees": original_event.get("metadata", {}).get(
+                            "eventAttendees", []
+                        ),
+                        "start_time": original_event.get("metadata", {}).get(
+                            "recordingStarted"
+                        ),
+                        "end_time": original_event.get("metadata", {}).get(
+                            "recordingEnded"
+                        ),
+                    },
+                    # Audio metadata
+                    "audio_metadata": {
+                        "system_audio_label": original_event.get("metadata", {}).get(
+                            "systemLabel", "Meeting Participants"
+                        ),
+                        "microphone_audio_label": original_event.get(
+                            "metadata", {}
+                        ).get("microphoneLabel", "Speaker"),
+                        "system_audio_path": original_event.get("systemAudioPath"),
+                        "microphone_audio_path": original_event.get(
+                            "microphoneAudioPath"
+                        ),
+                        "cleaned_audio_path": output_files[0] if output_files else None,
+                    },
+                    # Transcription metadata
+                    "transcription_metadata": {
+                        "model": self._model.__class__.__name__
+                        if self._model
+                        else "unknown",
+                        "output_files": output_files,
+                        "merged_output": merged_output,
+                        "processing_time": (
+                            datetime.utcnow()
+                            - datetime.fromisoformat(
+                                original_event.get(
+                                    "recording_timestamp", datetime.utcnow().isoformat()
+                                )
+                            )
+                        ).total_seconds(),
+                    },
                 }
+
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
                     event="recording.ended",
                     name="transcription.completed",
                     data=event_data,
-                    output_file=merged_output,
-                    status="completed",
                 )
                 await self.event_bus.emit(event)
 

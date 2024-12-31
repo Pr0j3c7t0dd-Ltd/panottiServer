@@ -75,7 +75,7 @@ class RecordingEvent(BaseModel):
     recording_id: str
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
-    event: Literal["Recording Started", "recording.ended"]
+    event: Literal["Recording Started", "Recording Ended", "recording.ended"]
     metadata: dict[str, Any] | EventMetadata | None = None
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     plugin_id: str = Field(default="recording_plugin")
@@ -245,8 +245,18 @@ class RecordingEndRequest(BaseModel):
     recording_id: str = Field(..., alias="recordingId")
     system_audio_path: str = Field(..., alias="systemAudioPath")
     microphone_audio_path: str = Field(..., alias="microphoneAudioPath")
-    event: Literal["recording.ended"] = Field(default="recording.ended")
+    event: Literal["Recording Ended", "recording.ended"] = Field(
+        default="recording.ended"
+    )
     metadata: dict[str, Any]
+
+    @field_validator("event")
+    @classmethod
+    def normalize_event(cls, value: str) -> str:
+        """Normalize event name to recording.ended."""
+        if value == "Recording Ended":
+            return "recording.ended"
+        return value
 
     @field_validator("recording_timestamp")
     @classmethod

@@ -232,8 +232,16 @@ Participants: [Extract speaker names from transcript]
 
             # Extract data from event payload
             recording_id = event.payload["recording_id"]
-            merged_transcript_path = event.payload["merged_transcript_path"]
+            merged_transcript_path = event.payload["transcription_metadata"][
+                "merged_output"
+            ]
             transcription_status = event.payload["transcription_status"]
+
+            # Extract metadata
+            meeting_metadata = event.payload.get("meeting_metadata", {})
+            audio_metadata = event.payload.get("audio_metadata", {})
+            transcription_metadata = event.payload.get("transcription_metadata", {})
+            original_metadata = event.payload.get("original_metadata", {})
 
             if transcription_status == "error":
                 error_message = event.payload.get(
@@ -241,7 +249,10 @@ Participants: [Extract speaker names from transcript]
                 )
                 logger.error(
                     f"Transcription failed: {error_message}",
-                    extra={"recording_id": recording_id},
+                    extra={
+                        "recording_id": recording_id,
+                        "meeting_title": meeting_metadata.get("title"),
+                    },
                 )
                 return
 
@@ -251,7 +262,10 @@ Participants: [Extract speaker names from transcript]
             except Exception as e:
                 logger.error(
                     f"Failed to read transcript file: {e}",
-                    extra={"recording_id": recording_id},
+                    extra={
+                        "recording_id": recording_id,
+                        "transcript_path": merged_transcript_path,
+                    },
                     exc_info=True,
                 )
                 return
@@ -260,28 +274,34 @@ Participants: [Extract speaker names from transcript]
                 "Processing transcript",
                 extra={
                     "recording_id": recording_id,
-                    "correlation_id": (
-                        event.context.correlation_id if event.context else None
-                    ),
+                    "correlation_id": event.context.correlation_id
+                    if event.context
+                    else None,
+                    "meeting_title": meeting_metadata.get("title"),
+                    "meeting_provider": meeting_metadata.get("provider"),
+                    "processing_time": transcription_metadata.get("processing_time"),
                     "input_path": merged_transcript_path,
-                    "meeting_title": event.payload.get("meeting_title"),
-                    "meeting_provider": event.payload.get("meeting_provider"),
                 },
             )
 
-            # Process transcript
-            await self._process_transcript(recording_id, transcript_text, event)
+            # Process transcript with all metadata
+            await self._process_transcript(
+                recording_id=recording_id,
+                transcript_text=transcript_text,
+                original_event=event,
+            )
 
         except Exception as e:
             logger.error(
                 "Failed to handle transcription completed event",
                 extra={
-                    "recording_id": (
-                        recording_id if "recording_id" in locals() else None
-                    ),
+                    "recording_id": recording_id
+                    if "recording_id" in locals()
+                    else None,
                     "error": str(e),
                     "event_payload": event.payload if event else None,
                 },
+                exc_info=True,
             )
             raise
 

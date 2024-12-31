@@ -3,24 +3,22 @@ version: "1.0.0"
 enabled: true
 dependencies: []
 config:
-  # Directory where cleaned audio files will be saved
-  output_directory: "data/cleaned_audio"
+  # Minimal noise reduction settings for more natural sound
+  noise_reduce_factor: 0.3    # Reduce from 0.6 to 0.3 for much gentler noise reduction
   
-  # Maximum number of concurrent audio processing tasks
-  max_concurrent_tasks: 4
+  # Very gentle Wiener filter
+  wiener_alpha: 1.2          # Lower from 1.8 to 1.2 for minimal filtering
   
-  # Noise reduction parameters
-  noise_reduce_factor: 1.0  # Strength of noise reduction (0.0-2.0, default: 1.0)
-  wiener_alpha: 2.5        # Wiener filter aggressiveness (1.0-4.0, default: 2.5)
-  spectral_floor: 0.04     # Minimum spectral magnitude to preserve (0.01-0.1, default: 0.04)
+  # Higher spectral floor to preserve more audio detail
+  spectral_floor: 0.1        # Increase from 0.06 to 0.1
   
-  # High-pass filter parameters
-  highpass_cutoff: 95      # High-pass filter cutoff frequency in Hz (20-200, default: 95)
-  highpass_order: 5        # High-pass filter order (2-10, default: 5)
+  # Minimal high-pass filter
+  highpass_cutoff: 60        # Lower from 80 to 60 Hz to preserve more bass
+  highpass_order: 3          # Lower from 4 to 3 for gentler filtering
   
-  # STFT (Short-Time Fourier Transform) parameters
-  stft_window_size: 2048   # STFT window size in samples (512-4096, default: 2048)
-  stft_overlap_percent: 75 # Overlap percentage between windows (50-75, default: 75)
+  # Keep STFT parameters the same
+  stft_window_size: 2048     # Good for speech processing
+  stft_overlap_percent: 75   # Good overlap for smooth transitions
   
-  # Noise profile parameters
-  smoothing_factor: 2      # Noise profile smoothing factor (1-5, default: 2)
+  # Increase smoothing for more natural transitions
+  smoothing_factor: 4        # Increase from 3 to 4 for smoother transitions
