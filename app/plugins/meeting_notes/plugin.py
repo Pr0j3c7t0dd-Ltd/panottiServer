@@ -164,11 +164,6 @@ class MeetingNotesPlugin(PluginBase):
             self._update_task_completed(recording_id, output_path)
 
             # Create completion event
-            event_data = {
-                **event.payload,
-                "meeting_notes_path": output_path
-            }
-            
             completion_event = Event(
                 type="meeting_notes.completed",
                 priority=EventPriority.NORMAL,
@@ -177,7 +172,39 @@ class MeetingNotesPlugin(PluginBase):
                     correlation_id=event.context.correlation_id,
                     source_plugin="meeting_notes"
                 ),
-                payload=event_data
+                payload={
+                    # Recording identifiers
+                    "recording_id": recording_id,
+                    "recording_timestamp": event.payload.get("recording_timestamp"),
+                    
+                    # Audio file paths
+                    "raw_system_audio_path": event.payload.get("raw_system_audio_path"),
+                    "raw_microphone_audio_path": event.payload.get("raw_microphone_audio_path"),
+                    "noise_reduced_audio_path": event.payload.get("noise_reduced_audio_path"),
+                    
+                    # Transcript file paths
+                    "system_transcript_path": event.payload.get("system_transcript_path"),
+                    "microphone_transcript_path": event.payload.get("microphone_transcript_path"),
+                    "merged_transcript_path": event.payload.get("merged_transcript_path"),
+                    
+                    # Meeting notes path
+                    "meeting_notes_path": output_path,
+                    
+                    # Meeting metadata
+                    "meeting_title": event.payload.get("meeting_title"),
+                    "meeting_provider": event.payload.get("meeting_provider"),
+                    "meeting_provider_id": event.payload.get("meeting_provider_id"),
+                    "meeting_attendees": event.payload.get("meeting_attendees", []),
+                    "meeting_start_time": event.payload.get("meeting_start_time"),
+                    "meeting_end_time": event.payload.get("meeting_end_time"),
+                    
+                    # Audio source labels
+                    "system_audio_label": event.payload.get("system_audio_label"),
+                    "microphone_audio_label": event.payload.get("microphone_audio_label"),
+                    
+                    # Processing status
+                    "meeting_notes_status": "completed"
+                }
             )
             
             asyncio.run(self.event_bus.emit(completion_event))
@@ -192,8 +219,18 @@ class MeetingNotesPlugin(PluginBase):
                     source_plugin="meeting_notes"
                 ),
                 payload={
-                    "error": str(e),
-                    "recording_id": recording_id
+                    # Recording identifiers
+                    "recording_id": recording_id,
+                    "recording_timestamp": event.payload.get("recording_timestamp"),
+                    
+                    # Meeting metadata
+                    "meeting_title": event.payload.get("meeting_title"),
+                    "meeting_provider": event.payload.get("meeting_provider"),
+                    "meeting_provider_id": event.payload.get("meeting_provider_id"),
+                    
+                    # Error details
+                    "meeting_notes_status": "error",
+                    "error_message": str(e)
                 }
             )
             

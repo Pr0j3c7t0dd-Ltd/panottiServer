@@ -1,119 +1,171 @@
 import asyncio
+import json
+from datetime import datetime
+from typing import Optional
 from app.plugins.base import PluginBase
 from app.plugins.events.models import Event, EventContext, EventPriority
-from datetime import datetime
 
-# pylint: disable=too-few-public-methods
 class Plugin(PluginBase):
-    """Example plugin demonstrating basic functionality"""
+    """Example plugin demonstrating event cascade with flattened payloads"""
     
     async def _initialize(self) -> None:
         """Initialize plugin"""
-        # Subscribe to events
-        self.event_bus.subscribe("example.event", self.handle_event)
-        self.event_bus.subscribe("example.status", self.handle_status)
+        # Subscribe to events in the cascade
+        self.event_bus.subscribe("recording.ended", self.handle_recording_ended)
+        self.event_bus.subscribe("noise_reduction.completed", self.handle_noise_reduction)
+        self.event_bus.subscribe("transcription.completed", self.handle_transcription)
+        self.event_bus.subscribe("meeting_notes.completed", self.handle_meeting_notes)
+        self.event_bus.subscribe("desktop_notification.completed", self.handle_notification)
+        
         self.logger.info(
-            "Subscribed to events",
+            "Example plugin initialized",
             extra={
-                "event_types": ["example.event", "example.status"],
-                "check_interval": self.get_config("check_interval", 60)
+                "subscribed_events": [
+                    "recording.ended",
+                    "noise_reduction.completed",
+                    "transcription.completed",
+                    "meeting_notes.completed",
+                    "desktop_notification.completed"
+                ]
             }
         )
-        
-        # Schedule periodic task
-        asyncio.create_task(self._periodic_task())
         
     async def _shutdown(self) -> None:
         """Shutdown plugin"""
-        # Unsubscribe from events
-        self.event_bus.unsubscribe("example.event", self.handle_event)
-        self.event_bus.unsubscribe("example.status", self.handle_status)
-        self.logger.info(
-            "Unsubscribed from events",
-            extra={"event_types": ["example.event", "example.status"]}
-        )
+        # Unsubscribe from all events
+        self.event_bus.unsubscribe("recording.ended", self.handle_recording_ended)
+        self.event_bus.unsubscribe("noise_reduction.completed", self.handle_noise_reduction)
+        self.event_bus.unsubscribe("transcription.completed", self.handle_transcription)
+        self.event_bus.unsubscribe("meeting_notes.completed", self.handle_meeting_notes)
+        self.event_bus.unsubscribe("desktop_notification.completed", self.handle_notification)
         
-    async def handle_event(self, event: Event) -> None:
-        """Handle incoming events"""
+        self.logger.info("Example plugin shutdown")
+
+    async def handle_recording_ended(self, event: Event) -> None:
+        """Handle recording ended event - Start of cascade"""
         self.logger.info(
-            "Received event",
+            "Recording ended event received",
             extra={
-                "event_name": event.name,
-                "correlation_id": event.context.correlation_id,
-                "source_plugin": event.context.source_plugin
-            }
-        )
-        self.logger.debug(
-            "Event details",
-            extra={
-                "event_name": event.name,
-                "event_payload": event.payload,
-                "event_context": event.context.dict()
-            }
-        )
-        
-        # Process event
-        await asyncio.sleep(1)  # Simulate processing
-        self.logger.info(
-            "Processed event",
-            extra={
-                "event_name": event.name,
+                "recording_id": event.payload.get("recording_id"),
+                "event_title": event.payload.get("event_title"),
                 "correlation_id": event.context.correlation_id
             }
         )
         
-    async def handle_status(self, event: Event) -> None:
-        """Handle status events"""
+        # Example of creating a flattened event payload
+        await self.emit_example_event(
+            name="example.recording_processed",
+            recording_id=event.payload.get("recording_id"),
+            event_title=event.payload.get("event_title"),
+            event_provider=event.payload.get("event_provider"),
+            correlation_id=event.context.correlation_id,
+            status="processing"
+        )
+
+    async def handle_noise_reduction(self, event: Event) -> None:
+        """Handle noise reduction completed event"""
         self.logger.info(
-            "Received status update",
+            "Noise reduction completed event received",
             extra={
-                "correlation_id": event.context.correlation_id,
-                "source_plugin": event.context.source_plugin,
-                "status": event.payload.get("status", "unknown")
+                "recording_id": event.payload.get("recording_id"),
+                "noise_reduced_audio_path": event.payload.get("noise_reduced_audio_path"),
+                "noise_reduction_status": event.payload.get("noise_reduction_status")
             }
         )
         
-    async def _periodic_task(self) -> None:
-        """Example periodic task"""
-        check_interval = self.get_config("check_interval", 60)
+        await self.emit_example_event(
+            name="example.noise_reduced",
+            recording_id=event.payload["recording_id"],
+            noise_reduced_audio_path=event.payload.get("noise_reduced_audio_path"),
+            correlation_id=event.context.correlation_id,
+            status="processing"
+        )
+
+    async def handle_transcription(self, event: Event) -> None:
+        """Handle transcription completed event"""
         self.logger.info(
-            "Starting periodic task",
-            extra={"check_interval": check_interval}
+            "Transcription completed event received",
+            extra={
+                "recording_id": event.payload.get("recording_id"),
+                "merged_transcript_path": event.payload.get("merged_transcript_path"),
+                "transcription_status": event.payload.get("transcription_status")
+            }
         )
         
-        while self.is_initialized:
-            try:
-                # Generate a unique correlation ID with timestamp
-                correlation_id = f"periodic-status-{datetime.utcnow().isoformat()}"
-                
-                # Create and publish event
-                event = Event(
-                    name="example.status",
-                    payload={"status": "healthy"},
-                    context=EventContext(
-                        correlation_id=correlation_id,
-                        source_plugin=self.name
-                    ),
-                    priority=EventPriority.LOW
-                )
-                
-                self.logger.debug(
-                    "Publishing status event",
-                    extra={
-                        "event_name": event.name,
-                        "correlation_id": correlation_id,
-                        "plugin": self.name
-                    }
-                )
-                await self.event_bus.publish(event)
-                
-            except Exception as e:
-                self.logger.error(
-                    "Error in periodic task",
-                    extra={
-                        "error": str(e),
-                        "plugin_name": self.name
-                    }
-                )
-                
-            await asyncio.sleep(check_interval)  # Run every minute
+        await self.emit_example_event(
+            name="example.transcribed",
+            recording_id=event.payload["recording_id"],
+            merged_transcript_path=event.payload.get("merged_transcript_path"),
+            correlation_id=event.context.correlation_id,
+            status="processing"
+        )
+
+    async def handle_meeting_notes(self, event: Event) -> None:
+        """Handle meeting notes completed event"""
+        self.logger.info(
+            "Meeting notes completed event received",
+            extra={
+                "recording_id": event.payload.get("recording_id"),
+                "meeting_notes_path": event.payload.get("meeting_notes_path"),
+                "meeting_notes_status": event.payload.get("meeting_notes_status")
+            }
+        )
+        
+        await self.emit_example_event(
+            name="example.notes_generated",
+            recording_id=event.payload["recording_id"],
+            meeting_notes_path=event.payload.get("meeting_notes_path"),
+            correlation_id=event.context.correlation_id,
+            status="processing"
+        )
+
+    async def handle_notification(self, event: Event) -> None:
+        """Handle desktop notification completed event - End of cascade"""
+        self.logger.info(
+            "Desktop notification completed event received",
+            extra={
+                "recording_id": event.payload.get("recording_id"),
+                "notification_status": event.payload.get("notification_status")
+            }
+        )
+        
+        await self.emit_example_event(
+            name="example.cascade_completed",
+            recording_id=event.payload["recording_id"],
+            correlation_id=event.context.correlation_id,
+            status="completed"
+        )
+
+    async def emit_example_event(
+        self,
+        name: str,
+        recording_id: str,
+        correlation_id: str,
+        status: str,
+        **kwargs
+    ) -> None:
+        """Helper method to emit events with consistent structure"""
+        # Create base payload with common fields
+        payload = {
+            # Recording identifiers
+            "recording_id": recording_id,
+            "recording_timestamp": datetime.utcnow().isoformat(),
+            
+            # Processing status
+            "status": status,
+            
+            # Add any additional fields from kwargs
+            **kwargs
+        }
+        
+        event = Event(
+            name=name,
+            payload=payload,
+            context=EventContext(
+                correlation_id=correlation_id,
+                source_plugin=self.name
+            ),
+            priority=EventPriority.LOW
+        )
+        
+        await self.event_bus.emit(event)

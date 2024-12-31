@@ -141,20 +141,44 @@ class DesktopNotifierPlugin(PluginBase):
             # Update status to processing
             self._update_task_status(notes_id, "processing")
 
+            # Get meeting title for notification
+            meeting_title = original_event.payload.get("meeting_title", "Meeting")
+            notification_title = f"{meeting_title} Notes Ready"
+            notification_message = "Your meeting notes are ready to view."
+
             # Send notification and optionally open file
             self.notify_and_open(
-                "Meeting Notes Ready",
-                "Your meeting notes are ready to view.",
+                notification_title,
+                notification_message,
                 notes_path
             )
 
             # Update status to completed
             self._update_task_status(notes_id, "completed")
 
-            # Emit completion event
+            # Create and publish notification completed event with flattened payload
             completion_event = Event(
                 type="desktop_notification.completed",
-                payload=original_event.payload,
+                payload={
+                    # Recording identifiers
+                    "recording_id": notes_id,
+                    "recording_timestamp": original_event.payload.get("recording_timestamp"),
+                    
+                    # File paths
+                    "meeting_notes_path": notes_path,
+                    "merged_transcript_path": original_event.payload.get("merged_transcript_path"),
+                    
+                    # Meeting metadata
+                    "meeting_title": meeting_title,
+                    "meeting_provider": original_event.payload.get("meeting_provider"),
+                    "meeting_provider_id": original_event.payload.get("meeting_provider_id"),
+                    "meeting_attendees": original_event.payload.get("meeting_attendees", []),
+                    "meeting_start_time": original_event.payload.get("meeting_start_time"),
+                    "meeting_end_time": original_event.payload.get("meeting_end_time"),
+                    
+                    # Processing status
+                    "notification_status": "completed"
+                },
                 context=EventContext(
                     correlation_id=original_event.context.correlation_id,
                     priority=EventPriority.LOW
@@ -185,19 +209,33 @@ class DesktopNotifierPlugin(PluginBase):
     async def handle_meeting_notes_completed(self, event: Event) -> None:
         """Handle meeting notes completed event"""
         try:
-            # Extract data from event payload
-            recording_id = event.payload.get("recording_id")
-            notes_path = event.payload.get("meeting_notes_path")
+            # Extract data from flattened event payload
+            recording_id = event.payload["recording_id"]
+            notes_path = event.payload["meeting_notes_path"]
+            meeting_title = event.payload.get("meeting_title", "Meeting")
+            notes_status = event.payload.get("meeting_notes_status")
+            
+            if notes_status == "error":
+                error_message = event.payload.get("error_message", "Unknown error in meeting notes generation")
+                self.logger.error(
+                    "Meeting notes generation failed, skipping notification",
+                    extra={
+                        "recording_id": recording_id,
+                        "error": error_message
+                    }
+                )
+                return
             
             if not notes_path or not os.path.exists(notes_path):
                 raise ValueError(f"Invalid notes path: {notes_path}")
 
             self.logger.info(
-                "Received meeting notes completion",
+                "Processing meeting notes notification",
                 extra={
                     "recording_id": recording_id,
                     "correlation_id": event.context.correlation_id,
-                    "notes_path": notes_path
+                    "notes_path": notes_path,
+                    "meeting_title": meeting_title
                 }
             )
 
@@ -214,12 +252,11 @@ class DesktopNotifierPlugin(PluginBase):
 
         except Exception as e:
             self.logger.error(
-                "Error handling meeting notes completion",
+                "Failed to handle meeting notes completion",
                 extra={
+                    "recording_id": recording_id if 'recording_id' in locals() else None,
                     "error": str(e),
-                    "event_id": event.id,
-                    "correlation_id": event.context.correlation_id,
-                    "payload": event.payload
-                },
-                exc_info=True
+                    "event_payload": event.payload
+                }
             )
+            raise
