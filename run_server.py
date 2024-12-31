@@ -7,10 +7,11 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+
 def main():
     # Get port from environment
     port = int(os.getenv("API_PORT", "8001"))
-    
+
     # Get host from environment
     host = os.getenv("API_HOST", "127.0.0.1")  # Default to localhost
 
@@ -27,6 +28,7 @@ def main():
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile,
     )
+
 
 if __name__ == "__main__":
     main()

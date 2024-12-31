@@ -134,13 +134,14 @@ class DesktopNotifierPlugin(PluginBase):
                 message,
                 "-sound",
                 "default",
-            ], check=False
+            ],
+            check=False,
         )
 
         # Open file if configured
         auto_open = self.config.config.get("auto_open_notes", False)
         if auto_open:
-            subprocess.run(['open', abs_path], check=True)
+            subprocess.run(["open", abs_path], check=True)
 
     def _process_notification(
         self, notes_id: str, notes_path: str, original_event: Event

@@ -469,7 +469,7 @@ NOTE: If no clear owner is mentioned, use "UNASSIGNED". Example:
                     "num_ctx": self.get_config("num_ctx", 128000),
                 },
                 stream=False,  # Don't stream at requests level either
-                timeout=30  # Add 30 second timeout
+                timeout=30,  # Add 30 second timeout
             )
             response.raise_for_status()
 

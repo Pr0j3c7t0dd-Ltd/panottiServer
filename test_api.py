@@ -43,7 +43,7 @@ def test_basic_recording_flow():
             "recordingId": recording_id,
         },
         verify=SSL_VERIFY,
-        timeout=30
+        timeout=30,
     )
     print("\nStart Recording Response:", start_response.json())
     assert (
@@ -63,7 +63,7 @@ def test_basic_recording_flow():
             "metadata": {"recordingDateTime": end_time},
         },
         verify=SSL_VERIFY,
-        timeout=30
+        timeout=30,
     )
     print("\nEnd Recording Response:", end_response.json())
     assert end_response.status_code == 200, f"End recording failed: {end_response.text}"
@@ -84,7 +84,7 @@ def test_calendar_event_recording_flow():
             "recordingId": recording_id,
         },
         verify=SSL_VERIFY,
-        timeout=30
+        timeout=30,
     )
     print("\nStart Recording Response:", start_response.json())
     assert (
@@ -110,7 +110,7 @@ def test_calendar_event_recording_flow():
             },
         },
         verify=SSL_VERIFY,
-        timeout=30
+        timeout=30,
     )
     print("\nEnd Recording Response:", end_response.json())
     assert end_response.status_code == 200, f"End recording failed: {end_response.text}"
@@ -132,7 +132,7 @@ def test_invalid_recording_flow():
             "recordingId": recording_id,
         },
         verify=SSL_VERIFY,
-        timeout=30
+        timeout=30,
     )
     assert start_response1.status_code == 200, "First start should succeed"
 
@@ -146,7 +146,7 @@ def test_invalid_recording_flow():
             "recordingId": recording_id,
         },
         verify=SSL_VERIFY,
-        timeout=30
+        timeout=30,
     )
     assert start_response2.status_code == 400, "Second start should fail"
 
@@ -162,7 +162,7 @@ def test_invalid_recording_flow():
             "metadata": {"recordingDateTime": start_time},
         },
         verify=SSL_VERIFY,
-        timeout=30
+        timeout=30,
     )
     assert end_response.status_code == 404, "Ending non-existent recording should fail"
 
