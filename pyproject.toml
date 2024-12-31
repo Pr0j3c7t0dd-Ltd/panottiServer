@@ -38,6 +38,8 @@ mypy = "^1.8.0"
 pylint = "^3.0"
 flake8 = "^6.1.0"
 pre-commit = "^4.0.1"
+types-pyyaml = "^6.0.12.20241230"
+types-requests = "^2.32.0.20241016"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -56,6 +58,31 @@ python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false  # Allow untyped decorators for FastAPI
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+show_error_codes = true
+
+# Ignore certain errors in test files
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# Ignore missing imports for certain packages
+[[tool.mypy.overrides]]
+module = [
+    "faster_whisper.*",
+    "scipy.*",
+    "numpy.*"
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -65,4 +92,27 @@ addopts = "--cov=app --cov-report=term-missing"
 [tool.ruff]
 target-version = "py312"
 line-length = 88
+
+[tool.ruff.lint]
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
+ignore = ["PLR0913"]  # Ignore "too many arguments" for now
+
+[tool.ruff.lint.per-file-ignores]
+"test_*.py" = ["PLR2004"]  # Ignore magic numbers in test files
+"app/tests/*" = ["PLR2004"]  # Ignore magic numbers in test files
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 88
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pyupgrade]
+# Preserve types, even if a file imports `from __future__ import annotations`
+keep-runtime-typing = true

@@ -3,12 +3,12 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from sqlite3 import Connection, Cursor
+from sqlite3 import Connection
+from typing import Any, Optional
 
 
 class DatabaseManager:
-    _instance: Optional['DatabaseManager'] = None
+    _instance: Optional["DatabaseManager"] = None
     _lock = threading.Lock()
     _local = threading.local()
 
@@ -29,13 +29,18 @@ class DatabaseManager:
     def __enter__(self) -> Connection:
         return self.get_connection()
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Optional[Any]) -> None:
+    def __exit__(
+        self,
+        exc_type: type | None,
+        exc_val: Exception | None,
+        exc_tb: Any | None,
+    ) -> None:
         if hasattr(self._local, "connection"):
             self._local.connection.close()
             del self._local.connection
 
     @classmethod
-    def get_instance(cls) -> 'DatabaseManager':
+    def get_instance(cls) -> "DatabaseManager":
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -74,7 +79,7 @@ class DatabaseManager:
             # Add any other tables as needed
             conn.commit()
 
-    def get_active_recordings(self) -> Dict[str, str]:
+    def get_active_recordings(self) -> dict[str, str]:
         """Get all active recordings (started but not ended)"""
         with self.get_connection() as conn:
             cursor = conn.cursor()

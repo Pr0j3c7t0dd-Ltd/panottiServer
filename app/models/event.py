@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import Literal, Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, validator
 
@@ -75,6 +75,7 @@ class EventMetadata(BaseModel):
         recording_started: Recording start timestamp
         recording_ended: Recording end timestamp
     """
+
     event_provider_id: str | None = None
     event_title: str | None = None
     event_provider: str | None = None
@@ -90,7 +91,9 @@ class EventMetadata(BaseModel):
             "event_provider_id": self.event_provider_id,
             "event_title": self.event_title,
             "event_provider": self.event_provider,
-            "event_attendees": json.dumps(self.event_attendees) if self.event_attendees else None,
+            "event_attendees": (
+                json.dumps(self.event_attendees) if self.event_attendees else None
+            ),
             "system_label": self.system_label,
             "microphone_label": self.microphone_label,
             "recording_started": self.recording_started,
@@ -109,6 +112,7 @@ class RecordingEvent(BaseModel):
         event: Type of recording event
         metadata: Additional event metadata
     """
+
     recording_timestamp: str
     recording_id: str
     system_audio_path: str | None = None
@@ -176,7 +180,9 @@ class RecordingEvent(BaseModel):
                 metadata = {}
 
         # Handle empty string for systemAudioPath and microphoneAudioPath
-        system_audio_path = self.system_audio_path if self.system_audio_path != "" else None
+        system_audio_path = (
+            self.system_audio_path if self.system_audio_path != "" else None
+        )
         microphone_audio_path = (
             self.microphone_audio_path if self.microphone_audio_path != "" else None
         )
