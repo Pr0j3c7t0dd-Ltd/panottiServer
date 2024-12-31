@@ -337,16 +337,18 @@ class MeetingNotesPlugin(PluginBase):
 
         # Prepare prompt
         prompt = f"""Please analyze the meeting metadata and transcript below and create comprehensive meeting notes in markdown format. Please ensure the notes are clear and concise. 
+     
+---
+
+Meeting Metadata:
+
+{metadata}
 
 ---
 
-Metadata:
-{metadata if metadata else 'No metadata available'}
+Meeting Transcript:
 
----
-
-Transcript:
-{json.dumps(transcript_lines, indent=2)}
+{transcript_lines}
 
 ---
 

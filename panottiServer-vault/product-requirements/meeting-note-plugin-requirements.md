@@ -246,7 +246,7 @@ raise Exception(f"Error generating notes: {str(e)}")
 
 def main():
 
-with open('20241216101704_C6A49F0E_transcript.md', 'r') as f:
+with open('test_transcript.md', 'r') as f:
 
 transcript_text = f.read()
 

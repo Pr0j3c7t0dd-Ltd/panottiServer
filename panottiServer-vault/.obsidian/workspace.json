@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "product-requirements/desktop-notifier-plugin.md",
+                "file": "product-requirements/meeting-note-plugin-requirements.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "desktop-notifier-plugin"
+              "title": "meeting-note-plugin-requirements"
             }
           }
         ]
@@ -167,15 +167,14 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
-    "product-requirements/meeting-note-plugin-requirements.md",
     "product-requirements/desktop-notifier-plugin.md",
+    "product-requirements/meeting-note-plugin-requirements.md",
     "product-requirements/plugin-architecture-requirements.md",
     "product-requirements/plugin-requirements-example-cdoe.md",
     "product-requirements/basic-product-requirements.md",
     "product-requirements/audio-transcription-plugin-requirements.md",
     "product-requirements/audio-preprocessing-plugin-requirement.md",
     "panottiServer Roadmap Board.md",
-    "product-requirements/desktop-notifier-plugin.md",
     "default-prompts/run-add-docs.md",
     "architecture/security_and_configuration.md",
     "architecture/utils.md",
