@@ -3,10 +3,24 @@ version: "1.0.0"
 enabled: true
 dependencies: []
 config:
+  # Directory where cleaned audio files will be saved
   output_directory: "data/cleaned_audio"
-  noise_reduce_factor: 1.0 # Maximum reduction
-  wiener_alpha: 2.5 # Very strong Wiener filtering
-  highpass_cutoff: 95 # Higher cutoff for more aggressive filtering
-  spectral_floor: 0.04 # Very low floor for maximum reduction
-  smoothing_factor: 2 # Keep moderate smoothing
+  
+  # Maximum number of concurrent audio processing tasks
   max_concurrent_tasks: 4
+  
+  # Noise reduction parameters
+  noise_reduce_factor: 1.0  # Strength of noise reduction (0.0-2.0, default: 1.0)
+  wiener_alpha: 2.5        # Wiener filter aggressiveness (1.0-4.0, default: 2.5)
+  spectral_floor: 0.04     # Minimum spectral magnitude to preserve (0.01-0.1, default: 0.04)
+  
+  # High-pass filter parameters
+  highpass_cutoff: 95      # High-pass filter cutoff frequency in Hz (20-200, default: 95)
+  highpass_order: 5        # High-pass filter order (2-10, default: 5)
+  
+  # STFT (Short-Time Fourier Transform) parameters
+  stft_window_size: 2048   # STFT window size in samples (512-4096, default: 2048)
+  stft_overlap_percent: 75 # Overlap percentage between windows (50-75, default: 75)
+  
+  # Noise profile parameters
+  smoothing_factor: 2      # Noise profile smoothing factor (1-5, default: 2)

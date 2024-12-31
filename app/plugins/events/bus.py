@@ -80,11 +80,7 @@ class EventBus:
         Args:
             event: Event data to publish
         """
-        event_name = (
-            event.name
-            if hasattr(event, "name")
-            else (event.event if hasattr(event, "event") else event.get("name"))
-        )
+        event_name = event.event if hasattr(event, "event") else event.get("event")
         if not event_name:
             logger.error("Event has no name", extra={"event": str(event)})
             return

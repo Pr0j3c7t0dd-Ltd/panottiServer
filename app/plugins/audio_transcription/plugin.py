@@ -36,6 +36,8 @@ class AudioTranscriptionPlugin(PluginBase):
         self._processing_lock: threading.Lock = threading.Lock()
         self._db_initialized: bool = False
         self._model: WhisperModel | None = None
+        self._output_dir = Path(os.getenv("TRANSCRIPTS_DIR", "data/transcripts"))
+        self._output_dir.mkdir(parents=True, exist_ok=True)
 
     async def _initialize(self) -> None:
         """Initialize plugin"""
@@ -93,33 +95,79 @@ class AudioTranscriptionPlugin(PluginBase):
         try:
             if isinstance(event_data, dict):
                 recording_id = event_data.get("recording_id", "unknown")
-                output_file = event_data.get("output_file")
+                microphone_cleaned_file = event_data.get("output_file")
                 status = event_data.get("status")
+                original_event = event_data.get("original_event", {})
             else:
                 # Handle RecordingEvent, RecordingStartRequest, RecordingEndRequest
                 recording_id = getattr(event_data, "recording_id", "unknown")
-                output_file = getattr(event_data, "output_file", None)
+                microphone_cleaned_file = getattr(event_data, "output_file", None)
                 status = getattr(event_data, "status", None)
+                original_event = getattr(event_data, "data", {}).get(
+                    "original_event", {}
+                )
 
-            if status != "completed" or not output_file:
+            if status != "completed":
                 logger.error(
                     "Invalid noise reduction event",
                     extra={
                         "recording_id": recording_id,
                         "status": status,
-                        "output_file": output_file,
                     },
                 )
                 return
 
-            # Process audio file
+            # Get input files
+            input_files = []
+            input_labels = []
+
+            # Add system audio if present
+            system_audio = original_event.get("systemAudioPath")
+            if system_audio:
+                input_files.append(system_audio)
+                input_labels.append("Meeting Participants")
+
+            # Add microphone audio (prefer cleaned file if available)
+            if microphone_cleaned_file:
+                input_files.append(microphone_cleaned_file)
+                input_labels.append("Speaker")
+            else:
+                microphone_audio = original_event.get("microphoneAudioPath")
+                if microphone_audio:
+                    input_files.append(microphone_audio)
+                    input_labels.append("Speaker")
+
+            if not input_files:
+                logger.error(
+                    "No audio files to process",
+                    extra={"recording_id": recording_id},
+                )
+                await self._emit_transcription_event(
+                    recording_id,
+                    "error",
+                    error="No audio files available for transcription",
+                )
+                return
+
+            # Create output file paths
+            output_files = []
+            for i, label in enumerate(input_labels):
+                label_suffix = (
+                    "system" if label == "Meeting Participants" else "microphone"
+                )
+                output_files.append(
+                    str(self._output_dir / f"{recording_id}_{label_suffix}_{i}.txt")
+                )
+            merged_output = str(self._output_dir / f"{recording_id}_merged.md")
+
+            # Process audio files
             await self._process_audio(
                 recording_id=recording_id,
-                input_files=[output_file],
-                output_files=[f"{output_file}.transcript.txt"],
-                merged_output=f"{output_file}.merged.txt",
-                original_event={"recording_id": recording_id},
-                input_labels=["Speaker"],
+                input_files=input_files,
+                output_files=output_files,
+                merged_output=merged_output,
+                original_event=original_event,
+                input_labels=input_labels,
             )
 
         except Exception as e:
@@ -159,7 +207,7 @@ class AudioTranscriptionPlugin(PluginBase):
         event = RecordingEvent(
             recording_timestamp=datetime.utcnow().isoformat(),
             recording_id=recording_id,
-            event="Recording Ended",
+            event="recording.ended",
             name="transcription.completed",
             data=event_data,
             output_file=output_file,
@@ -381,7 +429,7 @@ class AudioTranscriptionPlugin(PluginBase):
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
-                    event="Recording Ended",
+                    event="recording.ended",
                     name="transcription.completed",
                     data=event_data,
                     output_file=merged_output,
@@ -436,7 +484,7 @@ class AudioTranscriptionPlugin(PluginBase):
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
-                    event="Recording Ended",
+                    event="recording.ended",
                     name="transcription.error",
                     data=error_data,
                     output_file=merged_output,
