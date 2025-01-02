@@ -100,7 +100,8 @@ class NoiseReductionPlugin(PluginBase):
                     extra={"plugin": self.name, "events": ["recording.ended"]},
                 )
                 await self.event_bus.subscribe(
-                    "recording.ended", self.handle_recording_ended
+                    "recording.ended",
+                    self.handle_recording_ended,  # type: ignore[arg-type]
                 )
 
             logger.info(
@@ -386,11 +387,11 @@ class NoiseReductionPlugin(PluginBase):
             )
             raise
 
-    def _format_dtype(self, dtype) -> str:
+    def _format_dtype(self, dtype: np.dtype) -> str:
         """Convert numpy dtype to string representation."""
         return str(dtype)
 
-    def _format_shape(self, shape) -> tuple:
+    def _format_shape(self, shape: tuple[int, ...]) -> tuple[int, ...]:
         """Convert numpy shape to regular tuple."""
         return tuple(int(x) for x in shape)
 
@@ -511,7 +512,8 @@ class NoiseReductionPlugin(PluginBase):
             if not sys_path:
                 raise ValueError("No system audio path found")
 
-            # Generate output path (base directory only, actual filename set in _process_audio)
+            # Generate output path (base directory only)
+            # Actual filename will be set in _process_audio
             base_dir = self._output_directory
             output_base = base_dir / recording_id
 
@@ -539,8 +541,8 @@ class NoiseReductionPlugin(PluginBase):
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
-                    event="noise_reduction.completed",
-                    name="noise_reduction.completed",
+                    event="recording.ended",  # Changed from noise_reduction.completed
+                    name="recording.ended",  # Changed to match event type
                     data={
                         "recording_id": recording_id,
                         "noise_reduced_microphone_path": str(output_path),
@@ -670,10 +672,7 @@ class NoiseReductionPlugin(PluginBase):
 
             # Handle both event types
             if isinstance(event, dict):
-                if "payload" in event:
-                    event = event["payload"]
-            else:
-                event = event.__dict__
+                event = event.get("payload", event)
 
             # Extract recording information from event
             recording_id = event.get("recording_id")
@@ -714,7 +713,8 @@ class NoiseReductionPlugin(PluginBase):
         if self.event_bus is not None:
             logger.info("Unsubscribing from recording.ended event")
             await self.event_bus.unsubscribe(
-                "recording.ended", self.handle_recording_ended
+                "recording.ended",
+                self.handle_recording_ended,  # type: ignore[arg-type]
             )
 
         if self._executor is not None:
