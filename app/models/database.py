@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -13,6 +14,8 @@ from sqlite3 import Connection
 from typing import Any, TypeVar, cast
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
@@ -77,8 +80,6 @@ class DatabaseManager:
                     recording_id TEXT NOT NULL,
                     event_type TEXT NOT NULL,
                     event_timestamp TEXT NOT NULL,
-                    system_audio_path TEXT,
-                    microphone_audio_path TEXT,
                     metadata TEXT,  -- JSON object with event metadata
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -143,7 +144,41 @@ class DatabaseManager:
                 """
             )
 
+            # Run any pending migrations
+            self._run_migrations(conn)
+
             conn.commit()
+
+    def _run_migrations(self, conn: Connection) -> None:
+        """Run any pending database migrations."""
+        # Create migrations table if it doesn't exist
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        # Get list of applied migrations
+        applied = {row[0] for row in conn.execute("SELECT name FROM migrations")}
+
+        # Get migrations directory
+        migrations_dir = Path(__file__).parent / "migrations"
+        migrations_dir.mkdir(exist_ok=True)
+
+        # Run any new migrations in order
+        for migration_file in sorted(migrations_dir.glob("*.sql")):
+            if migration_file.stem not in applied:
+                logger.info(f"Applying migration: {migration_file.name}")
+                with migration_file.open() as f:
+                    conn.executescript(f.read())
+                conn.execute(
+                    "INSERT INTO migrations (name) VALUES (?)", (migration_file.stem,)
+                )
+                conn.commit()
 
     def get_connection(self, name: str = "default") -> sqlite3.Connection:
         """Get a database connection by name.

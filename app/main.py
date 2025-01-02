@@ -265,27 +265,35 @@ async def recording_ended(request: Request) -> dict[str, Any]:
     # Initialize database connection
     db = DatabaseManager.get_instance()
 
-    # Ensure recording exists in recordings table
+    # Ensure recording exists in recordings table with paths
     await db.execute(
         """
-        INSERT OR IGNORE INTO recordings (recording_id, status)
-        VALUES (?, 'completed')
+        INSERT OR REPLACE INTO recordings (
+            recording_id,
+            status,
+            system_audio_path,
+            microphone_audio_path,
+            created_at,
+            updated_at
+        ) VALUES (?, 'completed', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
-        (recording_id,),
-    )
-
-    # Update recordings table
-    await db.execute(
-        "UPDATE recordings SET status = 'completed' WHERE recording_id = ?",
-        (recording_id,),
+        (
+            recording_id,
+            data.get("systemAudioPath"),
+            data.get("microphoneAudioPath"),
+        ),
     )
 
     # Insert into recording_events table
     await db.execute(
         """
         INSERT INTO recording_events (
-            recording_id, event_type, event_timestamp,
-            system_audio_path, microphone_audio_path, metadata
+            recording_id,
+            event_type,
+            event_timestamp,
+            system_audio_path,
+            microphone_audio_path,
+            metadata
         ) VALUES (?, ?, datetime('now'), ?, ?, ?)
         """,
         (
@@ -296,6 +304,8 @@ async def recording_ended(request: Request) -> dict[str, Any]:
             json.dumps(data.get("metadata", {})),
         ),
     )
+
+    await db.commit()  # Ensure both operations are committed
 
     # Notify plugins
     event_data = {

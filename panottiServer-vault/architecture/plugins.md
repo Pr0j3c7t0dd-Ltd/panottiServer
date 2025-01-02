@@ -1,63 +1,79 @@
 # Plugin System Architecture
 
 ## Overview
-The plugin system provides a flexible and extensible architecture for adding new functionality to the application. It follows the principles of loose coupling and high cohesion.
 
-## Key Components
+The plugin system in PanottiServer is designed for extensibility and modularity. It uses a combination of YAML configuration and Python implementation files to define and manage plugins.
 
-### Plugin Manager
-- Dynamically loads plugins at runtime
-- Manages plugin lifecycle (initialization, execution, cleanup)
-- Handles plugin dependencies and conflicts
-- Provides plugin registration and discovery
+## Plugin Structure
 
-### Event System
-- **Event Bus**: 
-  - Facilitates asynchronous communication
-  - Implements publish-subscribe pattern
-  - Supports event filtering and routing
-  
-- **Event Store**:
-  - Persists events for audit and replay
-  - Supports event sourcing patterns
-  - Enables event replay for debugging
+Each plugin follows this structure:
+```
+plugins/
+└── [plugin_name]/
+    ├── plugin.yaml         # Plugin configuration
+    ├── plugin.py          # Plugin implementation
+    └── __init__.py        # Package initialization
+```
 
-### Plugin Interface
-Each plugin must implement:
-- Initialization method
-- Event handlers
-- Cleanup routines
+## Plugin Configuration
+
+Plugins are configured using `plugin.yaml` files:
+
+```yaml
+name: plugin_name
+version: 1.0.0
+description: Plugin description
+enabled: true
+dependencies:
+  - other_plugin_name
+```
+
+## Plugin Manager
+
+The `PluginManager` class (`app/plugins/manager.py`) handles:
+- Plugin discovery and loading
 - Configuration management
+- Event routing
+- Plugin lifecycle management
+
+### Key Features
+
+1. **Dynamic Discovery**
+   - Automatically finds plugins in the plugins directory
+   - Loads configurations from YAML files
+   - Validates plugin structure and dependencies
+
+2. **Event System Integration**
+   - Plugins can subscribe to and emit events
+   - Event bus handles communication between plugins
+   - Structured logging of plugin activities
+
+3. **Error Handling**
+   - Graceful handling of plugin loading failures
+   - Detailed logging of plugin lifecycle events
+   - Configuration validation
+
+## Creating New Plugins
+
+1. Create a new directory under `app/plugins/`
+2. Add `plugin.yaml` with configuration
+3. Implement `plugin.py` extending `PluginBase`
+4. Register event handlers if needed
 
 ## Best Practices
-1. **Plugin Development**
-   - Follow single responsibility principle
-   - Implement proper error handling
-   - Include comprehensive documentation
-   - Write unit tests for plugin functionality
 
-2. **Event Handling**
-   - Use strongly typed events
-   - Implement idempotent handlers
-   - Handle failures gracefully
-   - Log event processing
+1. **Plugin Design**
+   - Single responsibility principle
+   - Clear documentation
+   - Type hints
+   - Error handling
 
-3. **Configuration**
-   - Use environment variables
-   - Support runtime configuration
-   - Validate plugin settings
-   - Document configuration options
+2. **Configuration**
+   - Version control
+   - Dependency declaration
+   - Feature flags
 
-## Plugin Lifecycle
-1. Discovery and Loading
-2. Configuration and Initialization
-3. Event Registration
-4. Runtime Operation
-5. Cleanup and Shutdown
-
-## Testing Guidelines
-- Write unit tests for each plugin
-- Test event handling
-- Mock dependencies
-- Test configuration handling
-- Verify cleanup procedures
+3. **Testing**
+   - Unit tests for plugin functionality
+   - Integration tests with event system
+   - Mock dependencies

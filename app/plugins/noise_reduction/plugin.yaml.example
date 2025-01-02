@@ -3,10 +3,10 @@ version: "1.0.0"
 enabled: true
 dependencies: []
 config:
-  # Audio processing settings
-  highpass_cutoff: 60      # Cutoff frequency for highpass filter (Hz)
-  highpass_order: 3        # Filter order (higher = sharper cutoff)
-  
-  # System settings
-  output_directory: "data/cleaned_audio"  # Directory for processed files
-  max_concurrent_tasks: 4   # Maximum number of concurrent processing tasks
+  output_directory: "data/cleaned_audio"
+  noise_reduce_factor: 0.8  # Slightly reduced to preserve more speech
+  wiener_alpha: 2.0  # More balanced Wiener filtering
+  highpass_cutoff: 85  # Lower cutoff to preserve more voice frequencies
+  spectral_floor: 0.06  # Slightly higher floor to reduce musical noise
+  smoothing_factor: 3  # Increased smoothing for better noise estimation
+  max_concurrent_tasks: 4

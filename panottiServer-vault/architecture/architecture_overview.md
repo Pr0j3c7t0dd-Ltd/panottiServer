@@ -1,45 +1,72 @@
-# Architecture Overview
+# PanottiServer Architecture Overview
 
-## Framework and Structure
-- **FastAPI** is used as the web framework
-- Organized into modules following clean architecture principles:
-  - `app/`: Main application code
-  - `plugins/`: Plugin system for extensibility
-  - `scripts/`: Utility and maintenance scripts
-  - `tests/`: Test suite
-  - `logs/`: Application logs
+## Core Components
 
-## Key Components
-- **Models**: Handles data structures and database interactions
-- **Plugins**: Manages additional functionalities and event handling
-- **Utils**: Contains utility functions and configurations
-- **Tests**: Includes comprehensive test suite
+### Application Structure
+```
+app/
+├── core/                     # Core system interfaces and protocols
+├── models/                   # Domain models and database functionality
+├── plugins/                  # Plugin implementations and management
+│   ├── base.py              # Base plugin classes and interfaces
+│   ├── manager.py           # Plugin lifecycle management
+│   ├── events/              # Event system implementation
+│   └── [plugin_name]/       # Individual plugin directories
+├── utils/                   # Utility functions and configurations
+└── tests/                   # Test directory
+```
 
-## Best Practices Implementation
-### Code Quality
-- Follow PEP 8 standards
-- Use type hints with `typing` and `pydantic`
-- Implement strict linting with `flake8`/`ruff`
-- Format code with `black`
-- Sort imports with `isort`
+### Key Components
 
-### Testing Strategy
-- Use `pytest` for testing
-- Implement test pyramid approach
-- Write comprehensive unit and integration tests
-- Use fixtures for test setup
+1. **Core System**
+   - Defines core interfaces and protocols
+   - Implements dependency inversion principle
+   - Houses fundamental system contracts
 
-### Logging and Observability
-- Structured logging with correlation IDs
-- Configurable log levels via environment
-- Support for log aggregation
-- Performance monitoring capabilities
+2. **Plugin System**
+   - Dynamic plugin discovery and loading
+   - Event-driven architecture
+   - Plugin configuration via YAML files
+   - Structured logging integration
 
-### Security
-- API Key authentication
-- Environment-based configuration
-- Secure dependency management
-- Input validation and sanitization
+3. **Models**
+   - Domain models for business entities
+   - Database interactions and schema definitions
+   - Event models for system communication
+
+4. **Utils**
+   - Logging configuration and management
+   - Common utility functions
+   - System-wide helpers
+
+## Technology Stack
+
+- **Framework**: FastAPI
+- **Dependency Management**: Poetry
+- **Testing**: pytest
+- **Logging**: structlog
+- **Configuration**: Environment variables (.env)
+- **Documentation**: Swagger/OpenAPI
+
+## Best Practices
+
+1. **Code Organization**
+   - Modular architecture with clear separation of concerns
+   - Plugin-based extensibility
+   - Type hints throughout the codebase
+   - PEP 8 compliance
+
+2. **Development Workflow**
+   - Pre-commit hooks for code quality
+   - Automated testing
+   - Comprehensive logging
+   - API documentation
+
+3. **Security**
+   - API key authentication
+   - HTTPS support
+   - Environment-based configuration
+   - Secure dependency management
 
 ## Configuration
 - Environment variables loaded via `dotenv`

@@ -1,20 +1,37 @@
 # panottiServer
 
-A FastAPI-based server for handling recording events with secure API endpoints for starting and ending recording sessions.
+A FastAPI-based server for handling recording events with a plugin-based architecture and secure API endpoints.
 
 ## Features
 
-- Secure API endpoints for recording events
-- Token-based authentication
-- Structured JSON logging
-- Swagger documentation
+- Plugin-based architecture for extensibility
+- Event-driven system with structured logging
+- Secure API endpoints with token authentication
+- Dynamic plugin discovery and management
 - Comprehensive test suite
+- Swagger/OpenAPI documentation
+
+## Architecture
+
+The application follows a modular, plugin-based architecture:
+
+```
+app/
+├── core/                     # Core system interfaces
+├── models/                   # Domain models
+├── plugins/                  # Plugin system
+│   ├── base.py              # Base plugin classes
+│   ├── manager.py           # Plugin lifecycle
+│   └── [plugin_name]/       # Plugin directories
+├── utils/                   # Utilities
+└── tests/                   # Test suite
+```
 
 ## Requirements
 
 - Python 3.12
-- Rust (required for FastAPI's Pydantic V2)
-- Poetry (for dependency management)
+- Rust (for FastAPI's Pydantic V2)
+- Poetry (dependency management)
 
 ## Installation
 
@@ -156,6 +173,38 @@ Content-Type: application/json
     "session_id": "unique_session_id",
     "timestamp": "2023-12-09T20:10:00Z"
 }
+```
+
+## Plugin Development
+
+### Creating a New Plugin
+
+1. Create a new directory under `app/plugins/`
+2. Add `plugin.yaml` configuration:
+```yaml
+name: your_plugin_name
+version: 1.0.0
+description: Plugin description
+enabled: true
+dependencies: []
+```
+
+3. Implement `plugin.py`:
+```python
+from app.plugins.base import PluginBase
+
+class YourPlugin(PluginBase):
+    async def initialize(self):
+        # Setup code
+        pass
+
+    async def start(self):
+        # Start plugin
+        pass
+
+    async def stop(self):
+        # Cleanup code
+        pass
 ```
 
 ## Development

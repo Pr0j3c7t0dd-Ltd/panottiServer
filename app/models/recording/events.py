@@ -135,6 +135,8 @@ class RecordingEvent(BaseModel):
     async def save(self) -> None:
         """Save the event to the database."""
         db = DatabaseManager.get_instance()
+
+        # Save to recording_events table
         await db.insert(
             """
             INSERT INTO recording_events (
@@ -155,6 +157,33 @@ class RecordingEvent(BaseModel):
                 json.dumps(self.metadata) if self.metadata else None,
             ),
         )
+
+        # For recording.ended events, update the recordings table
+        if self.event == "recording.ended":
+            await db.execute(
+                """
+                INSERT INTO recordings (
+                    recording_id,
+                    status,
+                    system_audio_path,
+                    microphone_audio_path,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(recording_id) DO UPDATE SET
+                    status = 'completed',
+                    system_audio_path = excluded.system_audio_path,
+                    microphone_audio_path = excluded.microphone_audio_path,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    self.recording_id,
+                    "completed",
+                    self.system_audio_path,
+                    self.microphone_audio_path,
+                ),
+            )
+
         await db.commit()
 
     @classmethod
