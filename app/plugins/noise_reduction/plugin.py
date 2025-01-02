@@ -211,7 +211,8 @@ class NoiseReductionPlugin(PluginBase):
             mic_file: Path to microphone recording WAV file
             noise_file: Path to system recording WAV file (noise profile)
             output_file: Path to save cleaned audio
-            noise_reduce_factor: Amount of noise reduction (0 to 1, default 1.0 for maximum)
+            noise_reduce_factor: Amount of noise reduction
+                (0 to 1, default 1.0 for maximum)
             wiener_alpha: Wiener filter strength (default 2.5 for aggressive filtering)
             highpass_cutoff: Highpass filter cutoff in Hz (default 95Hz)
             spectral_floor: Minimum spectral magnitude (default 0.04)
@@ -511,7 +512,8 @@ class NoiseReductionPlugin(PluginBase):
                 raise ValueError("No system audio path found")
 
             # Generate output path (base directory only, actual filename set in _process_audio)
-            output_base = self._output_directory / recording_id
+            base_dir = self._output_directory
+            output_base = base_dir / recording_id
 
             # Process the audio
             await self._process_audio(
