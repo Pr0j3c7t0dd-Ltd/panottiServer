@@ -136,6 +136,41 @@ class NoiseReductionPlugin(PluginBase):
         b, a = butter(order, normalized_cutoff, btype="high", analog=False)
         return filtfilt(b, a, data)
 
+    def _preprocess_audio(
+        self,
+        mic_data: np.ndarray,
+        noise_data: np.ndarray,
+        highpass_cutoff: float,
+        mic_rate: int,
+        noise_rate: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Process audio data for noise reduction.
+
+        Converts audio to mono, normalizes values, and applies highpass filtering.
+        """
+        # Ensure mono audio
+        if len(mic_data.shape) > 1:
+            mic_data = mic_data[:, 0]
+        if len(noise_data.shape) > 1:
+            noise_data = noise_data[:, 0]
+
+        # Convert to float32 and normalize
+        mic_data = mic_data.astype(np.float32)
+        mic_data = mic_data / np.max(np.abs(mic_data))
+        noise_data = noise_data.astype(np.float32)
+        noise_data = noise_data / np.max(np.abs(noise_data))
+
+        # Apply highpass filter if cutoff is specified
+        if highpass_cutoff > 0:
+            mic_data = self._apply_highpass_filter(
+                mic_data, highpass_cutoff, mic_rate, order=3
+            )
+            noise_data = self._apply_highpass_filter(
+                noise_data, highpass_cutoff, noise_rate, order=3
+            )
+
+        return mic_data, noise_data
+
     def _reduce_noise_worker(
         self,
         mic_file: str,
@@ -269,27 +304,10 @@ class NoiseReductionPlugin(PluginBase):
                 },
             )
 
-            # Ensure mono audio
-            if len(mic_data.shape) > 1:
-                mic_data = mic_data[:, 0]
-            if len(noise_data.shape) > 1:
-                noise_data = noise_data[:, 0]
-
-            # Convert to float32 and normalize
-            mic_data = mic_data.astype(np.float32)
-            mic_data = mic_data / np.max(np.abs(mic_data))
-            noise_data = noise_data.astype(np.float32)
-            noise_data = noise_data / np.max(np.abs(noise_data))
-
-            logger.debug("Applying highpass filter")
-            # Apply highpass filter if cutoff is specified
-            if highpass_cutoff > 0:
-                mic_data = self._apply_highpass_filter(
-                    mic_data, highpass_cutoff, mic_rate, order=3
-                )
-                noise_data = self._apply_highpass_filter(
-                    noise_data, highpass_cutoff, noise_rate, order=3
-                )
+            # Preprocess audio data
+            mic_data, noise_data = self._preprocess_audio(
+                mic_data, noise_data, highpass_cutoff, mic_rate, noise_rate
+            )
 
             # Simple STFT parameters - adjusted for better frequency resolution
             nperseg = 4096  # Increased for better frequency resolution
