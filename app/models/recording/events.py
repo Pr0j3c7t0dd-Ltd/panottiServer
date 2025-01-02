@@ -75,7 +75,12 @@ class RecordingEvent(BaseModel):
     recording_id: str
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
-    event: Literal["Recording Started", "Recording Ended", "recording.ended"]
+    event: Literal[
+        "Recording Started",
+        "Recording Ended",
+        "recording.ended",
+        "noise_reduction.completed",
+    ]
     metadata: dict[str, Any] | EventMetadata | None = None
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     plugin_id: str = Field(default="recording_plugin")

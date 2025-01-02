@@ -559,8 +559,8 @@ class NoiseReductionPlugin(PluginBase):
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
-                    event="recording.ended",  # Changed from noise_reduction.completed
-                    name="recording.ended",  # Changed to match event type
+                    event="noise_reduction.completed",
+                    name="noise_reduction.completed",
                     data={
                         "recording_id": recording_id,
                         "noise_reduced_microphone_path": str(output_path),

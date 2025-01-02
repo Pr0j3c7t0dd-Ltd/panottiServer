@@ -94,25 +94,27 @@ class AudioTranscriptionPlugin(PluginBase):
         """Handle noise reduction completed event"""
         try:
             if isinstance(event_data, dict):
+                # Extract from dict event
                 recording_id = event_data.get("recording_id", "unknown")
-                microphone_cleaned_file = event_data.get("output_file")
-                status = event_data.get("status")
-                original_event = event_data.get("original_event", {})
+                data = event_data.get("data", {})
+                microphone_cleaned_file = data.get("noise_reduced_microphone_path")
+                status = data.get("status")
+                original_event = data.get("original_event", {})
             else:
-                # Handle RecordingEvent, RecordingStartRequest, RecordingEndRequest
-                recording_id = getattr(event_data, "recording_id", "unknown")
-                microphone_cleaned_file = getattr(event_data, "output_file", None)
-                status = getattr(event_data, "status", None)
-                original_event = getattr(event_data, "data", {}).get(
-                    "original_event", {}
-                )
+                # Extract from RecordingEvent
+                recording_id = event_data.recording_id
+                data = getattr(event_data, "data", {})
+                microphone_cleaned_file = data.get("noise_reduced_microphone_path")
+                status = data.get("status")
+                original_event = data.get("original_event", {})
 
-            if status != "completed":
+            if not microphone_cleaned_file or status != "completed":
                 logger.error(
                     "Invalid noise reduction event",
                     extra={
                         "recording_id": recording_id,
                         "status": status,
+                        "microphone_cleaned_file": microphone_cleaned_file,
                     },
                 )
                 return
