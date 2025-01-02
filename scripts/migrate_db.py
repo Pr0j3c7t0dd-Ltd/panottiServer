@@ -12,7 +12,7 @@ sys.path.append(str(project_root))
 from app.models.database import DatabaseManager  # noqa: E402
 
 
-def main():
+def main() -> None:
     """Run database migrations."""
     # Configure logging
     logging.basicConfig(
