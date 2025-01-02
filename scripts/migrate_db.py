@@ -11,25 +11,27 @@ sys.path.append(str(project_root))
 
 from app.models.database import DatabaseManager
 
+
 def main():
     """Run database migrations."""
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     logger = logging.getLogger(__name__)
 
     try:
         # Get database manager instance
         db = DatabaseManager.get_instance()
-        
+
         # The migrations will run automatically during initialization
         logger.info("Database migrations completed successfully")
-        
+
     except Exception as e:
         logger.error(f"Error running migrations: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
