@@ -97,14 +97,18 @@ class AudioTranscriptionPlugin(PluginBase):
                 # Extract from dict event
                 recording_id = event_data.get("recording_id", "unknown")
                 data = event_data.get("data", {})
-                microphone_cleaned_file = data.get("noise_reduced_microphone_path")
+                audio_paths = data.get("audio_paths", {})
+                processed_paths = audio_paths.get("processed", {})
+                microphone_cleaned_file = processed_paths.get("noise_reduced_microphone")
                 status = data.get("status")
                 original_event = data.get("original_event", {})
             else:
                 # Extract from RecordingEvent
                 recording_id = event_data.recording_id
                 data = getattr(event_data, "data", {})
-                microphone_cleaned_file = data.get("noise_reduced_microphone_path")
+                audio_paths = data.get("audio_paths", {})
+                processed_paths = audio_paths.get("processed", {})
+                microphone_cleaned_file = processed_paths.get("noise_reduced_microphone")
                 status = data.get("status")
                 original_event = data.get("original_event", {})
 
@@ -209,7 +213,7 @@ class AudioTranscriptionPlugin(PluginBase):
         event = RecordingEvent(
             recording_timestamp=datetime.utcnow().isoformat(),
             recording_id=recording_id,
-            event="recording.ended",
+            event="transcription.completed",
             name="transcription.completed",
             data=event_data,
             output_file=output_file,
@@ -424,54 +428,13 @@ class AudioTranscriptionPlugin(PluginBase):
                 event_data = {
                     "type": "transcription.completed",
                     "recording_id": recording_id,
-                    "recording_timestamp": original_event.get("recording_timestamp"),
-                    "input_files": input_files,
-                    "output_files": output_files,
-                    "merged_output": merged_output,
-                    "transcription_status": "completed",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    # Original event metadata
-                    "original_metadata": original_event,
-                    # Meeting metadata
-                    "meeting_metadata": {
-                        "title": original_event.get("metadata", {}).get("eventTitle"),
-                        "provider": original_event.get("metadata", {}).get(
-                            "eventProvider"
-                        ),
-                        "provider_id": original_event.get("metadata", {}).get(
-                            "eventProviderId"
-                        ),
-                        "attendees": original_event.get("metadata", {}).get(
-                            "eventAttendees", []
-                        ),
-                        "start_time": original_event.get("metadata", {}).get(
-                            "recordingStarted"
-                        ),
-                        "end_time": original_event.get("metadata", {}).get(
-                            "recordingEnded"
-                        ),
-                    },
-                    # Audio metadata
-                    "audio_metadata": {
-                        "system_audio_label": original_event.get("metadata", {}).get(
-                            "systemLabel", "Meeting Participants"
-                        ),
-                        "microphone_audio_label": original_event.get(
-                            "metadata", {}
-                        ).get("microphoneLabel", "Speaker"),
-                        "system_audio_path": original_event.get("systemAudioPath"),
-                        "microphone_audio_path": original_event.get(
-                            "microphoneAudioPath"
-                        ),
-                        "cleaned_audio_path": output_files[0] if output_files else None,
-                    },
-                    # Transcription metadata
-                    "transcription_metadata": {
-                        "model": self._model.__class__.__name__
-                        if self._model
-                        else "unknown",
-                        "output_files": output_files,
-                        "merged_output": merged_output,
+                    "status": "completed",
+                    "transcription_details": {
+                        "model": self._model.__class__.__name__ if self._model else "unknown",
+                        "transcript_files": {
+                            "individual": output_files,
+                            "merged": merged_output
+                        },
                         "processing_time": (
                             datetime.utcnow()
                             - datetime.fromisoformat(
@@ -480,13 +443,29 @@ class AudioTranscriptionPlugin(PluginBase):
                                 )
                             )
                         ).total_seconds(),
+                        "processing_timestamp": datetime.utcnow().isoformat()
                     },
+                    # Preserve noise reduction metadata
+                    "noise_reduction_details": original_event.get("noise_reduction_details", {}),
+                    # Recording metadata
+                    "recording_metadata": original_event.get("recording_metadata", {}),
+                    # Audio paths
+                    "audio_paths": original_event.get("audio_paths", {}),
+                    # Meeting metadata
+                    "meeting_metadata": {
+                        "title": original_event.get("metadata", {}).get("eventTitle"),
+                        "provider": original_event.get("metadata", {}).get("eventProvider"),
+                        "provider_id": original_event.get("metadata", {}).get("eventProviderId"),
+                        "attendees": original_event.get("metadata", {}).get("eventAttendees", []),
+                        "start_time": original_event.get("metadata", {}).get("recordingStarted"),
+                        "end_time": original_event.get("metadata", {}).get("recordingEnded"),
+                    }
                 }
 
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
-                    event="recording.ended",
+                    event="transcription.completed",
                     name="transcription.completed",
                     data=event_data,
                 )
@@ -539,7 +518,7 @@ class AudioTranscriptionPlugin(PluginBase):
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
-                    event="recording.ended",
+                    event="transcription.error",
                     name="transcription.error",
                     data=error_data,
                     output_file=merged_output,

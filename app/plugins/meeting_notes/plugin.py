@@ -56,6 +56,14 @@ class MeetingNotesPlugin(PluginBase):
                 max_workers = config_dict.get("max_concurrent_tasks", max_workers)
 
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        
+        # Subscribe to transcription completed event
+        if self.event_bus:
+            await self.event_bus.subscribe(
+                "transcription.completed",
+                self.handle_transcription_completed
+            )
+        
         logger.info(
             "Meeting notes plugin initialized", extra={"max_workers": max_workers}
         )
@@ -184,21 +192,63 @@ Participants: [Extract speaker names from transcript]
 
             # Emit completion event
             if self.event_bus:
-                event_data: dict[str, Any] = {
-                    "type": "meeting_notes_complete",
-                    "recording_id": recording_id,
-                    "output_path": str(output_file),
-                }
-                await self.event_bus.emit(event_data)
+                from datetime import datetime
+                from app.models.recording.events import RecordingEvent
+
+                event = RecordingEvent(
+                    recording_timestamp=datetime.utcnow().isoformat(),
+                    recording_id=recording_id,
+                    event="meeting_notes.completed",
+                    name="meeting_notes.completed",
+                    data={
+                        "type": "meeting_notes.completed",
+                        "recording_id": recording_id,
+                        "status": "completed",
+                        "meeting_notes_details": {
+                            "model": self.model,
+                            "notes_file_path": str(output_file),
+                            "processing_time": (
+                                datetime.utcnow()
+                                - datetime.fromisoformat(original_event.recording_timestamp)
+                            ).total_seconds(),
+                            "processing_timestamp": datetime.utcnow().isoformat()
+                        },
+                        # Preserve previous metadata
+                        "noise_reduction_details": original_event.data.get("noise_reduction_details", {}),
+                        "transcription_details": original_event.data.get("transcription_details", {}),
+                        "recording_metadata": original_event.data.get("recording_metadata", {}),
+                        "audio_paths": original_event.data.get("audio_paths", {}),
+                        "meeting_metadata": original_event.data.get("meeting_metadata", {})
+                    }
+                )
+                await self.event_bus.emit(event)
 
         except Exception as e:
             if self.event_bus:
-                error_data: dict[str, Any] = {
-                    "type": "meeting_notes_error",
-                    "recording_id": recording_id,
-                    "error": str(e),
-                }
-                await self.event_bus.emit(error_data)
+                from datetime import datetime
+                from app.models.recording.events import RecordingEvent
+
+                event = RecordingEvent(
+                    recording_timestamp=datetime.utcnow().isoformat(),
+                    recording_id=recording_id,
+                    event="meeting_notes.error",
+                    name="meeting_notes.error",
+                    data={
+                        "type": "meeting_notes.error",
+                        "recording_id": recording_id,
+                        "error": str(e),
+                        "timestamp": datetime.utcnow().isoformat(),
+                        # Preserve original metadata
+                        "original_event": original_event.data,
+                        # Meeting metadata
+                        "meeting_metadata": original_event.data.get("meeting_metadata", {}),
+                        # Audio metadata
+                        "audio_metadata": original_event.data.get("audio_metadata", {}),
+                        # Transcription metadata
+                        "transcription_metadata": original_event.data.get("transcription_metadata", {}),
+                    }
+                )
+                await self.event_bus.emit(event)
             logger.error(f"Failed to process transcript: {e}", exc_info=True)
 
     async def handle_event(self, event: Event) -> None:
@@ -226,27 +276,19 @@ Participants: [Extract speaker names from transcript]
     async def handle_transcription_completed(self, event: Event) -> None:
         """Handle transcription completed event"""
         try:
-            if not event.payload:
-                logger.error("No payload in transcription completed event")
-                return
+            recording_id = event.recording_id
+            data = event.data
 
-            # Extract data from event payload
-            recording_id = event.payload["recording_id"]
-            merged_transcript_path = event.payload["transcription_metadata"][
-                "merged_output"
-            ]
-            transcription_status = event.payload["transcription_status"]
+            # Get transcription details
+            transcription_details = data.get("transcription_details", {})
+            transcript_files = transcription_details.get("transcript_files", {})
+            merged_transcript_path = transcript_files.get("merged")
 
-            # Extract metadata
-            meeting_metadata = event.payload.get("meeting_metadata", {})
-            audio_metadata = event.payload.get("audio_metadata", {})
-            transcription_metadata = event.payload.get("transcription_metadata", {})
-            original_metadata = event.payload.get("original_metadata", {})
+            # Get meeting metadata
+            meeting_metadata = data.get("meeting_metadata", {})
 
-            if transcription_status == "error":
-                error_message = event.payload.get(
-                    "error_message", "Unknown error in transcription"
-                )
+            if not merged_transcript_path:
+                error_message = "No merged transcript path in event"
                 logger.error(
                     f"Transcription failed: {error_message}",
                     extra={
@@ -279,8 +321,8 @@ Participants: [Extract speaker names from transcript]
                     else None,
                     "meeting_title": meeting_metadata.get("title"),
                     "meeting_provider": meeting_metadata.get("provider"),
-                    "processing_time": transcription_metadata.get("processing_time"),
-                    "input_path": merged_transcript_path,
+                    "processing_time": transcription_details.get("processing_time"),
+                    "transcript_file": merged_transcript_path,
                 },
             )
 
@@ -290,7 +332,6 @@ Participants: [Extract speaker names from transcript]
                 transcript_text=transcript_text,
                 original_event=event,
             )
-
         except Exception as e:
             logger.error(
                 "Failed to handle transcription completed event",
@@ -299,7 +340,7 @@ Participants: [Extract speaker names from transcript]
                     if "recording_id" in locals()
                     else None,
                     "error": str(e),
-                    "event_payload": event.payload if event else None,
+                    "event_payload": event.data if event else None,
                 },
                 exc_info=True,
             )

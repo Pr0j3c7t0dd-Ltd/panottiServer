@@ -479,31 +479,6 @@ class NoiseReductionPlugin(PluginBase):
         # Apply filter
         return signal_spec * wiener_gain
 
-    async def _handle_recording_ended(self, event: EventType) -> None:
-        """Handle recording ended event."""
-        recording_id = (
-            event.recording_id
-            if isinstance(event, RecordingEvent)
-            else event["recording_id"]
-            if isinstance(event, dict)
-            else None
-        )
-        if not recording_id:
-            logger.error("No recording ID in event")
-            return
-
-        try:
-            await self.process_recording(recording_id)
-        except Exception as e:
-            logger.error(
-                "Failed to process recording",
-                extra={
-                    "plugin_name": self._plugin_name,
-                    "recording_id": recording_id,
-                    "error": str(e),
-                },
-            )
-
     async def process_recording(self, recording_id: str) -> None:
         """Process a recording with the noise reduction plugin."""
         if not self.db:
@@ -564,33 +539,33 @@ class NoiseReductionPlugin(PluginBase):
                     data={
                         "recording_id": recording_id,
                         "noise_reduced_microphone_path": str(output_path),
-                        "output_file": str(
-                            output_path
-                        ),  # Required by audio_transcription plugin
                         "status": "completed",
-                        "processing_details": {
+                        "noise_reduction_details": {
                             "plugin": self._plugin_name,
-                            "noise_reduction_settings": {
+                            "settings": {
                                 "noise_reduce_factor": self._noise_reduce_factor,
                                 "wiener_alpha": self._wiener_alpha,
                                 "highpass_cutoff": self._highpass_cutoff,
                                 "spectral_floor": self._spectral_floor,
                                 "smoothing_factor": self._smoothing_factor,
                             },
+                            "processing_timestamp": datetime.utcnow().isoformat(),
                         },
-                        "original_event": {
-                            "systemAudioPath": sys_path,
-                            "microphoneAudioPath": mic_path,
-                            "metadata": {
-                                "recordingId": recording_id,
-                                "processedPath": str(output_path),
-                                "processingTimestamp": datetime.utcnow().isoformat(),
+                        "recording_metadata": {
+                            "system_audio_path": sys_path,
+                            "microphone_audio_path": mic_path,
+                            "recording_id": recording_id,
+                            "noise_reduced_path": str(output_path),
+                        },
+                        "audio_paths": {
+                            "original": {
+                                "system": sys_path,
+                                "microphone": mic_path
                             },
-                        },
-                        "audio_files": {
-                            "original": {"system": sys_path, "microphone": mic_path},
-                            "processed": {"noise_reduced_microphone": str(output_path)},
-                        },
+                            "processed": {
+                                "noise_reduced_microphone": str(output_path)
+                            }
+                        }
                     },
                     context=EventContext(correlation_id=str(uuid.uuid4())),
                 )

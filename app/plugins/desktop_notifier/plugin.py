@@ -77,39 +77,61 @@ class DesktopNotifierPlugin(PluginBase):
         try:
             if isinstance(event_data, dict):
                 recording_id = event_data.get("recording_id", "unknown")
-                output_path = event_data.get("output_path")
+                meeting_notes_details = event_data.get("meeting_notes_details", {})
+                notes_file_path = meeting_notes_details.get("notes_file_path")
             else:
                 # Handle RecordingEvent, RecordingStartRequest, RecordingEndRequest
                 recording_id = getattr(event_data, "recording_id", "unknown")
-                output_path = getattr(event_data, "output_path", None)
+                meeting_notes_details = getattr(event_data, "data", {}).get("meeting_notes_details", {})
+                notes_file_path = meeting_notes_details.get("notes_file_path")
 
-            if not output_path or not os.path.exists(output_path):
+            if not notes_file_path or not os.path.exists(notes_file_path):
                 logger.error(
                     "Meeting notes file not found",
                     extra={
                         "recording_id": recording_id,
-                        "output_path": output_path,
+                        "notes_file_path": notes_file_path,
                     },
                 )
                 return
 
             # Send notification
-            await self._send_notification(recording_id, output_path)
+            await self._send_notification(recording_id, notes_file_path)
 
             # Auto-open notes if configured
             if self.config.config and self.config.config.get("auto_open_notes"):
-                await self._open_notes_file(output_path)
+                await self._open_notes_file(notes_file_path)
 
             # Emit completion event
             if self.event_bus:
-                notification_data = {
-                    "type": "desktop_notification.completed",
-                    "recording_id": recording_id,
-                    "status": "completed",
-                    "output_path": output_path,
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-                await self.event_bus.emit(notification_data)
+                from datetime import datetime
+                from app.models.recording.events import RecordingEvent
+
+                event = RecordingEvent(
+                    recording_timestamp=datetime.utcnow().isoformat(),
+                    recording_id=recording_id,
+                    event="desktop_notification.completed",
+                    name="desktop_notification.completed",
+                    data={
+                        "type": "desktop_notification.completed",
+                        "recording_id": recording_id,
+                        "status": "completed",
+                        "notification_details": {
+                            "notification_type": "terminal-notifier",
+                            "auto_open_notes": bool(self.config.config.get("auto_open_notes", False)),
+                            "notes_file_path": str(notes_file_path),
+                            "processing_timestamp": datetime.utcnow().isoformat()
+                        },
+                        # Preserve previous metadata
+                        "noise_reduction_details": event_data.data.get("noise_reduction_details", {}),
+                        "transcription_details": event_data.data.get("transcription_details", {}),
+                        "meeting_notes_details": event_data.data.get("meeting_notes_details", {}),
+                        "recording_metadata": event_data.data.get("recording_metadata", {}),
+                        "audio_paths": event_data.data.get("audio_paths", {}),
+                        "meeting_metadata": event_data.data.get("meeting_metadata", {})
+                    }
+                )
+                await self.event_bus.emit(event)
 
         except Exception as e:
             logger.error(

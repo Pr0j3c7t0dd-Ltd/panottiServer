@@ -80,6 +80,11 @@ class RecordingEvent(BaseModel):
         "Recording Ended",
         "recording.ended",
         "noise_reduction.completed",
+        "transcription.completed",
+        "transcription.error",
+        "meeting_notes.completed",
+        "meeting_notes.error",
+        "desktop_notification.completed",
     ]
     metadata: dict[str, Any] | EventMetadata | None = None
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
