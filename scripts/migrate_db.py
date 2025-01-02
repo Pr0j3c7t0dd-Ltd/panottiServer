@@ -22,8 +22,8 @@ def main():
     logger = logging.getLogger(__name__)
 
     try:
-        # Get database manager instance
-        db = DatabaseManager.get_instance()
+        # Get database manager instance and run migrations
+        DatabaseManager.get_instance()
 
         # The migrations will run automatically during initialization
         logger.info("Database migrations completed successfully")
