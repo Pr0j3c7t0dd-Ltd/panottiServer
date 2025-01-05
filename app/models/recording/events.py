@@ -151,10 +151,10 @@ class RecordingEvent(BaseModel):
 
     async def save(self) -> None:
         """Save the event to the database."""
-        db = DatabaseManager.get_instance()
+        db = await DatabaseManager.get_instance()
 
         # Save to recording_events table
-        await db.insert(
+        await db.execute(
             """
             INSERT INTO recording_events (
                 recording_id,
@@ -331,6 +331,8 @@ class RecordingEndRequest(BaseModel):
         if timestamp is None:
             timestamp = datetime.utcnow().isoformat()
 
+        event_id = f"{self.recording_id}_ended_{timestamp}"
+
         return RecordingEvent(
             recording_timestamp=timestamp,
             recording_id=self.recording_id,
@@ -338,11 +340,15 @@ class RecordingEndRequest(BaseModel):
             microphone_audio_path=self.microphone_audio_path,
             event=self.event,
             metadata=self.metadata,
+            event_id=event_id,
             data={
                 "recording_id": self.recording_id,
                 "recording_timestamp": timestamp,
                 "system_audio_path": self.system_audio_path,
                 "microphone_audio_path": self.microphone_audio_path,
                 "metadata": self.metadata,
+                "event": self.event,
+                "event_id": event_id,
+                "status": "completed"
             },
         )

@@ -10,7 +10,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Annotated, Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, Header
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, Header, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -317,6 +317,7 @@ async def recording_started(request: Request) -> dict[str, Any]:
 
 @app.post("/api/recording-ended")
 async def recording_ended(
+    background_tasks: BackgroundTasks,
     request: Request,
     recording_end: RecordingEndRequest,
     x_api_key: str = Depends(get_api_key),
@@ -345,81 +346,58 @@ async def recording_ended(
         }
     )
 
-    # Check for duplicates
-    if await event.is_duplicate():
-        logger.info(
-            "Skipping duplicate recording end event",
-            extra={
-                "recording_id": event.recording_id,
-                "event_id": event_id,
-            }
-        )
-        return {"status": "skipped", "reason": "duplicate_event"}
+    # Process event in background
+    async def process_event(event: RecordingEvent):
+        try:
+            # Check for duplicates
+            if await event.is_duplicate():
+                logger.info(
+                    "Skipping duplicate recording end event",
+                    extra={
+                        "recording_id": event.recording_id,
+                        "event_id": event_id,
+                    }
+                )
+                return
 
-    # Insert event record
-    logger.debug(
-        "Inserting event record",
-        extra={
-            "recording_id": event.recording_id,
-            "event_id": event_id,
-            "system_audio_path": event.system_audio_path,
-            "microphone_audio_path": event.microphone_audio_path,
-            "metadata": event.metadata,
-        }
-    )
-    await event.save()
+            # Insert event record and update recording status
+            logger.debug(
+                "Inserting event record and updating status",
+                extra={
+                    "recording_id": event.recording_id,
+                    "event_id": event_id,
+                    "system_audio_path": event.system_audio_path,
+                    "microphone_audio_path": event.microphone_audio_path,
+                    "metadata": event.metadata,
+                }
+            )
+            await event.save()  # This already handles both event record and recording status update
 
-    # Update recording status
-    logger.debug(
-        "Updating recording status",
-        extra={
-            "recording_id": event.recording_id,
-            "event_id": event_id,
-            "status": "completed",
-            "system_audio_path": event.system_audio_path,
-            "microphone_audio_path": event.microphone_audio_path,
-        }
-    )
-    
-    db = DatabaseManager.get_instance()
-    await db.execute(
-        """
-        INSERT INTO recordings (recording_id, status, system_audio_path, microphone_audio_path)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(recording_id) DO UPDATE SET
-            status = 'completed',
-            system_audio_path = excluded.system_audio_path,
-            microphone_audio_path = excluded.microphone_audio_path,
-            updated_at = CURRENT_TIMESTAMP
-        """,
-        (
-            event.recording_id,
-            "completed",
-            event.system_audio_path,
-            event.microphone_audio_path,
-        ),
-    )
+            # Publish event
+            logger.debug(
+                "Publishing event to event bus",
+                extra={
+                    "recording_id": event.recording_id,
+                    "event_id": event_id,
+                    "event_type": "RecordingEvent",
+                }
+            )
+            await event_bus.publish(event)
+        except Exception as e:
+            logger.error(
+                "Error processing recording end event",
+                extra={
+                    "recording_id": event.recording_id,
+                    "event_id": event_id,
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            )
 
-    # Create and publish event
-    logger.debug(
-        "Creating RecordingEvent",
-        recording_id=event.recording_id,
-        event_id=event_id,
-        event_data=event.dict(),
-    )
+    # Add event processing to background tasks
+    background_tasks.add_task(process_event, event)
 
-    event.set_data()
-    
-    logger.debug(
-        "Publishing event to event bus",
-        recording_id=event.recording_id,
-        event_id=event_id,
-        event_type="RecordingEvent",
-        event_data=str(event),
-    )
-    
-    await event_bus.publish(event)
-
+    # Return success immediately
     return {"status": "success", "event_id": event_id}
 
 
