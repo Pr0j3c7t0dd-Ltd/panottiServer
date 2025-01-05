@@ -7,7 +7,6 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from app.models.recording.events import RecordingEvent
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +15,8 @@ from scipy import signal
 from scipy.io import wavfile
 from scipy.signal import butter, filtfilt
 
-from app.models.database import DatabaseManager
+from app.models.database import DatabaseManager, get_db_async
+from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.bus import EventBus as PluginEventBus
 from app.plugins.events.models import EventContext
@@ -107,7 +107,7 @@ class NoiseReductionPlugin(PluginBase):
             )
 
             # Initialize database connection
-            self.db = await DatabaseManager.get_instance()
+            self.db = await get_db_async()
             
             # Create output directory
             self._output_directory.mkdir(parents=True, exist_ok=True)
@@ -703,7 +703,7 @@ class NoiseReductionPlugin(PluginBase):
 
             # Check if we've already processed this recording
             if not self.db:
-                self.db = await DatabaseManager.get_instance()
+                self.db = await get_db_async()
 
             # Check both recording existence and processing status
             rows = await self.db.execute_fetchall(

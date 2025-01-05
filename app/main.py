@@ -102,7 +102,8 @@ async def startup() -> None:
 
     # Initialize plugin manager
     logger.info("Initializing plugin manager")
-    plugin_manager = PluginManager("app/plugins", event_bus=event_bus)
+    plugin_dir = os.path.join(os.path.dirname(__file__), "plugins")
+    plugin_manager = PluginManager(plugin_dir, event_bus=event_bus)
 
     logger.info("Initializing plugins")
     await plugin_manager.discover_plugins()

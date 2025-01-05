@@ -100,13 +100,12 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    logger = logging.getLogger(name)
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(JSONFormatter())
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-    return logger
+    """Get a logger instance.
+    
+    This will return a logger that inherits settings from the root logger,
+    including log level and handlers.
+    """
+    return logging.getLogger(name)
 
 
 if __name__ == "__main__":

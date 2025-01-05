@@ -34,355 +34,316 @@ class PluginManager:
             "Starting plugin discovery", extra={"plugin_dir": str(self.plugin_dir)}
         )
 
-        config_files = list(self.plugin_dir.glob("*/plugin.yaml"))
+        logger.debug(
+            "Looking for plugins",
+            extra={
+                "plugin_dir": str(self.plugin_dir),
+                "plugin_dir_exists": self.plugin_dir.exists(),
+                "plugin_dir_is_dir": self.plugin_dir.is_dir() if self.plugin_dir.exists() else None,
+                "plugin_dir_contents": [str(p) for p in self.plugin_dir.iterdir()] if self.plugin_dir.exists() and self.plugin_dir.is_dir() else [],
+            },
+        )
+
+        # Search for both plugin.yaml and plugin.yaml.example files
+        yaml_files = list(self.plugin_dir.glob("*/plugin.yaml")) + list(self.plugin_dir.glob("*/plugin.yaml.example"))
+        logger.debug(
+            "Found yaml files",
+            extra={
+                "yaml_files": [str(f) for f in yaml_files],
+            },
+        )
+        config_files = []
+        
+        # For each directory, prefer plugin.yaml over plugin.yaml.example
+        plugin_dirs = {f.parent for f in yaml_files}
+        logger.debug(
+            "Found plugin directories",
+            extra={
+                "plugin_dirs": [str(d) for d in plugin_dirs],
+            },
+        )
+        for plugin_dir in plugin_dirs:
+            logger.debug(
+                "Checking plugin directory",
+                extra={
+                    "plugin_dir": str(plugin_dir),
+                    "is_dir": plugin_dir.is_dir(),
+                    "contents": [str(p) for p in plugin_dir.iterdir()] if plugin_dir.is_dir() else [],
+                },
+            )
+            
+            yaml_path = plugin_dir / "plugin.yaml"
+            example_path = plugin_dir / "plugin.yaml.example"
+            
+            logger.debug(
+                "Checking plugin directory",
+                extra={
+                    "plugin_dir": str(plugin_dir),
+                    "yaml_exists": (plugin_dir / "plugin.yaml").exists(),
+                    "example_exists": (plugin_dir / "plugin.yaml.example").exists(),
+                },
+            )
+            
+            if yaml_path.exists():
+                logger.debug(
+                    "Found plugin config file",
+                    extra={
+                        "config_file": str(yaml_path),
+                        "plugin_dir": str(plugin_dir),
+                    },
+                )
+                config_files.append(yaml_path)
+            elif example_path.exists():
+                logger.debug(
+                    "No plugin config file found, using example",
+                    extra={
+                        "plugin_dir": str(plugin_dir),
+                        "expected_config": str(yaml_path),
+                        "example_path": str(example_path),
+                    },
+                )
+                # Copy example to yaml if it doesn't exist
+                logger.debug(
+                    "Creating plugin.yaml from example",
+                    extra={
+                        "plugin_dir": str(plugin_dir),
+                        "example_path": str(example_path),
+                        "yaml_path": str(yaml_path)
+                    }
+                )
+                with open(example_path, "r") as src, open(yaml_path, "w") as dst:
+                    dst.write(src.read())
+                config_files.append(yaml_path)
+            else:
+                logger.debug(
+                    "No plugin config file found",
+                    extra={
+                        "plugin_dir": str(plugin_dir),
+                        "expected_config": str(yaml_path),
+                    },
+                )
+        
         logger.debug(
             "Found plugin config files",
             extra={
                 "config_files": [str(f) for f in config_files],
                 "plugin_dir": str(self.plugin_dir),
-                "search_pattern": "*/plugin.yaml"
+                "search_pattern": "*/plugin.yaml",
+                "plugin_dir_exists": self.plugin_dir.exists(),
+                "plugin_dir_contents": [str(p) for p in self.plugin_dir.iterdir()] if self.plugin_dir.exists() else [],
+                "example_plugin_dir": str(self.plugin_dir / "example"),
+                "example_plugin_dir_exists": (self.plugin_dir / "example").exists(),
+                "example_plugin_dir_contents": [str(p) for p in (self.plugin_dir / "example").iterdir()] if (self.plugin_dir / "example").exists() else [],
+                "example_plugin_yaml": str(self.plugin_dir / "example" / "plugin.yaml"),
+                "example_plugin_yaml_exists": (self.plugin_dir / "example" / "plugin.yaml").exists(),
             },
         )
 
-        configs: list[PluginConfig] = []
+        # Load plugin configurations
+        configs = []
         for config_file in config_files:
+            logger.debug(
+                "Processing plugin config",
+                extra={
+                    "config_file": str(config_file),
+                    "plugin_dir": str(config_file.parent),
+                },
+            )
             try:
-                plugin_dir = config_file.parent
-                logger.debug(
-                    "Processing plugin config",
-                    extra={
-                        "config_file": str(config_file),
-                        "plugin_dir": str(plugin_dir),
-                        "exists": config_file.exists(),
-                        "is_file": config_file.is_file(),
-                        "parent_exists": plugin_dir.exists(),
-                    },
-                )
-
-                if not config_file.exists():
-                    logger.error(
-                        "Plugin config file does not exist",
+                with open(config_file, "r") as f:
+                    config_data = yaml.safe_load(f)
+                    logger.debug(
+                        "Loaded plugin config data",
                         extra={
                             "config_file": str(config_file),
-                            "plugin_dir": str(plugin_dir),
+                            "config_data": config_data,
                         },
                     )
-                    continue
-
-                with open(config_file) as f:
-                    try:
-                        config_data = yaml.safe_load(f)
-                        logger.debug(
-                            "Loaded plugin config data",
-                            extra={
-                                "config_file": str(config_file),
-                                "config_data": config_data,
-                                "yaml_version": yaml.__version__,
-                            },
-                        )
-                    except yaml.YAMLError as e:
-                        logger.error(
-                            "Failed to parse plugin config YAML",
-                            extra={
-                                "config_file": str(config_file),
-                                "error": str(e),
-                                "error_type": type(e).__name__,
-                            },
-                        )
-                        continue
-
-                try:
-                    config = PluginConfig(**config_data)
+                    config = PluginConfig(
+                        name=config_data["name"],
+                        version=config_data["version"],
+                        enabled=config_data.get("enabled", True),
+                        dependencies=config_data.get("dependencies", []),
+                        config=config_data.get("config", {}),
+                    )
                     logger.debug(
                         "Validated plugin config",
                         extra={
                             "config_file": str(config_file),
-                            "plugin_name": config.name,
-                            "plugin_version": config.version,
-                            "plugin_enabled": config.enabled,
+                            "config": config.dict(),
                         },
                     )
-                except Exception as e:
-                    logger.error(
-                        "Failed to validate plugin config",
-                        extra={
-                            "config_file": str(config_file),
-                            "config_data": config_data,
-                            "error": str(e),
-                            "error_type": type(e).__name__,
-                        },
-                    )
-                    continue
-
-                self.configs[config.name] = config
-                configs.append(config)
-
-                if not config.enabled:
-                    logger.info(
-                        "Plugin is disabled, skipping",
-                        extra={
-                            "plugin_name": config.name,
-                            "plugin_version": config.version,
-                        },
-                    )
-                    continue
-
-                # Load plugin module
-                module_path = plugin_dir / "plugin.py"
-                if not module_path.exists():
-                    logger.error(
-                        "Plugin module not found",
-                        extra={
-                            "plugin_name": config.name,
-                            "module_path": str(module_path),
-                        },
-                    )
-                    continue
-
-                try:
-                    # Import the plugin package directly
-                    plugin_package = f"app.plugins.{config.name}"
-                    logger.debug(
-                        "Attempting to import plugin package",
-                        extra={
-                            "plugin_package": plugin_package,
-                            "plugin_name": config.name,
-                            "plugin_dir": str(plugin_dir),
-                            "module_path": str(module_path),
-                            "sys_modules": list(sys.modules.keys()),
-                        },
-                    )
-                    module = importlib.import_module(plugin_package)
-                    logger.debug(
-                        "Successfully imported module",
-                        extra={
-                            "module_name": module.__name__,
-                            "module_file": getattr(module, "__file__", "unknown"),
-                            "module_attrs": dir(module),
-                        },
-                    )
-
-                    # Get plugin class from the module
-                    plugin_class = None
-                    module_attrs = dir(module)
-                    plugin_candidates = [attr for attr in module_attrs if attr.endswith("Plugin")]
-                    logger.debug(
-                        "Searching for plugin class",
-                        extra={
-                            "plugin_name": config.name,
-                            "module_attrs": module_attrs,
-                            "plugin_candidates": plugin_candidates,
-                        },
-                    )
-                    
-                    for attr_name in plugin_candidates:
-                        attr_value = getattr(module, attr_name)
-                        logger.debug(
-                            "Examining candidate plugin class",
-                            extra={
-                                "attr_name": attr_name,
-                                "attr_type": type(attr_value).__name__,
-                                "is_class": isinstance(attr_value, type),
-                                "bases": [base.__name__ for base in getattr(attr_value, "__bases__", ())] if isinstance(attr_value, type) else [],
-                            },
-                        )
-                        if attr_name.endswith("Plugin"):
-                            plugin_class = attr_value
-                            break
-
-                    if not plugin_class:
-                        logger.error(
-                            "No plugin class found in module",
-                            extra={
-                                "plugin_name": config.name,
-                                "plugin_module": module.__name__,
-                                "available_classes": [attr for attr in dir(module) if not attr.startswith("_")],
-                                "module_path": str(module_path),
-                            },
-                        )
-                        continue
-
-                    plugin_name = plugin_class.__name__
-                    logger.debug(
-                        f"Found plugin class {plugin_name}",
-                        extra={
-                            "plugin_name": config.name,
-                            "plugin_class": plugin_name,
-                            "plugin_module": module.__name__,
-                            "plugin_base": PluginBase.__name__,
-                        },
-                    )
-                except ImportError as e:
-                    logger.error(
-                        f"Failed to import plugin module {config.name}",
-                        extra={
-                            "plugin_name": config.name,
-                            "module_path": str(module_path),
-                            "error": str(e),
-                            "error_type": "ImportError",
-                            "sys_path": sys.path,
-                            "traceback": traceback.format_exc(),
-                        },
-                    )
-                    continue
-                except Exception as e:
-                    logger.error(
-                        f"Failed to load plugin module {config.name}",
-                        extra={
-                            "plugin_name": config.name,
-                            "module_path": str(module_path),
-                            "error": str(e),
-                            "error_type": type(e).__name__,
-                            "traceback": traceback.format_exc(),
-                            "module_attrs": dir(module) if 'module' in locals() else None,
-                        },
-                    )
-                    continue
-
-                # Verify it's a proper class that inherits from PluginBase
-                logger.debug(
-                    "Verifying plugin class",
-                    extra={
-                        "plugin_name": config.name,
-                        "plugin_class": plugin_name,
-                        "plugin_base": PluginBase.__name__,
-                        "is_subclass": issubclass(plugin_class, PluginBase) if plugin_class else False,
-                    },
-                )
-
-                if not plugin_class or not issubclass(plugin_class, PluginBase):
-                    logger.error(
-                        "Invalid plugin class",
-                        extra={
-                            "plugin_name": config.name,
-                            "plugin_class": plugin_name if plugin_class else None,
-                            "plugin_base": PluginBase.__name__,
-                            "class_bases": [base.__name__ for base in plugin_class.__bases__] if plugin_class else [],
-                            "error": "Plugin class must inherit from PluginBase",
-                        },
-                    )
-                    continue
-
-                # Successfully loaded plugin
-                logger.info(
-                    "✨ Plugin loaded successfully",
-                    extra={
-                        "plugin_name": config.name,
-                        "plugin_version": config.version,
-                        "plugin_enabled": config.enabled,
-                        "plugin_dependencies": config.dependencies,
-                    },
-                )
-
-                # Create plugin instance
-                plugin = plugin_class(config, event_bus=self.event_bus)
-                self.plugins[config.name] = plugin
+                    self.configs[config.name] = config  # Store in self.configs
+                    configs.append(config)
 
             except Exception as e:
                 logger.error(
-                    "Error loading plugin",
-                    extra={"config_file": str(config_file), "error": str(e)},
+                    "Failed to load plugin config",
+                    extra={
+                        "config_file": str(config_file),
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    },
                 )
+                continue
 
         return configs
 
     async def initialize_plugins(self) -> None:
-        """Initialize all plugins in dependency order"""
-        logger.info("Initializing plugins", extra={"plugin_count": len(self.plugins)})
+        """Initialize all discovered plugins."""
+        logger.info("Starting plugin initialization")
 
-        # Build dependency graph and detect cycles
-        graph = {
-            name: {dep for dep in plugin.config.dependencies if dep in self.plugins}
-            for name, plugin in self.plugins.items()
-            if not plugin.is_initialized  # Only include uninitialized plugins
-        }
+        # Sort plugins by dependencies
+        sorted_configs = self._sort_by_dependencies(self.configs)
         logger.debug(
-            "Plugin dependency graph",
+            "Sorted plugins by dependencies",
             extra={
-                "graph": str(graph),
-                "initialized_plugins": [
-                    name for name, plugin in self.plugins.items()
-                    if plugin.is_initialized
-                ]
-            }
+                "plugin_order": [config.name for config in sorted_configs],
+                "plugin_configs": {
+                    config.name: {
+                        "enabled": config.enabled,
+                        "dependencies": config.dependencies,
+                    }
+                    for config in sorted_configs
+                },
+            },
         )
-
-        # Check for missing dependencies
-        for name, plugin in self.plugins.items():
-            if plugin.is_initialized:
+        
+        # Initialize plugins in dependency order
+        for config in sorted_configs:
+            if not config.enabled:
+                logger.info(
+                    "Plugin is disabled, skipping",
+                    extra={
+                        "plugin_name": config.name,
+                        "plugin_version": config.version,
+                    },
+                )
                 continue
-            missing = set(plugin.config.dependencies) - set(self.plugins.keys())
-            if missing:
-                logger.warning(
-                    "Plugin has missing dependencies",
-                    extra={
-                        "plugin_name": name,
-                        "missing_dependencies": list(missing)
-                    }
-                )
 
-        initialized: set[str] = set()
-        while graph:
-            # Find plugins with no dependencies or only satisfied dependencies
-            ready = {name for name, deps in graph.items() if not deps - initialized}
-            if not ready:
-                remaining = ", ".join(graph.keys())
-                dependency_info = {name: list(deps) for name, deps in graph.items()}
-                logger.error(
-                    "Circular plugin dependencies detected",
-                    extra={
-                        "remaining_plugins": remaining,
-                        "dependency_info": dependency_info,
-                        "initialized_plugins": list(initialized)
-                    }
-                )
-                raise ValueError(f"Circular plugin dependencies detected: {remaining}")
+            logger.debug(
+                "Initializing plugin",
+                extra={
+                    "plugin_name": config.name,
+                    "plugin_version": config.version,
+                    "plugin_enabled": config.enabled,
+                    "plugin_dependencies": config.dependencies,
+                    "plugin_dir": str(self.plugin_dir / config.name),
+                    "plugin_dir_exists": (self.plugin_dir / config.name).exists(),
+                    "plugin_py_exists": (self.plugin_dir / config.name / "plugin.py").exists(),
+                },
+            )
 
-            # Initialize ready plugins
-            for name in ready:
-                plugin = self.plugins[name]
-                if not plugin.is_initialized:  # Double-check initialization state
-                    try:
-                        logger.debug(
-                            "Initializing plugin",
-                            extra={
-                                "plugin_name": name,
-                                "plugin_version": plugin.version
-                            }
-                        )
-                        await plugin.initialize()
-                        initialized.add(name)
-                    except Exception as e:
-                        logger.error(
-                            "Failed to initialize plugin",
-                            extra={
-                                "plugin_name": name,
-                                "error": str(e)
-                            }
-                        )
-                        raise
-                else:
+            try:
+                # Import plugin module
+                plugin_dir = self.plugin_dir / config.name
+                module_path = plugin_dir / "plugin.py"
+                plugin_module_name = f"app.plugins.{config.name}"
+
+                # Add plugin parent directory to Python path if not already there
+                plugin_parent_dir = str(self.plugin_dir.parent.parent)
+                if plugin_parent_dir not in sys.path:
                     logger.debug(
-                        "Plugin already initialized",
+                        "Adding plugin parent directory to Python path",
                         extra={
-                            "plugin_name": name,
-                            "plugin_version": plugin.version
-                        }
+                            "plugin_name": config.name,
+                            "plugin_parent_dir": plugin_parent_dir,
+                            "sys_path_before": sys.path,
+                        },
                     )
-                    initialized.add(name)
-                del graph[name]
+                    sys.path.insert(0, plugin_parent_dir)
 
-            # Update remaining dependencies
-            for deps in graph.values():
-                deps.difference_update(ready)
+                logger.debug(
+                    "Importing plugin module",
+                    extra={
+                        "plugin_name": config.name,
+                        "module_name": plugin_module_name,
+                        "module_path": str(module_path),
+                        "module_exists": module_path.exists(),
+                        "sys_path": sys.path,
+                    },
+                )
 
-        logger.info(
-            "All plugins initialized successfully",
-            extra={
-                "initialized_plugins": list(initialized),
-                "total_plugins": len(self.plugins)
-            }
-        )
+                plugin_module = importlib.import_module(plugin_module_name)
+
+                # Find plugin class
+                plugin_class = None
+                for attr_name in dir(plugin_module):
+                    attr = getattr(plugin_module, attr_name)
+                    if (
+                        isinstance(attr, type)
+                        and issubclass(attr, PluginBase)
+                        and attr is not PluginBase
+                    ):
+                        logger.debug(
+                            "Found plugin class candidate",
+                            extra={
+                                "plugin_name": config.name,
+                                "class_name": attr_name,
+                                "module_name": plugin_module.__name__,
+                                "plugin_dir": str(plugin_dir),
+                                "plugin_parent_dir": str(plugin_dir.parent),
+                                "module_file": str(plugin_module.__file__),
+                            },
+                        )
+                        plugin_class = attr
+                        break
+
+                if plugin_class is None:
+                    logger.error(
+                        "No plugin class found",
+                        extra={
+                            "plugin_name": config.name,
+                            "module_name": plugin_module.__name__,
+                            "available_attrs": dir(plugin_module),
+                        },
+                    )
+                    continue
+
+                # Create and initialize plugin instance
+                plugin = plugin_class(config, event_bus=self.event_bus)
+                await plugin.initialize()
+                self.plugins[config.name] = plugin
+
+                logger.info(
+                    "Plugin initialized successfully",
+                    extra={
+                        "plugin_name": config.name,
+                        "plugin_version": config.version,
+                        "plugin_enabled": config.enabled,
+                    },
+                )
+
+            except Exception as e:
+                logger.error(
+                    "Failed to initialize plugin",
+                    extra={
+                        "plugin_name": config.name,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+                continue
+
+    def _sort_by_dependencies(self, configs: dict[str, PluginConfig]) -> list[PluginConfig]:
+        """Sort plugins by dependencies."""
+        sorted_configs = []
+        visited = set()
+
+        def visit(config: PluginConfig):
+            if config.name in visited:
+                return
+            visited.add(config.name)
+            for dep in config.dependencies:
+                if dep in configs:
+                    visit(configs[dep])
+            sorted_configs.append(config)
+
+        for config in configs.values():
+            visit(config)
+
+        return sorted_configs
 
     async def shutdown_plugins(self) -> None:
         """Shutdown all plugins in reverse dependency order"""
@@ -427,7 +388,7 @@ class PluginManager:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
-            # Get plugin class
+            # Get plugin class from the module
             plugin_class = None
             for item in dir(module):
                 if item.endswith("Plugin"):

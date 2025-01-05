@@ -1,0 +1,7 @@
+name: "audio_transcription"
+version: "1.0.0"
+enabled: true
+dependencies: ["noise_reduction"]
+config:
+  model_name: "base.en"
+  max_concurrent_tasks: 4

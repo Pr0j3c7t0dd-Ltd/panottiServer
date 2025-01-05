@@ -1,0 +1,7 @@
+name: "desktop_notifier"
+version: "1.0.0"
+enabled: true
+dependencies: ["meeting_notes"]
+config:
+  auto_open_notes: true
+  max_concurrent_tasks: 4
