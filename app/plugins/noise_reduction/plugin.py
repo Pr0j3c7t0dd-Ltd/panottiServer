@@ -5,6 +5,7 @@ import logging
 import os
 import traceback
 import uuid
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +17,7 @@ from scipy import signal
 from scipy.io import wavfile
 from scipy.signal import butter, filtfilt
 
-from app.models.database import get_db_async
+from app.models.database import get_db_async, DatabaseManager
 from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.bus import EventBus as PluginEventBus
@@ -65,7 +66,7 @@ class NoiseReductionPlugin(PluginBase):
         # Initialize thread pool and other attributes
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
         self._req_id = str(uuid.uuid4())
-        self.db = None
+        self._db: DatabaseManager | None = None
 
     async def _initialize(self) -> None:
         """Initialize the plugin."""
@@ -81,7 +82,8 @@ class NoiseReductionPlugin(PluginBase):
             # Initialize database connection
             for attempt in range(3):  # Try 3 times
                 try:
-                    self.db = await get_db_async()
+                    db_manager = await get_db_async()
+                    self._db = await db_manager
                     break
                 except Exception as e:
                     if attempt == 2:  # Last attempt
@@ -97,12 +99,12 @@ class NoiseReductionPlugin(PluginBase):
                         raise
                     await asyncio.sleep(1)  # Wait before retrying
 
+            # Create output directory if it doesn't exist
+            os.makedirs(self._output_directory, exist_ok=True)
+
             # Subscribe to recording.ended event
             if self.event_bus:
-                await self.event_bus.subscribe(
-                    "recording.ended",
-                    self.handle_recording_ended
-                )
+                await self.event_bus.subscribe("recording.ended", self.handle_recording_ended)
                 logger.info(
                     "Subscribed to recording.ended event",
                     extra={
@@ -111,34 +113,16 @@ class NoiseReductionPlugin(PluginBase):
                     }
                 )
 
-            # Create output directory if it doesn't exist
-            config_dict = self.config.config or {}
-            self._output_directory = Path(config_dict.get("output_directory", "data/cleaned_audio"))
-            self._output_directory.mkdir(parents=True, exist_ok=True)
-
-            # Initialize other settings
-            self._noise_reduce_factor = float(config_dict.get("noise_reduce_factor", 1.0))
-            self._wiener_alpha = float(config_dict.get("wiener_alpha", 2.5))
-            self._highpass_cutoff = float(config_dict.get("highpass_cutoff", 95))
-            self._spectral_floor = float(config_dict.get("spectral_floor", 0.04))
-            self._smoothing_factor = int(config_dict.get("smoothing_factor", 2))
-            self._max_workers = int(config_dict.get("max_concurrent_tasks", 4))
-            self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
-
             logger.info(
-                "Noise reduction plugin initialized",
+                "Noise reduction plugin initialized successfully",
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "output_directory": str(self._output_directory),
-                    "noise_reduce_factor": self._noise_reduce_factor,
-                    "wiener_alpha": self._wiener_alpha,
-                    "highpass_cutoff": self._highpass_cutoff,
-                    "spectral_floor": self._spectral_floor,
-                    "smoothing_factor": self._smoothing_factor,
-                    "max_workers": self._max_workers
+                    "output_directory": str(self._output_directory)
                 }
             )
+
+            self._initialized = True
 
         except Exception as e:
             logger.error(
@@ -153,7 +137,7 @@ class NoiseReductionPlugin(PluginBase):
             raise
 
     def _apply_highpass_filter(
-        self, data: np.ndarray, cutoff_freq: float, sample_rate: int, order: int = 3
+        self, data: np.ndarray, cutoff_freq: float, sample_rate: int, order: int = 2
     ) -> np.ndarray:
         """Apply a Butterworth highpass filter to the audio data."""
         nyquist = sample_rate * 0.5
@@ -597,12 +581,16 @@ class NoiseReductionPlugin(PluginBase):
                     "req_id": self._req_id,
                     "plugin_name": self.name,
                     "recording_id": recording_id,
-                    "input_path": input_path
+                    "input_path": input_path,
+                    "exists": os.path.exists(input_path),
+                    "size": os.path.getsize(input_path) if os.path.exists(input_path) else 0
                 }
             )
 
             # Read audio file
-            sample_rate, audio_data = wavfile.read(input_path)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                sample_rate, audio_data = wavfile.read(input_path)
 
             # Apply noise reduction
             logger.debug(
@@ -610,16 +598,83 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "recording_id": recording_id
+                    "recording_id": recording_id,
+                    "audio_shape": audio_data.shape if hasattr(audio_data, 'shape') else None,
+                    "sample_rate": sample_rate,
+                    "output_path": output_path,
+                    "settings": {
+                        "noise_reduce_factor": self._noise_reduce_factor,
+                        "wiener_alpha": self._wiener_alpha,
+                        "highpass_cutoff": self._highpass_cutoff,
+                        "spectral_floor": self._spectral_floor,
+                        "smoothing_factor": self._smoothing_factor
+                    }
                 }
             )
 
             # Convert to float32 for processing
-            audio_float = audio_data.astype(np.float32) / 32768.0
+            audio_float = audio_data.astype(np.float32)
+            if len(audio_data.shape) > 1:  # Stereo
+                audio_float = audio_float.mean(axis=1)  # Convert to mono
+            audio_float = audio_float / np.max(np.abs(audio_float))  # Normalize
 
-            # Apply highpass filter
-            b, a = butter(4, self._highpass_cutoff / (sample_rate/2), 'high')
-            filtered_audio = filtfilt(b, a, audio_float)
+            # For very short segments, use a lower filter order
+            data_length = len(audio_float)
+            if data_length < 30:  # Very short audio
+                order = 1
+            elif data_length < 100:  # Short audio
+                order = 2
+            else:  # Normal length audio
+                order = 3
+
+            logger.debug(
+                "Filtering audio",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "data_length": data_length,
+                    "filter_order": order,
+                    "cutoff": self._highpass_cutoff
+                }
+            )
+
+            # Apply highpass filter with adaptive padding
+            nyquist = sample_rate / 2
+            cutoff = self._highpass_cutoff / nyquist
+            b, a = butter(order, cutoff, 'high')
+            
+            # Add padding for short segments
+            pad_length = max(3 * order, 1)  # Minimum padding of 1
+            padded_audio = np.pad(audio_float, (pad_length, pad_length), mode='edge')
+            filtered_audio = filtfilt(b, a, padded_audio)
+            
+            # Remove padding
+            filtered_audio = filtered_audio[pad_length:-pad_length]
+
+            # Apply Wiener filter for additional noise reduction
+            if self._wiener_alpha > 0:
+                logger.debug(
+                    "Applying Wiener filter",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "alpha": self._wiener_alpha
+                    }
+                )
+                # Compute noise profile from the first 100ms of audio
+                noise_samples = min(int(sample_rate * 0.1), len(filtered_audio))
+                noise_profile = filtered_audio[:noise_samples]
+                noise_power = np.mean(noise_profile ** 2)
+                
+                # Apply Wiener filter
+                signal_power = filtered_audio ** 2
+                wiener_gain = np.maximum(
+                    1 - (self._wiener_alpha * noise_power) / (signal_power + 1e-10), 
+                    self._spectral_floor
+                )
+                filtered_audio = filtered_audio * wiener_gain
 
             # Convert back to int16
             logger.debug(
@@ -627,30 +682,40 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "recording_id": recording_id
+                    "recording_id": recording_id,
+                    "min_val": float(np.min(filtered_audio)),
+                    "max_val": float(np.max(filtered_audio))
                 }
             )
             output_audio = np.clip(filtered_audio * 32768.0, -32768, 32767).astype(np.int16)
 
+            # Ensure output directory exists
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
             # Write output file
             logger.debug(
-                f"Writing output file to {output_path}",
+                f"Writing output file",
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "recording_id": recording_id
+                    "recording_id": recording_id,
+                    "output_path": output_path,
+                    "output_shape": output_audio.shape,
+                    "output_dtype": str(output_audio.dtype)
                 }
             )
             wavfile.write(output_path, sample_rate, output_audio)
 
             # Log success
-            logger.debug(
-                "Successfully wrote file",
+            logger.info(
+                "Successfully processed audio file",
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
                     "recording_id": recording_id,
-                    "size": os.path.getsize(output_path)
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "output_size": os.path.getsize(output_path)
                 }
             )
 
@@ -662,7 +727,10 @@ class NoiseReductionPlugin(PluginBase):
                     "plugin_name": self.name,
                     "recording_id": recording_id,
                     "error": str(e),
-                    "input_path": input_path
+                    "error_type": type(e).__name__,
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "traceback": traceback.format_exc()
                 },
                 exc_info=True
             )
@@ -777,18 +845,9 @@ class NoiseReductionPlugin(PluginBase):
                 )
                 return
 
-            # Initialize database connection
-            logger.debug(
-                "Initializing database connection",
-                extra={
-                    "req_id": event_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id
-                }
-            )
-
-            if not self.db:
-                self.db = await (await get_db_async())
+            # Initialize database connection if needed
+            if not self._db:
+                self._db = await get_db_async()
 
             # Check if we've already processed this recording
             try:
@@ -802,7 +861,7 @@ class NoiseReductionPlugin(PluginBase):
                     }
                 )
 
-                row = await self.db.fetch_one(
+                row = await self._db.fetch_one(
                     """
                     SELECT pt.status 
                     FROM recordings r
@@ -824,19 +883,7 @@ class NoiseReductionPlugin(PluginBase):
                     }
                 )
 
-                if not row:
-                    logger.warning(
-                        "Recording not found in database - skipping noise reduction",
-                        extra={
-                            "req_id": event_id,
-                            "plugin_name": self.name,
-                            "recording_id": recording_id
-                        }
-                    )
-                    return
-
-                # Check if already processed
-                if row['status'] in ('completed', 'processing'):
+                if row and row['status'] in ('completed', 'processing'):
                     logger.warning(
                         "Recording already processed or being processed - skipping",
                         extra={
@@ -848,28 +895,19 @@ class NoiseReductionPlugin(PluginBase):
                     )
                     return
 
-                # Mark as processing
-                logger.info(
-                    "Marking recording for processing",
-                    extra={
-                        "req_id": event_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "status": "processing"
-                    }
-                )
-                
-                await self.db.execute(
+                # Insert or update task status
+                await self._db.execute(
                     """
-                    INSERT INTO plugin_tasks 
-                    (id, plugin_name, recording_id, status, created_at, updated_at)
-                    VALUES (?, ?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
+                    VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT(recording_id, plugin_name) 
+                    DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
                     """,
-                    (str(uuid.uuid4()), self.name, recording_id)
+                    (recording_id, self.name)
                 )
 
-                # Process the recording
-                await self.process_recording(recording_id, event)
+                # Process the audio files
+                await self._process_audio_files(recording_id, sys_path, mic_path)
 
             except Exception as e:
                 logger.error(
@@ -884,32 +922,30 @@ class NoiseReductionPlugin(PluginBase):
                 )
                 # Try to reinitialize database connection
                 try:
-                    self.db = await get_db_async()
+                    self._db = await get_db_async()
                 except Exception as db_error:
                     logger.error(
                         "Failed to reinitialize database connection",
                         extra={
                             "req_id": event_id,
                             "plugin_name": self.name,
+                            "recording_id": recording_id,
                             "error": str(db_error)
                         },
                         exc_info=True
                     )
+                return
 
         except Exception as e:
             logger.error(
-                "Failed to handle recording ended event",
+                "Error handling recording ended event",
                 extra={
                     "req_id": event_id,
                     "plugin_name": self.name,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "event_data": str(event),
-                    "traceback": traceback.format_exc()
+                    "error": str(e)
                 },
                 exc_info=True
             )
-            raise
 
     async def _shutdown(self) -> None:
         """Shutdown plugin."""
@@ -937,48 +973,102 @@ class NoiseReductionPlugin(PluginBase):
             self._executor.shutdown(wait=True)
 
     async def _process_audio_files(self, recording_id: str, system_audio_path: str | None, microphone_audio_path: str | None) -> None:
-        """Process audio files with noise reduction.
-        
-        Args:
-            recording_id: ID of the recording
-            system_audio_path: Path to system audio file
-            microphone_audio_path: Path to microphone audio file
-        """
-        logger.info(
-            "Starting noise reduction",
-            extra={
-                "req_id": self._req_id,
-                "plugin_name": self.name,
-                "recording_id": recording_id
-            }
-        )
-
-        if not microphone_audio_path and not system_audio_path:
-            raise ValueError("No audio paths provided")
-
-        # Process microphone audio if available
-        if microphone_audio_path:
-            mic_output = self._output_directory / f"{recording_id}_microphone_cleaned.wav"
-            await self._process_audio(
-                recording_id,
-                microphone_audio_path,
-                str(mic_output)
+        """Process the audio files for noise reduction."""
+        try:
+            logger.info(
+                "Starting audio processing",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "system_audio_path": system_audio_path,
+                    "microphone_audio_path": microphone_audio_path
+                }
             )
 
-        # Process system audio if available
-        if system_audio_path:
-            sys_output = self._output_directory / f"{recording_id}_system_cleaned.wav"
-            await self._process_audio(
-                recording_id,
-                system_audio_path,
-                str(sys_output)
+            # Create output directory if it doesn't exist
+            os.makedirs(self._output_directory, exist_ok=True)
+
+            processing_tasks = []
+
+            # Process system audio if available
+            if system_audio_path and os.path.exists(system_audio_path):
+                system_output_path = Path(self._output_directory) / f"{recording_id}_system_cleaned.wav"
+                processing_tasks.append(
+                    self._process_audio(recording_id, system_audio_path, str(system_output_path))
+                )
+
+            # Process microphone audio if available
+            if microphone_audio_path and os.path.exists(microphone_audio_path):
+                mic_output_path = Path(self._output_directory) / f"{recording_id}_microphone_cleaned.wav"
+                processing_tasks.append(
+                    self._process_audio(recording_id, microphone_audio_path, str(mic_output_path))
+                )
+
+            if not processing_tasks:
+                logger.warning(
+                    "No valid audio files to process",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id
+                    }
+                )
+                return
+
+            # Process audio files concurrently
+            await asyncio.gather(*processing_tasks)
+
+            # Update task status to completed
+            if self._db:
+                await self._db.execute(
+                    """
+                    UPDATE plugin_tasks 
+                    SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+                    WHERE recording_id = ? AND plugin_name = ?
+                    """,
+                    (recording_id, self.name)
+                )
+
+            logger.info(
+                "Audio processing completed successfully",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id
+                }
             )
 
-        logger.info(
-            "Successfully processed audio file",
-            extra={
-                "req_id": self._req_id,
-                "plugin_name": self.name,
-                "recording_id": recording_id
-            }
-        )
+        except Exception as e:
+            logger.error(
+                "Error processing audio files",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
+            # Update task status to failed
+            if self._db:
+                try:
+                    await self._db.execute(
+                        """
+                        UPDATE plugin_tasks 
+                        SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+                        WHERE recording_id = ? AND plugin_name = ?
+                        """,
+                        (recording_id, self.name)
+                    )
+                except Exception as db_error:
+                    logger.error(
+                        "Failed to update task status",
+                        extra={
+                            "req_id": self._req_id,
+                            "plugin_name": self.name,
+                            "recording_id": recording_id,
+                            "error": str(db_error)
+                        },
+                        exc_info=True
+                    )

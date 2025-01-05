@@ -139,15 +139,15 @@ class DatabaseManager:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS plugin_tasks (
-                    id TEXT PRIMARY KEY,
-                    plugin_name TEXT NOT NULL,
                     recording_id TEXT NOT NULL,
+                    plugin_name TEXT NOT NULL,
                     status TEXT NOT NULL,  -- 'processing', 'completed', 'failed'
                     input_paths TEXT,  -- Comma-separated list of input file paths
                     output_paths TEXT,  -- Comma-separated list of output file paths
                     error_message TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (recording_id, plugin_name),
                     FOREIGN KEY (recording_id) REFERENCES recordings(recording_id)
                 )
                 """
