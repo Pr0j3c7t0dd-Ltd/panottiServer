@@ -152,7 +152,7 @@ class MeetingNotesPlugin(PluginBase):
             logger.error(f"Failed to extract transcript lines: {e}", exc_info=True)
             return []
 
-    def _generate_meeting_notes(self, transcript_text: str) -> str:
+    def _generate_meeting_notes_from_text(self, transcript_text: str) -> str:
         """Generate meeting notes using Ollama LLM"""
         transcript_lines = self._extract_transcript_lines(transcript_text)
 
@@ -227,7 +227,7 @@ Participants: [Extract speaker names from transcript]
         """Process transcript and generate meeting notes"""
         try:
             # Generate meeting notes synchronously since the API call is blocking
-            meeting_notes = self._generate_meeting_notes(transcript_text)
+            meeting_notes = self._generate_meeting_notes_from_text(transcript_text)
 
             # Save to file
             output_file = self.output_dir / f"{recording_id}_notes.txt"
@@ -409,6 +409,30 @@ Participants: [Extract speaker names from transcript]
                 }
             )
             raise
+
+    def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
+        """Extract transcript path from event.
+        
+        Args:
+            event: Event object containing transcript path information
+            
+        Returns:
+            Path object if transcript path found, None otherwise
+        """
+        # Handle RecordingEvent type
+        if isinstance(event, RecordingEvent):
+            if event.output_file:
+                return Path(event.output_file)
+            return None
+            
+        # Handle generic Event type
+        if hasattr(event, 'data') and isinstance(event.data, dict):
+            # Try to get transcript path from event data
+            transcript_path = event.data.get('transcript_path') or event.data.get('output_file')
+            if transcript_path:
+                return Path(transcript_path)
+        
+        return None
 
     async def _generate_meeting_notes(
         self,
