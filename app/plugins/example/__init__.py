@@ -1,5 +1,5 @@
 """Example plugin package"""
 
-from .plugin import Plugin
+from .plugin import ExamplePlugin as Plugin
 
 __all__ = ["Plugin"]

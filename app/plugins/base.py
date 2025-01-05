@@ -50,35 +50,46 @@ class PluginBase(ABC):
         return self._initialized
 
     async def initialize(self) -> None:
-        """Initialize the plugin"""
-        if self.event_bus is None:
-            self.logger.warning(
-                "No event bus available, plugin will not receive events"
+        """Initialize the plugin.
+        
+        This method should be called only once. Subsequent calls will be ignored.
+        """
+        if self._initialized:
+            logger.debug(
+                f"Plugin {self.name} already initialized",
+                extra={
+                    "plugin": self.name,
+                    "version": self.version
+                }
             )
             return
 
         try:
-            self.logger.info(
-                "Initializing plugin",
+            logger.debug(
+                f"Initializing plugin {self.name}",
                 extra={
-                    "plugin_name": self.name,
-                    "plugin_version": self.version,
-                    "plugin_config": self.config.dict(),
-                },
+                    "plugin": self.name,
+                    "version": self.version
+                }
             )
             await self._initialize()
             self._initialized = True
-            self.logger.info(
-                "Plugin initialized successfully", extra={"plugin_name": self.name}
+            logger.info(
+                f"Plugin {self.name} initialized successfully",
+                extra={
+                    "plugin": self.name,
+                    "version": self.version
+                }
             )
         except Exception as e:
-            self.logger.error(
-                "Failed to initialize plugin",
+            logger.error(
+                f"Failed to initialize plugin {self.name}",
                 extra={
-                    "plugin_name": self.name,
-                    "error": str(e),
-                    "plugin_config": self.config.dict(),
+                    "plugin": self.name,
+                    "version": self.version,
+                    "error": str(e)
                 },
+                exc_info=True
             )
             raise
 

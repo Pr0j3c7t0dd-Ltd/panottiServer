@@ -19,6 +19,7 @@ from app.models.recording.events import (
     RecordingStartRequest,
 )
 from app.plugins.base import PluginBase
+from app.plugins.events.models import EventContext
 
 logger = logging.getLogger(__name__)
 
@@ -43,15 +44,24 @@ class AudioTranscriptionPlugin(PluginBase):
     async def _initialize(self) -> None:
         """Initialize plugin."""
         if not self.event_bus:
+            logger.warning("No event bus available for plugin")
             return
 
         try:
+            logger.debug(
+                "Initializing audio transcription plugin",
+                extra={
+                    "plugin": self.name,
+                    "output_dir": str(self._output_dir)
+                }
+            )
+
             # Initialize Whisper model
             logger.info("Initializing Whisper model")
             self._init_model()
 
             # Initialize database
-            self.db = await DatabaseManager.get_instance()  # Get instance first
+            self.db = await DatabaseManager.get_instance()
 
             # Subscribe to noise reduction completed event
             await self.event_bus.subscribe(
@@ -59,7 +69,14 @@ class AudioTranscriptionPlugin(PluginBase):
                 self.handle_noise_reduction_completed
             )
 
-            logger.info("Audio transcription plugin initialized")
+            logger.info(
+                "Audio transcription plugin initialized",
+                extra={
+                    "plugin": self.name,
+                    "subscribed_events": ["noise_reduction.completed"],
+                    "handler": "handle_noise_reduction_completed"
+                }
+            )
 
         except Exception as e:
             logger.error(

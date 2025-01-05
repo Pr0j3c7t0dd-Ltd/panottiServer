@@ -14,6 +14,7 @@ from app.models.recording.events import (
     RecordingStartRequest,
 )
 from app.plugins.base import PluginBase, PluginConfig
+from app.plugins.events.models import EventContext
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +35,19 @@ class DesktopNotifierPlugin(PluginBase):
     async def _initialize(self) -> None:
         """Initialize plugin."""
         if not self.event_bus:
+            logger.warning("No event bus available for plugin")
             return
 
         try:
+            logger.debug(
+                "Initializing desktop notifier plugin",
+                extra={
+                    "plugin": self.name
+                }
+            )
+
             # Initialize database
-            self.db = await DatabaseManager.get_instance()  # Get instance first
+            self.db = await DatabaseManager.get_instance()
 
             # Subscribe to transcription completed event
             await self.event_bus.subscribe(
@@ -46,7 +55,14 @@ class DesktopNotifierPlugin(PluginBase):
                 self.handle_transcription_completed
             )
 
-            logger.info("DesktopNotifierPlugin initialized successfully")
+            logger.info(
+                "Desktop notifier plugin initialized",
+                extra={
+                    "plugin": self.name,
+                    "subscribed_events": ["transcription.completed"],
+                    "handler": "handle_transcription_completed"
+                }
+            )
 
         except Exception as e:
             logger.error(

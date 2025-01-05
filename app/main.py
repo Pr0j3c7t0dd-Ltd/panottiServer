@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import traceback
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -45,10 +46,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize components
-event_bus = bus.EventBus()
+# Initialize static components
 event_store = EventStore()
-plugin_manager = PluginManager("app/plugins", event_bus=event_bus)
+plugin_manager = None
+event_bus = None
 
 # API key security
 API_KEY_NAME = "X-API-Key"
@@ -78,6 +79,8 @@ async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
 @app.on_event("startup")
 async def startup() -> None:
     """Initialize application state."""
+    global event_bus, plugin_manager
+    
     # Setup logging first
     setup_logging()
     
@@ -92,6 +95,15 @@ async def startup() -> None:
     db = await DatabaseManager.get_instance()
     await db.execute("SELECT 1")
 
+    # Initialize event bus
+    logger.info("Initializing event bus")
+    event_bus = bus.EventBus()
+    await event_bus.start()
+
+    # Initialize plugin manager
+    logger.info("Initializing plugin manager")
+    plugin_manager = PluginManager("app/plugins", event_bus=event_bus)
+
     logger.info("Initializing plugins")
     await plugin_manager.discover_plugins()
     await plugin_manager.initialize_plugins()
@@ -101,20 +113,20 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    """Clean up application components on shutdown."""
-    try:
-        # Clean up plugins
+    """Clean up application components."""
+    global event_bus, plugin_manager
+    
+    if plugin_manager:
+        logger.info("Shutting down plugins")
         await plugin_manager.shutdown_plugins()
+        plugin_manager = None
 
-        # Close database connections
-        db = await DatabaseManager.get_instance()
-        db.close_connections()  # This returns None, which is fine for cleanup
+    if event_bus:
+        logger.info("Shutting down event bus")
+        await event_bus.stop()
+        event_bus = None
 
-        logger.info("Shutdown complete")
-
-    except Exception as e:
-        logger.error(f"Error during shutdown: {e}", exc_info=True)
-        raise
+    logger.info("Shutdown complete")
 
 
 @app.middleware("http")
@@ -248,17 +260,7 @@ async def recording_started(request: Request) -> dict[str, Any]:
 
 @app.post("/api/recording-ended")
 async def recording_ended(request: Request) -> dict[str, Any]:
-    """Handle recording ended event.
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        Response with recording ID and status
-
-    Raises:
-        HTTPException: If recording_id is missing
-    """
+    """Handle recording ended event."""
     data = await request.json()
     recording_id = data.get("recordingId") or data.get("recording_id")
     if not recording_id:
@@ -266,11 +268,97 @@ async def recording_ended(request: Request) -> dict[str, Any]:
 
     logger.info(
         "Processing recording ended event",
-        extra={"recording_id": recording_id},
+        extra={
+            "recording_id": recording_id,
+            "raw_request_data": data,
+            "request_headers": dict(request.headers),
+            "request_method": request.method,
+            "request_url": str(request.url),
+            "stack_trace": "".join(traceback.format_stack())
+        }
+    )
+
+    # Generate a unique event ID for this specific recording end event
+    event_timestamp = datetime.utcnow().isoformat()
+    event_id = f"{recording_id}_ended_{event_timestamp}"
+
+    logger.debug(
+        "Generated event details",
+        extra={
+            "recording_id": recording_id,
+            "event_id": event_id,
+            "event_timestamp": event_timestamp,
+            "stack_trace": "".join(traceback.format_stack())
+        }
+    )
+
+    # Check if this specific event was already processed
+    db = await DatabaseManager.get_instance()
+    rows = await db.execute_fetchall(
+        """
+        SELECT 1 FROM recording_events 
+        WHERE recording_id = ? 
+        AND event_type = 'recording.ended'
+        AND event_timestamp = ?
+        """,
+        (recording_id, event_timestamp)
+    )
+
+    if rows:
+        logger.warning(
+            "This specific recording end event was already processed",
+            extra={
+                "recording_id": recording_id,
+                "event_id": event_id,
+                "timestamp": event_timestamp,
+                "stack_trace": "".join(traceback.format_stack())
+            }
+        )
+        return {"status": "event_already_processed", "recording_id": recording_id}
+
+    logger.debug(
+        "Inserting event record",
+        extra={
+            "recording_id": recording_id,
+            "event_id": event_id,
+            "system_audio_path": data.get("systemAudioPath"),
+            "microphone_audio_path": data.get("microphoneAudioPath"),
+            "metadata": data.get("metadata", {}),
+            "stack_trace": "".join(traceback.format_stack())
+        }
+    )
+
+    # Insert event record first
+    await db.execute(
+        """
+        INSERT INTO recording_events (
+            recording_id, event_type, event_timestamp,
+            system_audio_path, microphone_audio_path, metadata
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            recording_id,
+            "recording.ended",
+            event_timestamp,
+            data.get("systemAudioPath"),
+            data.get("microphoneAudioPath"),
+            json.dumps(data.get("metadata", {}))
+        )
+    )
+
+    logger.debug(
+        "Updating recording status",
+        extra={
+            "recording_id": recording_id,
+            "event_id": event_id,
+            "status": "completed",
+            "system_audio_path": data.get("systemAudioPath"),
+            "microphone_audio_path": data.get("microphoneAudioPath"),
+            "stack_trace": "".join(traceback.format_stack())
+        }
     )
 
     # Update recording in database
-    db = await DatabaseManager.get_instance()
     await db.execute(
         """
         INSERT INTO recordings (recording_id, status, system_audio_path, microphone_audio_path)
@@ -293,11 +381,12 @@ async def recording_ended(request: Request) -> dict[str, Any]:
     # Structure initial event data properly
     event_data = {
         "recording_id": recording_id,
-        "event_type": "recording.ended",
+        "event": "recording.ended",
+        "event_id": event_id,  # Include the unique event ID
         "current_event": {
             "recording": {
                 "status": "completed",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": event_timestamp,
                 "audio_paths": {
                     "system": data.get("systemAudioPath"),
                     "microphone": data.get("microphoneAudioPath")
@@ -308,17 +397,49 @@ async def recording_ended(request: Request) -> dict[str, Any]:
         "event_history": {}  # Empty at start of chain
     }
 
+    logger.debug(
+        "Creating RecordingEvent",
+        extra={
+            "recording_id": recording_id,
+            "event_id": event_id,
+            "event_data": event_data,
+            "stack_trace": "".join(traceback.format_stack())
+        }
+    )
+
     event = RecordingEvent(
-        recording_timestamp=datetime.utcnow().isoformat(),
+        recording_timestamp=event_timestamp,
         recording_id=recording_id,
         event="recording.ended",
+        event_id=event_id,  # Use our unique event ID
         data=event_data,
         context=EventContext(
-            correlation_id=str(uuid.uuid4()),
+            correlation_id=event_id,  # Use the unique event ID as correlation ID
             source_plugin="api"
         )
     )
+
+    logger.debug(
+        "Publishing event to event bus",
+        extra={
+            "recording_id": recording_id,
+            "event_id": event_id,
+            "event_type": type(event).__name__,
+            "event_data": str(event),
+            "stack_trace": "".join(traceback.format_stack())
+        }
+    )
+
     await event_bus.publish(event)
+
+    logger.info(
+        "Recording ended event processed successfully",
+        extra={
+            "recording_id": recording_id,
+            "event_id": event_id,
+            "stack_trace": "".join(traceback.format_stack())
+        }
+    )
 
     return {"status": "success", "recording_id": recording_id}
 

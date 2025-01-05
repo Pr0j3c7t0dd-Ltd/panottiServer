@@ -4,6 +4,9 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
 from typing import Any
+from datetime import datetime
+import uuid
+import traceback
 
 from app.models.recording.events import (
     RecordingEndRequest,
@@ -28,9 +31,57 @@ class EventBus:
         """Initialize event bus."""
         self._subscribers: defaultdict[str, list[EventHandler]] = defaultdict(list)
         self._lock = asyncio.Lock()
-        self._processed_events: set[str] = set()
+        self._processed_events: dict[str, datetime] = {}  # event_id -> timestamp
         self._pending_tasks: set[asyncio.Task] = set()
+        self._cleanup_events_task = None  # Will be initialized when event loop is available
         logger.info("Event bus initialized")
+
+    async def start(self) -> None:
+        """Start the event bus background tasks."""
+        if self._cleanup_events_task is None:
+            self._cleanup_events_task = asyncio.create_task(self._cleanup_old_events())
+            logger.debug("Started event cleanup task")
+
+    async def stop(self) -> None:
+        """Stop the event bus background tasks."""
+        if self._cleanup_events_task is not None:
+            self._cleanup_events_task.cancel()
+            try:
+                await self._cleanup_events_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_events_task = None
+            logger.debug("Stopped event cleanup task")
+
+    async def _cleanup_old_events(self) -> None:
+        """Periodically clean up old processed events."""
+        while True:
+            try:
+                await asyncio.sleep(3600)  # Clean up every hour
+                now = datetime.utcnow()
+                async with self._lock:
+                    # Remove events older than 1 hour
+                    old_events = [
+                        event_id for event_id, timestamp in self._processed_events.items()
+                        if (now - timestamp).total_seconds() > 3600
+                    ]
+                    for event_id in old_events:
+                        del self._processed_events[event_id]
+                    
+                    if old_events:
+                        logger.debug(
+                            "Cleaned up old events",
+                            extra={
+                                "removed_count": len(old_events),
+                                "remaining_count": len(self._processed_events)
+                            }
+                        )
+            except Exception as e:
+                logger.error(
+                    "Error cleaning up old events",
+                    extra={"error": str(e)},
+                    exc_info=True
+                )
 
     def _cleanup_task(self, task: asyncio.Task) -> None:
         """Remove task from pending tasks set.
@@ -48,13 +99,47 @@ class EventBus:
             event: Event data to pass to handler
         """
         try:
+            logger.debug(
+                "Starting event handler execution",
+                extra={
+                    "handler": handler.__name__,
+                    "handler_module": handler.__module__,
+                    "handler_qualname": handler.__qualname__,
+                    "handler_id": id(handler),
+                    "event_type": type(event).__name__,
+                    "event_data": str(event),
+                    "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
+                    "stack_trace": "".join(traceback.format_stack())
+                }
+            )
             await handler(event)
+            logger.debug(
+                "Event handler execution completed",
+                extra={
+                    "handler": handler.__name__,
+                    "handler_module": handler.__module__,
+                    "handler_qualname": handler.__qualname__,
+                    "handler_id": id(handler),
+                    "event_type": type(event).__name__,
+                    "event_data": str(event),
+                    "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
+                    "stack_trace": "".join(traceback.format_stack())
+                }
+            )
         except Exception as e:
             logger.error(
                 f"Error in event handler {handler.__name__}",
                 extra={
                     "error": str(e),
+                    "error_type": type(e).__name__,
                     "handler": handler.__name__,
+                    "handler_module": handler.__module__,
+                    "handler_qualname": handler.__qualname__,
+                    "handler_id": id(handler),
+                    "event_type": type(event).__name__,
+                    "event_data": str(event),
+                    "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
+                    "stack_trace": "".join(traceback.format_stack())
                 },
                 exc_info=True
             )
@@ -78,7 +163,7 @@ class EventBus:
             event_id: ID of the event to mark
         """
         async with self._lock:
-            self._processed_events.add(event_id)
+            self._processed_events[event_id] = datetime.utcnow()
 
     def _get_event_name(self, event: dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest) -> str | None:
         """Get event name from event field.
@@ -89,26 +174,135 @@ class EventBus:
         Returns:
             str | None: Event name or None if not found
         """
-        if isinstance(event, dict):
-            return event.get("event")
-        elif hasattr(event, "event"):
-            return event.event
-        return None
+        event_name = None
+        try:
+            if isinstance(event, dict):
+                event_name = event.get("event")
+            elif isinstance(event, (RecordingEvent, RecordingStartRequest, RecordingEndRequest)):
+                event_name = event.event
+            elif hasattr(event, "event"):
+                event_name = event.event
 
-    def _get_event_id(self, event: dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest) -> str | None:
+            logger.debug(
+                "Getting event name",
+                extra={
+                    "event_type": type(event).__name__,
+                    "event_name": event_name,
+                    "event_data": str(event),
+                    "is_dict": isinstance(event, dict),
+                    "is_recording_event": isinstance(event, RecordingEvent),
+                    "has_event_attr": hasattr(event, "event")
+                }
+            )
+            return event_name
+        except Exception as e:
+            logger.error(
+                "Failed to get event name",
+                extra={
+                    "error": str(e),
+                    "event_type": type(event).__name__,
+                    "event_data": str(event)
+                },
+                exc_info=True
+            )
+            return None
+
+    def _get_event_id(self, event: dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest) -> str:
         """Get event ID from event field.
         
         Args:
             event: Event data to get ID from
             
         Returns:
-            str | None: Event ID or None if not found
+            str: Event ID, generated if not found
         """
-        if isinstance(event, dict):
-            return event.get("id")
-        elif hasattr(event, "id"):
-            return event.id
-        return None
+        try:
+            # Try to get existing ID
+            if isinstance(event, dict):
+                # Try different ID fields in order of preference
+                for id_field in ["id", "event_id", "recording_id"]:
+                    if event_id := event.get(id_field):
+                        event_type = event.get("event", "unknown")
+                        source = event.get("source_plugin", "unknown")
+                        # Use event type and source only for uniqueness
+                        return f"{event_id}_{event_type}_{source}"
+                return str(uuid.uuid4())
+            elif isinstance(event, (RecordingEvent, RecordingStartRequest, RecordingEndRequest)):
+                # Use event_id if available, otherwise generate a unique one
+                if hasattr(event, "event_id") and event.event_id:
+                    return event.event_id
+                source = getattr(event.context, "source_plugin", "unknown") if hasattr(event, "context") else "unknown"
+                # Use recording ID, event type and source for uniqueness
+                return f"{event.recording_id}_{event.event}_{source}"
+            elif hasattr(event, "event_id") and getattr(event, "event_id"):
+                return getattr(event, "event_id")
+            elif hasattr(event, "recording_id"):
+                event_type = getattr(event, "event", "unknown")
+                source = getattr(event, "source_plugin", "unknown")
+                # Use recording ID, event type and source for uniqueness
+                return f"{getattr(event, 'recording_id')}_{event_type}_{source}"
+            
+            # Generate new ID if none found
+            return str(uuid.uuid4())
+        except Exception as e:
+            logger.error(
+                "Failed to get event ID, generating new one",
+                extra={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "event_type": type(event).__name__,
+                    "event_data": str(event)
+                },
+                exc_info=True
+            )
+            return str(uuid.uuid4())
+
+    def _should_process_event(self, event: Any) -> bool:
+        """Check if an event should be processed based on its source.
+        
+        Args:
+            event: Event to check
+            
+        Returns:
+            bool: True if event should be processed
+        """
+        try:
+            # Get source plugin
+            if isinstance(event, dict):
+                source = event.get("source_plugin")
+            elif hasattr(event, "context") and event.context:
+                source = event.context.source_plugin
+            else:
+                source = None
+
+            # Get event type
+            if isinstance(event, dict):
+                event_type = event.get("event")
+            elif hasattr(event, "event"):
+                event_type = event.event
+            else:
+                event_type = None
+
+            logger.debug(
+                "Checking event source",
+                extra={
+                    "source_plugin": source,
+                    "event_type": event_type,
+                    "event_data": str(event)
+                }
+            )
+
+            return True
+        except Exception as e:
+            logger.error(
+                "Error checking event source",
+                extra={
+                    "error": str(e),
+                    "event_data": str(event)
+                },
+                exc_info=True
+            )
+            return True
 
     async def subscribe(self, event_name: str, handler: EventHandler) -> None:
         """Subscribe to an event.
@@ -118,6 +312,25 @@ class EventBus:
             handler: Async function to handle the event
         """
         async with self._lock:
+            logger.debug(
+                "Attempting to subscribe handler",
+                extra={
+                    "event_name": event_name,
+                    "handler": handler.__name__,
+                    "handler_module": handler.__module__,
+                    "current_handlers": [
+                        {
+                            "name": h.__name__,
+                            "module": h.__module__
+                        } for h in self._subscribers.get(event_name, [])
+                    ],
+                    "all_subscriptions": {
+                        k: [{"name": h.__name__, "module": h.__module__} for h in v]
+                        for k, v in self._subscribers.items()
+                    }
+                }
+            )
+
             if handler not in self._subscribers[event_name]:
                 self._subscribers[event_name].append(handler)
                 logger.info(
@@ -125,11 +338,14 @@ class EventBus:
                     extra={
                         "event_name": event_name,
                         "handler": handler.__name__,
-                        "current_subscriptions": {
-                            k: [h.__name__ for h in v]
-                            for k, v in self._subscribers.items()
-                        },
-                    },
+                        "handler_module": handler.__module__,
+                        "current_handlers": [
+                            {
+                                "name": h.__name__,
+                                "module": h.__module__
+                            } for h in self._subscribers[event_name]
+                        ]
+                    }
                 )
             else:
                 logger.warning(
@@ -137,7 +353,8 @@ class EventBus:
                     extra={
                         "event_name": event_name,
                         "handler": handler.__name__,
-                    },
+                        "handler_module": handler.__module__
+                    }
                 )
 
     async def unsubscribe(self, event_name: str, handler: EventHandler) -> None:
@@ -162,86 +379,178 @@ class EventBus:
         self,
         event: dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest,
     ) -> None:
-        """Publish an event to all subscribers.
-
+        """Publish event to all subscribers.
+        
         Args:
             event: Event data to publish
         """
-        try:
-            event_name = self._get_event_name(event)
-            event_id = self._get_event_id(event)
+        # Log full event details at start
+        logger.debug(
+            "BEGIN Event Publishing",
+            extra={
+                "event_type": type(event).__name__,
+                "raw_event": str(event),
+                "event_dict": event.dict() if hasattr(event, "dict") else event,
+                "event_dir": dir(event) if not isinstance(event, dict) else None,
+                "event_module": event.__class__.__module__ if not isinstance(event, dict) else None,
+                "processed_events": list(self._processed_events.keys()),
+                "subscriber_count": sum(len(handlers) for handlers in self._subscribers.values()),
+                "all_subscriptions": {
+                    k: [{"name": h.__name__, "module": h.__module__} for h in v]
+                    for k, v in self._subscribers.items()
+                },
+                "stack_trace": "".join(traceback.format_stack())
+            }
+        )
 
-            # Skip if event was already processed
-            if event_id and await self._is_event_processed(event_id):
-                logger.debug(
-                    "Skipping duplicate event",
-                    extra={
-                        "event_name": event_name,
-                        "event_id": event_id,
-                    },
-                )
-                return
+        # Check if event should be processed
+        if not self._should_process_event(event):
+            logger.warning(
+                "Event processing skipped by source check",
+                extra={
+                    "event_data": str(event),
+                    "event_type": type(event).__name__,
+                    "source": (event.context.source_plugin if hasattr(event, "context") else 
+                             event.get("source_plugin") if isinstance(event, dict) else None),
+                    "stack_trace": "".join(traceback.format_stack())
+                }
+            )
+            return
 
-            if not event_name:
-                logger.error("Invalid event: no event name found", extra={"event": event})
-                return
+        event_name = self._get_event_name(event)
+        if not event_name:
+            logger.error(
+                "Could not determine event name",
+                extra={
+                    "event_type": type(event).__name__,
+                    "event_data": str(event),
+                    "event_module": event.__class__.__module__ if not isinstance(event, dict) else None,
+                    "event_attrs": dir(event) if not isinstance(event, dict) else None,
+                    "stack_trace": "".join(traceback.format_stack())
+                }
+            )
+            return
 
-            handlers = self._subscribers.get(event_name, [])
-            if not handlers:
-                logger.debug(
-                    "No handlers for event",
-                    extra={"event_name": event_name, "event": event},
-                )
-                return
+        event_id = self._get_event_id(event)
+        logger.debug(
+            "Event details determined",
+            extra={
+                "event_name": event_name,
+                "event_id": event_id,
+                "event_type": type(event).__name__,
+                "event_data": str(event),
+                "source": (event.context.source_plugin if hasattr(event, "context") else 
+                          event.get("source_plugin") if isinstance(event, dict) else None),
+                "stack_trace": "".join(traceback.format_stack())
+            }
+        )
 
+        # Check if event was already processed
+        async with self._lock:
+            is_processed = await self._is_event_processed(event_id)
             logger.debug(
-                "Publishing event",
+                "Event processing status check",
+                extra={
+                    "event_id": event_id,
+                    "event_name": event_name,
+                    "is_processed": is_processed,
+                    "processed_events_count": len(self._processed_events),
+                    "processed_events": list(self._processed_events.keys()),
+                    "stack_trace": "".join(traceback.format_stack())
+                }
+            )
+            
+            if is_processed:
+                logger.warning(
+                    f"Event {event_id} already processed, skipping",
+                    extra={
+                        "event_id": event_id,
+                        "event_name": event_name,
+                        "event_data": str(event),
+                        "source": (event.context.source_plugin if hasattr(event, "context") else 
+                                 event.get("source_plugin") if isinstance(event, dict) else None),
+                        "stack_trace": "".join(traceback.format_stack())
+                    }
+                )
+                return
+
+            # Mark event as processed
+            await self._mark_event_processed(event_id)
+            logger.debug(
+                "Marked event as processed",
+                extra={
+                    "event_id": event_id,
+                    "event_name": event_name,
+                    "processed_events_count": len(self._processed_events),
+                    "processed_events": list(self._processed_events.keys()),
+                    "stack_trace": "".join(traceback.format_stack())
+                }
+            )
+
+        handlers = self._subscribers.get(event_name, [])
+        if not handlers:
+            logger.warning(
+                "No handlers found for event",
                 extra={
                     "event_name": event_name,
-                    "num_handlers": len(handlers),
-                    "handler_names": [h.__name__ for h in handlers],
-                    "current_subscriptions": {
+                    "event_id": event_id,
+                    "available_subscriptions": {
                         k: [h.__name__ for h in v]
                         for k, v in self._subscribers.items()
                     },
-                },
+                    "stack_trace": "".join(traceback.format_stack())
+                }
             )
+            return
 
-            # Create and track tasks
-            tasks = []
-            for handler in handlers:
-                task = asyncio.create_task(self._handle_task(handler, event))
-                task.add_done_callback(self._cleanup_task)
-                self._pending_tasks.add(task)
-                tasks.append(task)
-                logger.debug(
-                    "Created task for handler",
-                    extra={
-                        "event_name": event_name,
-                        "handler": handler.__name__,
-                    },
-                )
-
-            # Wait for all tasks to complete
-            await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Mark event as processed after successful handling
-            if event_id:
-                await self._mark_event_processed(event_id)
-
+        # Create tasks for each handler
+        tasks = []
+        for handler in handlers:
             logger.debug(
-                "Finished processing event",
+                "Creating handler task",
                 extra={
                     "event_name": event_name,
-                    "num_tasks_completed": len(tasks),
-                },
+                    "event_id": event_id,
+                    "handler": handler.__name__,
+                    "handler_module": handler.__module__,
+                    "handler_qualname": handler.__qualname__,
+                    "handler_id": id(handler),
+                    "stack_trace": "".join(traceback.format_stack())
+                }
             )
+            task = asyncio.create_task(self._handle_task(handler, event))
+            task.add_done_callback(self._cleanup_task)
+            self._pending_tasks.add(task)
+            tasks.append(task)
 
-        except Exception as e:
-            logger.error(
-                "Error publishing event",
-                extra={"error": str(e), "event": event},
-                exc_info=True,
+        # Wait for all handlers to complete
+        if tasks:
+            logger.debug(
+                "Waiting for handler tasks",
+                extra={
+                    "event_name": event_name,
+                    "event_id": event_id,
+                    "num_tasks": len(tasks),
+                    "handlers": [
+                        {
+                            "name": h.__name__,
+                            "module": h.__module__,
+                            "qualname": h.__qualname__,
+                            "handler_id": id(h)
+                        } for h in handlers
+                    ],
+                    "stack_trace": "".join(traceback.format_stack())
+                }
+            )
+            await asyncio.gather(*tasks, return_exceptions=True)
+            logger.debug(
+                "Handler tasks completed",
+                extra={
+                    "event_name": event_name,
+                    "event_id": event_id,
+                    "num_completed": len(tasks),
+                    "stack_trace": "".join(traceback.format_stack())
+                }
             )
 
     async def shutdown(self) -> None:

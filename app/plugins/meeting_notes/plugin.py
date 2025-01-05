@@ -51,25 +51,61 @@ class MeetingNotesPlugin(PluginBase):
 
     async def _initialize(self) -> None:
         """Initialize plugin"""
-        max_workers = 4  # Default value
+        if not self.event_bus:
+            logger.warning("No event bus available for plugin")
+            return
 
-        if hasattr(self, "config") and self.config and hasattr(self.config, "config"):
-            config_dict = self.config.config
-            if isinstance(config_dict, dict):
-                max_workers = config_dict.get("max_concurrent_tasks", max_workers)
+        try:
+            max_workers = 4  # Default value
 
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
-        
-        # Subscribe to transcription completed event
-        if self.event_bus:
+            if hasattr(self, "config") and self.config and hasattr(self.config, "config"):
+                config_dict = self.config.config
+                if isinstance(config_dict, dict):
+                    max_workers = config_dict.get("max_concurrent_tasks", max_workers)
+
+            logger.debug(
+                "Initializing meeting notes plugin",
+                extra={
+                    "plugin": self.name,
+                    "config": {
+                        "max_workers": max_workers,
+                        "model": self.model,
+                        "output_dir": str(self.output_dir)
+                    }
+                }
+            )
+
+            self._executor = ThreadPoolExecutor(max_workers=max_workers)
+            
+            # Subscribe to transcription completed event
             await self.event_bus.subscribe(
                 "transcription.completed",
                 self.handle_transcription_completed
             )
-        
-        logger.info(
-            "Meeting notes plugin initialized", extra={"max_workers": max_workers}
-        )
+            
+            logger.info(
+                "Meeting notes plugin initialized",
+                extra={
+                    "plugin": self.name,
+                    "subscribed_events": ["transcription.completed"],
+                    "handler": "handle_transcription_completed",
+                    "config": {
+                        "max_workers": max_workers,
+                        "model": self.model
+                    }
+                }
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to initialize plugin",
+                extra={
+                    "plugin": self.name,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
+            raise
 
     def _extract_transcript_lines(self, transcript_text: str) -> list[TranscriptLine]:
         """Extract transcript lines from markdown text"""
@@ -198,30 +234,34 @@ Participants: [Extract speaker names from transcript]
                 from datetime import datetime
                 from app.models.recording.events import RecordingEvent
 
+                event_data = {
+                    "recording_id": recording_id,
+                    "event_type": "meeting_notes.completed",
+                    "current_event": {
+                        "meeting_notes": {
+                            "status": "completed",
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "output_paths": {
+                                "notes": str(output_file)
+                            }
+                        }
+                    },
+                    "event_history": {
+                        "transcription": original_event.data.get("current_event", {}),
+                        "noise_reduction": original_event.data.get("event_history", {}).get("noise_reduction", {}),
+                        "recording": original_event.data.get("event_history", {}).get("recording", {})
+                    }
+                }
+
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
                     event="meeting_notes.completed",
-                    data={
-                        "recording_id": recording_id,
-                        "meeting_notes": {
-                            "status": "completed",
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "model": self.model,
-                            "output_paths": {
-                                "notes": str(output_file)
-                            },
-                            "processing_time": (
-                                datetime.utcnow()
-                                - datetime.fromisoformat(original_event.recording_timestamp)
-                            ).total_seconds()
-                        },
-                        # Preserve previous event data in nested structure
-                        "transcription": original_event.data.get("transcription", {}),
-                        "noise_reduction": original_event.data.get("noise_reduction", {}),
-                        "recording": original_event.data.get("recording", {})
-                    },
-                    context=original_event.context
+                    data=event_data,
+                    context=EventContext(
+                        correlation_id=str(uuid.uuid4()),
+                        source_plugin=self.name
+                    )
                 )
                 await self.event_bus.publish(event)
                 
@@ -294,43 +334,18 @@ Participants: [Extract speaker names from transcript]
     async def handle_transcription_completed(self, event: Event) -> None:
         """Handle transcription completed event"""
         try:
-            recording_id = event.recording_id
-            current_event = event.data.get("current_event", {})
-            transcription_details = current_event.get("transcription", {})
+            recording_id = event.data.get("recording_id")
+            transcription_details = event.data.get("current_event", {}).get("transcription", {})
             output_paths = transcription_details.get("output_paths", {})
             transcript_path = output_paths.get("transcript")
 
             # Process transcript and generate notes
-            event_data = {
-                "recording_id": recording_id,
-                "event_type": "meeting_notes.completed",
-                "current_event": {
-                    "meeting_notes": {
-                        "status": "completed",
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "output_paths": {
-                            "notes": str(output_file)
-                        }
-                    }
-                },
-                "event_history": {
-                    "transcription": event.data.get("current_event", {}),
-                    "noise_reduction": event.data.get("event_history", {}).get("noise_reduction", {}),
-                    "recording": event.data.get("event_history", {}).get("recording", {})
-                }
-            }
-
-            event = RecordingEvent(
-                recording_timestamp=datetime.utcnow().isoformat(),
-                recording_id=recording_id,
-                event="meeting_notes.completed",
-                data=event_data,
-                context=EventContext(
-                    correlation_id=str(uuid.uuid4()),
-                    source_plugin=self.name
-                )
-            )
-            await self.event_bus.publish(event)
+            if transcript_path:
+                with open(transcript_path) as f:
+                    transcript_text = f.read()
+                await self._process_transcript(recording_id, transcript_text, event)
+            else:
+                logger.error("No transcript path found in event data")
         except Exception as e:
             logger.error(
                 "Failed to handle transcription completed event",
