@@ -21,9 +21,8 @@ from app.plugins.events import bus
 from app.plugins.events.persistence import EventStore
 from app.plugins.manager import PluginManager
 from app.utils.logging_config import setup_logging
-from app.models.recording.events import RecordingEvent
+from app.models.recording.events import RecordingEvent, RecordingEndRequest
 from app.plugins.events.models import EventContext
-from app.models.recording.requests import RecordingEndRequest
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -313,7 +312,7 @@ async def recording_started(request: Request) -> dict[str, Any]:
 async def recording_ended(
     request: Request,
     recording_end: RecordingEndRequest,
-    x_api_key: Annotated[str, Header()] = Depends(get_api_key),
+    x_api_key: str = Depends(get_api_key),
 ) -> dict[str, Any]:
     """Handle recording ended event."""
     logger.info(
