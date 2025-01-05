@@ -220,6 +220,15 @@ class PluginManager:
                 )
                 continue
 
+        logger.info(
+            "Plugin discovery complete",
+            extra={
+                "req_id": self._req_id,
+                "discovered_plugins": [config.name for config in configs],
+                "total_plugins": len(configs)
+            }
+        )
+
         return configs
 
     async def initialize_plugins(self) -> None:
@@ -231,6 +240,9 @@ class PluginManager:
                 "plugin_count": len(self.plugins)
             }
         )
+
+        initialized_plugins = []
+        failed_plugins = []
 
         # Sort plugins by dependencies
         sorted_configs = self._sort_by_dependencies(self.configs)
@@ -344,6 +356,7 @@ class PluginManager:
                             "available_attrs": dir(plugin_module),
                         },
                     )
+                    failed_plugins.append(config.name)
                     continue
 
                 # Create and initialize plugin instance
@@ -360,6 +373,7 @@ class PluginManager:
                         "plugin_enabled": config.enabled,
                     },
                 )
+                initialized_plugins.append(config.name)
 
             except Exception as e:
                 logger.error(
@@ -372,7 +386,19 @@ class PluginManager:
                         "traceback": traceback.format_exc(),
                     },
                 )
+                failed_plugins.append(config.name)
                 continue
+
+        logger.info(
+            "Plugin initialization complete",
+            extra={
+                "req_id": self._req_id,
+                "initialized_plugins": initialized_plugins,
+                "failed_plugins": failed_plugins,
+                "total_initialized": len(initialized_plugins),
+                "total_failed": len(failed_plugins)
+            }
+        )
 
     def _sort_by_dependencies(self, configs: dict[str, PluginConfig]) -> list[PluginConfig]:
         """Sort plugins by dependencies."""

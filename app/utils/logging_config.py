@@ -26,6 +26,8 @@ class JSONFormatter(logging.Formatter):
             return obj.isoformat()
         if isinstance(obj, Exception):
             return str(obj)
+        if isinstance(obj, (list, dict)):
+            return obj
         return str(obj)
 
     def format(self, record: logging.LogRecord) -> str:
@@ -35,21 +37,24 @@ class JSONFormatter(logging.Formatter):
             "message": record.getMessage(),
             "logger": record.name,
             "request_id": getattr(record, "req_id", str(uuid.uuid4())),
-            "levelname": record.levelname,
         }
 
-        custom_fields = ["req_headers", "req_method", "req_path", "req_task"]
-        for field in custom_fields:
-            if hasattr(record, field):
-                log_key = field[4:] if field.startswith("req_") else field
-                log_record[log_key] = getattr(record, field)
-
+        # Add all extra fields
         if hasattr(record, "extra"):
             for key, value in record.extra.items():
-                log_record[key] = value
+                log_record[key] = self._serialize_object(value)
 
+        # Add any exception info
         if record.exc_info:
             log_record["exc_info"] = self.formatException(record.exc_info)
+
+        # Add any custom fields
+        for key, value in record.__dict__.items():
+            if key not in ["timestamp", "level", "message", "logger", "request_id", "exc_info", "extra", 
+                         "args", "exc_text", "stack_info", "created", "msecs", "relativeCreated", 
+                         "levelno", "msg", "pathname", "filename", "module", "exc_info", 
+                         "lineno", "funcName", "processName", "process", "threadName", "thread"]:
+                log_record[key] = self._serialize_object(value)
 
         return json.dumps(log_record, default=self._serialize_object)
 
