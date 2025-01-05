@@ -234,6 +234,13 @@ async def validation_exception_handler(
     Returns:
         JSON response with error details
     """
+    logger.error(
+        "Validation error",
+        extra={
+            "errors": exc.errors(),
+            "body": exc.body,
+        }
+    )
     return JSONResponse(
         status_code=HTTP_BAD_REQUEST,
         content={
@@ -317,11 +324,11 @@ async def recording_ended(
     """Handle recording ended event."""
     logger.info(
         "Processing recording ended event",
-        req_headers=dict(request.headers),
-        req_method=request.method,
-        req_path=str(request.url),
-        recording_id=recording_end.recording_id,
-        raw_request=await request.json(),
+        extra={
+            "recording_id": recording_end.recording_id,
+            "method": request.method,
+            "path": str(request.url),
+        }
     )
 
     # Create event
@@ -331,39 +338,47 @@ async def recording_ended(
     
     logger.debug(
         "Generated event details",
-        recording_id=event.recording_id,
-        event_id=event_id,
-        event_timestamp=event.recording_timestamp,
+        extra={
+            "recording_id": event.recording_id,
+            "event_id": event_id,
+            "event_timestamp": event.recording_timestamp,
+        }
     )
 
     # Check for duplicates
     if await event.is_duplicate():
         logger.info(
             "Skipping duplicate recording end event",
-            recording_id=event.recording_id,
-            event_id=event_id,
+            extra={
+                "recording_id": event.recording_id,
+                "event_id": event_id,
+            }
         )
         return {"status": "skipped", "reason": "duplicate_event"}
 
     # Insert event record
     logger.debug(
         "Inserting event record",
-        recording_id=event.recording_id,
-        event_id=event_id,
-        system_audio_path=event.system_audio_path,
-        microphone_audio_path=event.microphone_audio_path,
-        metadata=event.metadata,
+        extra={
+            "recording_id": event.recording_id,
+            "event_id": event_id,
+            "system_audio_path": event.system_audio_path,
+            "microphone_audio_path": event.microphone_audio_path,
+            "metadata": event.metadata,
+        }
     )
     await event.save()
 
     # Update recording status
     logger.debug(
         "Updating recording status",
-        recording_id=event.recording_id,
-        event_id=event_id,
-        status="completed",
-        system_audio_path=event.system_audio_path,
-        microphone_audio_path=event.microphone_audio_path,
+        extra={
+            "recording_id": event.recording_id,
+            "event_id": event_id,
+            "status": "completed",
+            "system_audio_path": event.system_audio_path,
+            "microphone_audio_path": event.microphone_audio_path,
+        }
     )
     
     db = DatabaseManager.get_instance()

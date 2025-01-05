@@ -101,6 +101,8 @@ def test_calendar_event_recording_flow() -> None:
             "event": "Recording Ended",
             "timestamp": end_time,
             "recordingId": recording_id,
+            "systemAudioPath": f"/path/to/system_{recording_id}.wav",
+            "microphoneAudioPath": f"/path/to/mic_{recording_id}.wav",
             "metadata": {
                 "eventTitle": "Pr0j3c7todd Companies house docs due",
                 "eventProviderId": "2j11l4q826f3bfivj21gvfs3gp_20250501T070000Z",

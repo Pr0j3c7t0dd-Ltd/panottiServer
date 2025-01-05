@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, TypeVar
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from app.models.database import DatabaseManager
 from app.plugins.events.models import EventContext
@@ -228,23 +228,15 @@ class RecordingEvent(BaseModel):
         ]
 
     async def is_duplicate(self) -> bool:
-        """Check if this event is a duplicate based on recording_id and event type.
+        """Check if this event is a duplicate.
+        
+        For now, we allow multiple recording.ended events for the same recording ID
+        since they might be legitimate retries or different processing stages.
         
         Returns:
-            bool: True if a duplicate exists, False otherwise
+            bool: Always returns False to allow all events
         """
-        db = DatabaseManager.get_instance()
-        result = await db.fetch_one(
-            """
-            SELECT 1 FROM recording_events 
-            WHERE recording_id = ? 
-            AND event_type = ?
-            AND event != 'recording.started'
-            LIMIT 1
-            """,
-            (self.recording_id, self.event),
-        )
-        return bool(result)
+        return False
 
 
 class RecordingStartRequest(BaseModel):
@@ -252,11 +244,20 @@ class RecordingStartRequest(BaseModel):
 
     timestamp: str | None = None
     recording_timestamp: str | None = None
-    recording_id: str
-    event: Literal["recording.started"] = Field(default="recording.started")
+    recording_id: str = Field(..., alias="recordingId")
+    event: str = Field(default="recording.started")
     metadata: dict[str, Any] | None = None
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def normalize_event(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize event name before validation."""
+        if 'event' in data:
+            if data['event'].lower() in ["recording started", "recording.started"]:
+                data['event'] = "recording.started"
+        return data
 
     @field_validator("recording_timestamp")
     @classmethod
@@ -299,16 +300,17 @@ class RecordingEndRequest(BaseModel):
     recording_id: str = Field(..., alias="recordingId")
     system_audio_path: str = Field(..., alias="systemAudioPath")
     microphone_audio_path: str = Field(..., alias="microphoneAudioPath")
-    event: Literal["recording.ended"] = Field(default="recording.ended")
+    event: str = Field(default="recording.ended")
     metadata: dict[str, Any]
 
-    @field_validator("event")
+    @model_validator(mode='before')
     @classmethod
-    def normalize_event(cls, value: str) -> str:
-        """Normalize event name to recording.ended."""
-        if value == "Recording Ended":
-            return "recording.ended"
-        return value
+    def normalize_event(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize event name before validation."""
+        if 'event' in data:
+            if data['event'].lower() in ["recording ended", "recording.ended"]:
+                data['event'] = "recording.ended"
+        return data
 
     @field_validator("recording_timestamp")
     @classmethod
