@@ -130,27 +130,39 @@ async def shutdown() -> None:
         if plugin_manager:
             logger.info("Shutting down plugins")
             try:
-                await asyncio.wait_for(plugin_manager.shutdown_plugins(), timeout=5.0)
+                await asyncio.shield(
+                    asyncio.wait_for(plugin_manager.shutdown_plugins(), timeout=5.0)
+                )
             except asyncio.TimeoutError:
                 logger.warning("Plugin shutdown timed out after 5 seconds")
+            except asyncio.CancelledError:
+                logger.warning("Plugin shutdown cancelled")
             plugin_manager = None
 
         # Finally shutdown event bus completely
         if event_bus:
             logger.info("Shutting down event bus")
             try:
-                await asyncio.wait_for(event_bus.shutdown(), timeout=5.0)
+                await asyncio.shield(
+                    asyncio.wait_for(event_bus.shutdown(), timeout=5.0)
+                )
             except asyncio.TimeoutError:
                 logger.warning("Event bus shutdown timed out after 5 seconds")
+            except asyncio.CancelledError:
+                logger.warning("Event bus shutdown cancelled")
             event_bus = None
             
         # Close database connections last
         logger.info("Closing database connections")
         try:
             db = await DatabaseManager.get_instance()
-            await asyncio.wait_for(db.close(), timeout=5.0)
+            await asyncio.shield(
+                asyncio.wait_for(db.close(), timeout=5.0)
+            )
         except asyncio.TimeoutError:
             logger.warning("Database shutdown timed out after 5 seconds")
+        except asyncio.CancelledError:
+            logger.warning("Database shutdown cancelled")
         except Exception as e:
             logger.error(f"Error closing database: {str(e)}")
         
@@ -164,8 +176,10 @@ async def shutdown() -> None:
                 await plugin_manager.shutdown_plugins()
             db = await DatabaseManager.get_instance()
             await db.close()
+        except Exception as e:
+            logger.error(f"Error during emergency cleanup: {str(e)}")
         finally:
-            raise
+            logger.info("Emergency cleanup complete")
         
     except Exception as e:
         logger.error(
@@ -175,7 +189,6 @@ async def shutdown() -> None:
                 "traceback": traceback.format_exc()
             }
         )
-        raise
     finally:
         logger.info("Shutdown complete")
 
@@ -223,7 +236,8 @@ async def api_logging_middleware(
                 }
             }
         )
-        raise
+        # Don't re-raise CancelledError to allow graceful shutdown
+        return Response(status_code=503, content="Service shutting down")
         
     except Exception as e:
         logger.error(

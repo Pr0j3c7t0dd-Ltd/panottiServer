@@ -1,26 +1,24 @@
+"""Desktop notifier plugin for sending system notifications."""
+
 import logging
 import os
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 import uuid
 
 from app.models.database import DatabaseManager
-from app.models.recording.events import (
-    RecordingEndRequest,
-    RecordingEvent,
-    RecordingStartRequest,
-)
+from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.models import EventContext
+from app.utils.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("app.plugins.desktop_notifier.plugin")
 
-EventData = (
-    dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest
-)
+EventData = dict[str, Any] | RecordingEvent
 
 
 class DesktopNotifierPlugin(PluginBase):

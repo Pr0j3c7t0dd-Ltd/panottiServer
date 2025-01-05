@@ -136,10 +136,28 @@ class EventBus:
                     "event_type": type(event).__name__,
                     "event_data": str(event),
                     "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
+                    "event_name": self._get_event_name(event),
+                    "handler_class": handler.__self__.__class__.__name__ if hasattr(handler, "__self__") else None,
+                    "handler_instance_id": id(handler.__self__) if hasattr(handler, "__self__") else None,
                     "stack_trace": "".join(traceback.format_stack())
                 }
             )
+            
+            # Add pre-execution state check
+            if hasattr(handler, "__self__"):
+                logger.debug(
+                    "Handler instance state",
+                    extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
+                        "handler": handler.__name__,
+                        "handler_class": handler.__self__.__class__.__name__,
+                        "handler_instance_vars": vars(handler.__self__)
+                    }
+                )
+            
             await handler(event)
+            
             logger.debug(
                 "Event handler execution completed",
                 extra={
@@ -152,7 +170,8 @@ class EventBus:
                     "event_type": type(event).__name__,
                     "event_data": str(event),
                     "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
-                    "stack_trace": "".join(traceback.format_stack())
+                    "event_name": self._get_event_name(event),
+                    "execution_status": "success"
                 }
             )
         except Exception as e:
@@ -170,7 +189,8 @@ class EventBus:
                     "event_type": type(event).__name__,
                     "event_data": str(event),
                     "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
-                    "stack_trace": "".join(traceback.format_stack())
+                    "event_name": self._get_event_name(event),
+                    "stack_trace": traceback.format_exc()
                 },
                 exc_info=True
             )
@@ -423,12 +443,11 @@ class EventBus:
         self,
         event: dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest,
     ) -> None:
-        """Publish event to all subscribers.
+        """Publish an event to all subscribers.
         
         Args:
             event: Event data to publish
         """
-        # Log initial event info
         logger.debug(
             "BEGIN Event Publishing",
             extra={
@@ -436,16 +455,15 @@ class EventBus:
                 "component": "event_bus",
                 "event_type": type(event).__name__,
                 "raw_event": str(event),
-                "event_dict": event.dict() if hasattr(event, "dict") else event,
-                "subscriber_count": sum(len(handlers) for handlers in self._subscribers.values())
+                "event_dict": event if isinstance(event, dict) else event.__dict__,
+                "subscriber_count": len(self._subscribers.get(self._get_event_name(event) or "", []))
             }
         )
 
-        # Get event details
         event_name = self._get_event_name(event)
         if not event_name:
             logger.error(
-                "Could not determine event name",
+                "No event name found in event data",
                 extra={
                     "req_id": self._req_id,
                     "component": "event_bus",
@@ -455,64 +473,96 @@ class EventBus:
             )
             return
 
-        event_id = self._get_event_id(event)
-        
-        # Check if event was already processed
-        async with self._lock:
-            if await self._is_event_processed(event_id):
-                logger.warning(
-                    f"Event {event_id} already processed, skipping",
-                    extra={
-                        "req_id": self._req_id,
-                        "component": "event_bus",
-                        "event_id": event_id,
-                        "event_name": event_name
-                    }
-                )
-                return
-
-            # Mark event as processed
-            await self._mark_event_processed(event_id)
-
-        # Get handlers for event
+        # Get subscribers for this event
         handlers = self._subscribers.get(event_name, [])
+        logger.debug(
+            "Found event subscribers",
+            extra={
+                "req_id": self._req_id,
+                "component": "event_bus",
+                "event_name": event_name,
+                "subscriber_count": len(handlers),
+                "handlers": [
+                    {
+                        "name": handler.__name__,
+                        "module": handler.__module__,
+                        "qualname": handler.__qualname__,
+                        "id": id(handler),
+                        "class": handler.__self__.__class__.__name__ if hasattr(handler, "__self__") else None,
+                        "instance_id": id(handler.__self__) if hasattr(handler, "__self__") else None
+                    }
+                    for handler in handlers
+                ]
+            }
+        )
+
         if not handlers:
             logger.warning(
-                "No handlers found for event",
+                "No subscribers found for event",
                 extra={
                     "req_id": self._req_id,
                     "component": "event_bus",
                     "event_name": event_name,
-                    "event_id": event_id,
-                    "available_subscriptions": list(self._subscribers.keys())
+                    "event_type": type(event).__name__,
+                    "event_data": str(event),
+                    "all_subscriptions": {
+                        name: [h.__name__ for h in hs]
+                        for name, hs in self._subscribers.items()
+                    }
                 }
             )
             return
 
-        # Create and run handler tasks
+        # Create tasks for each handler
         tasks = []
         for handler in handlers:
             task = asyncio.create_task(self._handle_task(handler, event))
             task.add_done_callback(self._cleanup_task)
-            self._pending_tasks.add(task)
             tasks.append(task)
+            self._pending_tasks.add(task)
+            
+            logger.debug(
+                "Created handler task",
+                extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
+                    "event_name": event_name,
+                    "handler": handler.__name__,
+                    "handler_module": handler.__module__,
+                    "handler_id": id(handler),
+                    "task_id": id(task),
+                    "pending_tasks": len(self._pending_tasks)
+                }
+            )
 
         # Wait for all handlers to complete
-        if tasks:
-            try:
-                await asyncio.gather(*tasks)
-            except Exception as e:
-                logger.error(
-                    "Error executing event handlers",
-                    extra={
-                        "req_id": self._req_id,
-                        "component": "event_bus",
-                        "event_name": event_name,
-                        "event_id": event_id,
-                        "error": str(e)
-                    },
-                    exc_info=True
-                )
+        try:
+            await asyncio.gather(*tasks)
+            logger.debug(
+                "All handler tasks completed",
+                extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
+                    "event_name": event_name,
+                    "task_count": len(tasks),
+                    "pending_tasks": len(self._pending_tasks)
+                }
+            )
+        except Exception as e:
+            logger.error(
+                "Error gathering handler tasks",
+                extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "event_name": event_name,
+                    "task_count": len(tasks),
+                    "pending_tasks": len(self._pending_tasks),
+                    "stack_trace": traceback.format_exc()
+                },
+                exc_info=True
+            )
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the event bus by canceling pending tasks."""

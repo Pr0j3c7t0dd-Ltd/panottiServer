@@ -1,32 +1,26 @@
+"""Audio transcription plugin for converting audio to text."""
+
 import json
 import logging
 import os
 import threading
 import wave
-from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from faster_whisper import WhisperModel
 from pathlib import Path
 from typing import Any
 import uuid
 
-from faster_whisper import WhisperModel
-
 from app.models.database import DatabaseManager
-from app.models.recording.events import (
-    RecordingEndRequest,
-    RecordingEvent,
-    RecordingStartRequest,
-)
-from app.plugins.base import PluginBase
+from app.models.recording.events import RecordingEvent
+from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.models import EventContext
+from app.utils.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("app.plugins.audio_transcription.plugin")
 
-EventData = (
-    dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest
-)
-EventHandler = Callable[[EventData], Coroutine[Any, Any, None]]
+EventData = dict[str, Any] | RecordingEvent
 
 
 class AudioTranscriptionPlugin(PluginBase):

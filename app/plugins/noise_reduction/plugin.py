@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import threading
 
 import numpy as np
 from scipy import signal
@@ -20,8 +21,13 @@ from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.bus import EventBus as PluginEventBus
 from app.plugins.events.models import EventContext
+from app.utils.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+# Update logger to use the get_logger function
+logger = get_logger("app.plugins.noise_reduction.plugin")
+
+# Set the logger level to DEBUG to ensure we see all logs
+logger.setLevel(logging.DEBUG)
 
 EventData = dict[str, Any] | RecordingEvent
 
@@ -69,7 +75,9 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "event_bus": None
+                    "event_bus": None,
+                    "plugin_enabled": self.config.enabled,
+                    "plugin_version": self.config.version
                 }
             )
             return
@@ -80,6 +88,8 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
+                    "plugin_enabled": self.config.enabled,
+                    "plugin_version": self.config.version,
                     "config": {
                         "output_directory": str(self._output_directory),
                         "noise_reduce_factor": self._noise_reduce_factor,
@@ -98,7 +108,9 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "event": "recording.ended"
+                    "event": "recording.ended",
+                    "event_bus_type": type(self.event_bus).__name__,
+                    "event_bus_id": id(self.event_bus)
                 }
             )
 
@@ -112,7 +124,10 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "output_directory": str(self._output_directory)
+                    "output_directory": str(self._output_directory),
+                    "plugin_enabled": self.config.enabled,
+                    "plugin_version": self.config.version,
+                    "event_subscriptions": ["recording.ended"]
                 }
             )
 
@@ -122,7 +137,11 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "error": str(e)
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "traceback": traceback.format_exc(),
+                    "plugin_enabled": self.config.enabled,
+                    "plugin_version": self.config.version
                 }
             )
             raise
@@ -645,15 +664,24 @@ class NoiseReductionPlugin(PluginBase):
 
     async def handle_recording_ended(self, event: EventData) -> None:
         """Handle recording ended event."""
+        event_id = str(uuid.uuid4())
         try:
-            event_id = str(uuid.uuid4())
             logger.info(
-                "Processing recording ended event",
+                "Received recording ended event",
                 extra={
                     "req_id": event_id,
                     "plugin_name": self.name,
+                    "plugin_enabled": self.config.enabled,
+                    "plugin_version": self.config.version,
                     "recording_id": event.recording_id if hasattr(event, "recording_id") else event.get("recording_id"),
-                    "event_id": event.event_id if hasattr(event, "event_id") else event.get("event_id")
+                    "event_id": event.event_id if hasattr(event, "event_id") else event.get("event_id"),
+                    "event_type": type(event).__name__,
+                    "event_data": str(event),
+                    "event_bus_type": type(self.event_bus).__name__ if self.event_bus else None,
+                    "event_bus_id": id(self.event_bus) if self.event_bus else None,
+                    "handler_id": id(self),
+                    "handler_method": "handle_recording_ended",
+                    "thread_id": threading.get_ident()
                 }
             )
 
@@ -665,10 +693,39 @@ class NoiseReductionPlugin(PluginBase):
                 audio_paths = recording_data.get("audio_paths", {})
                 mic_path = audio_paths.get("microphone")
                 sys_path = audio_paths.get("system")
+                logger.debug(
+                    "Extracted paths from dict event",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "mic_path": mic_path,
+                        "sys_path": sys_path,
+                        "current_event": current_event,
+                        "event_type": "dict",
+                        "audio_paths_found": bool(audio_paths),
+                        "event_data": str(event),
+                        "handler_id": id(self)
+                    }
+                )
             else:
                 recording_id = event.recording_id
                 mic_path = event.microphone_audio_path
                 sys_path = event.system_audio_path
+                logger.debug(
+                    "Extracted paths from object event",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "mic_path": mic_path,
+                        "sys_path": sys_path,
+                        "event_type": type(event).__name__,
+                        "event_attrs": dir(event),
+                        "event_data": str(event),
+                        "handler_id": id(self)
+                    }
+                )
 
             if not recording_id:
                 logger.error(
@@ -676,7 +733,10 @@ class NoiseReductionPlugin(PluginBase):
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
-                        "event_data": str(event)
+                        "event_data": str(event),
+                        "event_type": type(event).__name__,
+                        "event_dict": event if isinstance(event, dict) else event.__dict__,
+                        "handler_id": id(self)
                     }
                 )
                 return
@@ -686,6 +746,18 @@ class NoiseReductionPlugin(PluginBase):
                 event.get("source_plugin") if isinstance(event, dict)
                 else getattr(event.context, "source_plugin", None) if hasattr(event, "context")
                 else None
+            )
+            
+            logger.debug(
+                "Checking event source",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "source_plugin": source_plugin,
+                    "our_plugin_name": self.name,
+                    "is_our_event": source_plugin == self.name
+                }
             )
             
             if source_plugin == self.name:
@@ -703,9 +775,27 @@ class NoiseReductionPlugin(PluginBase):
 
             # Check if we've already processed this recording
             if not self.db:
+                logger.debug(
+                    "Initializing database connection",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id
+                    }
+                )
                 self.db = await get_db_async()
 
             # Check both recording existence and processing status
+            logger.debug(
+                "Checking recording status in database",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "query": "SELECT pt.status FROM recordings r LEFT JOIN plugin_tasks pt ON r.recording_id = pt.recording_id AND pt.plugin_name = ?"
+                }
+            )
+            
             rows = await self.db.execute_fetchall(
                 """
                 SELECT pt.status 
@@ -715,6 +805,17 @@ class NoiseReductionPlugin(PluginBase):
                 WHERE r.recording_id = ?
                 """,
                 (self.name, recording_id)
+            )
+
+            logger.debug(
+                "Database query results",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "row_count": len(rows) if rows else 0,
+                    "status": rows[0]['status'] if rows and rows[0]['status'] else None
+                }
             )
 
             if not rows:
@@ -742,6 +843,16 @@ class NoiseReductionPlugin(PluginBase):
                 return
 
             # Mark as processing
+            logger.info(
+                "Marking recording for processing",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "status": "processing"
+                }
+            )
+            
             await self.db.execute(
                 """
                 INSERT INTO plugin_tasks 

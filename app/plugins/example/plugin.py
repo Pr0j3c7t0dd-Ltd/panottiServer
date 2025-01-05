@@ -1,23 +1,21 @@
-"""Example plugin to demonstrate plugin development."""
+"""Example plugin that demonstrates plugin functionality."""
 
 import logging
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
 from typing import Any
+import uuid
 
-from app.models.recording.events import (
-    RecordingEndRequest,
-    RecordingEvent,
-    RecordingStartRequest,
-)
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.models import EventContext
+from app.utils.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("app.plugins.example.plugin")
 
-EventData = (
-    dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest
-)
+EventData = dict[str, Any]
 
 
 class ExamplePlugin(PluginBase):
