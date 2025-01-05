@@ -561,6 +561,76 @@ class NoiseReductionPlugin(PluginBase):
             )
             raise
 
+    def _process_spectral_subtraction(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+        """Apply spectral subtraction for noise reduction.
+        
+        Args:
+            audio_data: Input audio data
+            sample_rate: Audio sample rate
+            
+        Returns:
+            Noise reduced audio data
+        """
+        # Convert to mono if stereo
+        if len(audio_data.shape) > 1:
+            audio_data = audio_data.mean(axis=1)
+            
+        # Convert to float32 and normalize
+        audio_float = audio_data.astype(np.float32)
+        audio_float = audio_float / np.max(np.abs(audio_float))
+
+        # STFT parameters
+        nperseg = int(0.025 * sample_rate)  # 25ms window
+        noverlap = int(0.015 * sample_rate)  # 15ms overlap
+        
+        # Compute STFT
+        _, _, stft = signal.stft(
+            audio_float,
+            fs=sample_rate,
+            nperseg=nperseg,
+            noverlap=noverlap,
+            window='hann'
+        )
+        
+        # Estimate noise from first 100ms
+        noise_duration = int(0.1 * sample_rate)
+        noise_frames = min(int(noise_duration / (nperseg - noverlap)), stft.shape[1])
+        noise_profile = np.mean(np.abs(stft[:, :noise_frames]) ** 2, axis=1)
+        
+        # Apply spectral subtraction with Wiener filtering
+        stft_mag = np.abs(stft)
+        stft_phase = np.angle(stft)
+        power_spec = stft_mag ** 2
+        
+        # Compute SNR-based Wiener filter
+        snr = np.maximum(power_spec - noise_profile[:, np.newaxis], 0) / (noise_profile[:, np.newaxis] + 1e-10)
+        wiener_gain = snr / (1 + snr)
+        
+        # Apply flooring to prevent musical noise
+        wiener_gain = np.maximum(wiener_gain, self._spectral_floor)
+        
+        # Apply the filter
+        enhanced_mag = stft_mag * wiener_gain
+        enhanced_stft = enhanced_mag * np.exp(1j * stft_phase)
+        
+        # Inverse STFT
+        _, enhanced_audio = signal.istft(
+            enhanced_stft,
+            fs=sample_rate,
+            nperseg=nperseg,
+            noverlap=noverlap,
+            window='hann'
+        )
+        
+        # Apply highpass filter if configured
+        if self._highpass_cutoff > 0:
+            nyquist = sample_rate / 2
+            cutoff = self._highpass_cutoff / nyquist
+            b, a = butter(2, cutoff, 'high')
+            enhanced_audio = filtfilt(b, a, enhanced_audio)
+        
+        return enhanced_audio
+
     async def _process_audio(
         self,
         recording_id: str,
@@ -612,69 +682,8 @@ class NoiseReductionPlugin(PluginBase):
                 }
             )
 
-            # Convert to float32 for processing
-            audio_float = audio_data.astype(np.float32)
-            if len(audio_data.shape) > 1:  # Stereo
-                audio_float = audio_float.mean(axis=1)  # Convert to mono
-            audio_float = audio_float / np.max(np.abs(audio_float))  # Normalize
-
-            # For very short segments, use a lower filter order
-            data_length = len(audio_float)
-            if data_length < 30:  # Very short audio
-                order = 1
-            elif data_length < 100:  # Short audio
-                order = 2
-            else:  # Normal length audio
-                order = 3
-
-            logger.debug(
-                "Filtering audio",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id,
-                    "data_length": data_length,
-                    "filter_order": order,
-                    "cutoff": self._highpass_cutoff
-                }
-            )
-
-            # Apply highpass filter with adaptive padding
-            nyquist = sample_rate / 2
-            cutoff = self._highpass_cutoff / nyquist
-            b, a = butter(order, cutoff, 'high')
-            
-            # Add padding for short segments
-            pad_length = max(3 * order, 1)  # Minimum padding of 1
-            padded_audio = np.pad(audio_float, (pad_length, pad_length), mode='edge')
-            filtered_audio = filtfilt(b, a, padded_audio)
-            
-            # Remove padding
-            filtered_audio = filtered_audio[pad_length:-pad_length]
-
-            # Apply Wiener filter for additional noise reduction
-            if self._wiener_alpha > 0:
-                logger.debug(
-                    "Applying Wiener filter",
-                    extra={
-                        "req_id": self._req_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "alpha": self._wiener_alpha
-                    }
-                )
-                # Compute noise profile from the first 100ms of audio
-                noise_samples = min(int(sample_rate * 0.1), len(filtered_audio))
-                noise_profile = filtered_audio[:noise_samples]
-                noise_power = np.mean(noise_profile ** 2)
-                
-                # Apply Wiener filter
-                signal_power = filtered_audio ** 2
-                wiener_gain = np.maximum(
-                    1 - (self._wiener_alpha * noise_power) / (signal_power + 1e-10), 
-                    self._spectral_floor
-                )
-                filtered_audio = filtered_audio * wiener_gain
+            # Process audio using spectral subtraction
+            enhanced_audio = self._process_spectral_subtraction(audio_data, sample_rate)
 
             # Convert back to int16
             logger.debug(
@@ -683,11 +692,11 @@ class NoiseReductionPlugin(PluginBase):
                     "req_id": self._req_id,
                     "plugin_name": self.name,
                     "recording_id": recording_id,
-                    "min_val": float(np.min(filtered_audio)),
-                    "max_val": float(np.max(filtered_audio))
+                    "min_val": float(np.min(enhanced_audio)),
+                    "max_val": float(np.max(enhanced_audio))
                 }
             )
-            output_audio = np.clip(filtered_audio * 32768.0, -32768, 32767).astype(np.int16)
+            output_audio = np.clip(enhanced_audio * 32768.0, -32768, 32767).astype(np.int16)
 
             # Ensure output directory exists
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
