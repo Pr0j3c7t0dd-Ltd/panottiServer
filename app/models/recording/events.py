@@ -73,8 +73,8 @@ class RecordingEvent(BaseModel):
 
     recording_timestamp: str
     recording_id: str
-    system_audio_path: str | None = None
-    microphone_audio_path: str | None = None
+    system_audio_path: str | None = Field(None, description="Path to system audio recording")
+    microphone_audio_path: str | None = Field(None, description="Path to microphone audio recording")
     event: Literal[
         "recording.started",
         "recording.ended",
@@ -99,17 +99,34 @@ class RecordingEvent(BaseModel):
     @classmethod
     def set_data(cls, v: dict[str, Any] | None, info: ValidationInfo) -> dict[str, Any]:
         """Set the data field with relevant event information."""
-        if v is None or not v:
-            data: dict[str, Any] = {
-                "recording_id": info.data.get("recording_id", ""),
-                "recording_timestamp": info.data.get("recording_timestamp", ""),
-                "system_audio_path": info.data.get("system_audio_path"),
-                "microphone_audio_path": info.data.get("microphone_audio_path"),
+        data = v or {}
+        
+        # Get values from the model
+        recording_id = info.data.get("recording_id")
+        event = info.data.get("event")
+        event_id = info.data.get("event_id")
+        system_audio = info.data.get("system_audio_path")
+        microphone_audio = info.data.get("microphone_audio_path")
+        
+        # Update data dict
+        data.update({
+            "recording_id": recording_id,
+            "event": event,
+            "event_id": event_id,
+            "current_event": {
+                "recording": {
+                    "status": info.data.get("status", "completed"),
+                    "timestamp": info.data.get("recording_timestamp"),
+                    "audio_paths": {
+                        "system": system_audio,
+                        "microphone": microphone_audio
+                    } if system_audio or microphone_audio else None,
+                    "metadata": info.data.get("metadata")
+                }
             }
-            if info.data.get("metadata"):
-                data["metadata"] = info.data["metadata"]
-            return data
-        return v
+        })
+        
+        return data
 
     @field_validator("recording_timestamp")
     @classmethod

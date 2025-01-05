@@ -117,17 +117,36 @@ async def shutdown() -> None:
     """Clean up application components."""
     global event_bus, plugin_manager
     
-    if plugin_manager:
-        logger.info("Shutting down plugins")
-        await plugin_manager.shutdown_plugins()
-        plugin_manager = None
+    logger.info("Starting application shutdown")
+    
+    try:
+        if plugin_manager:
+            logger.info("Shutting down plugins")
+            await plugin_manager.shutdown_plugins()
+            plugin_manager = None
 
-    if event_bus:
-        logger.info("Shutting down event bus")
-        await event_bus.stop()
-        event_bus = None
-
-    logger.info("Shutdown complete")
+        if event_bus:
+            logger.info("Shutting down event bus")
+            await event_bus.shutdown()
+            await event_bus.stop()
+            event_bus = None
+            
+        # Close any remaining database connections
+        logger.info("Closing database connections")
+        db = await DatabaseManager.get_instance()
+        await db.close()
+        
+    except Exception as e:
+        logger.error(
+            "Error during shutdown",
+            extra={
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+        )
+        raise
+    finally:
+        logger.info("Shutdown complete")
 
 
 @app.middleware("http")
@@ -149,25 +168,44 @@ async def api_logging_middleware(
                 "response": {
                     "status_code": response.status_code,
                     "headers": dict(response.headers),
+                    "duration": duration
                 },
-                "metrics": {
-                    "duration_seconds": duration,
-                    "status_code": response.status_code,
-                    "success": response.status_code < HTTP_BAD_REQUEST,
-                },
-            },
+                "request": {
+                    "method": request.method,
+                    "url": str(request.url),
+                    "headers": dict(request.headers),
+                    "path_params": request.path_params,
+                    "query_params": dict(request.query_params)
+                }
+            }
         )
-
         return response
+        
+    except asyncio.CancelledError:
+        logger.info(
+            "Request cancelled during shutdown",
+            extra={
+                "request_id": request_id,
+                "request": {
+                    "method": request.method,
+                    "url": str(request.url)
+                }
+            }
+        )
+        raise
+        
     except Exception as e:
         logger.error(
             "Error processing request",
             extra={
                 "request_id": request_id,
                 "error": str(e),
-                "duration_seconds": (datetime.utcnow() - start_time).total_seconds(),
-            },
-            exc_info=True,
+                "traceback": traceback.format_exc(),
+                "request": {
+                    "method": request.method,
+                    "url": str(request.url)
+                }
+            }
         )
         raise
 
