@@ -21,7 +21,7 @@ from app.plugins.events import bus
 from app.plugins.events.persistence import EventStore
 from app.plugins.manager import PluginManager
 from app.utils.logging_config import setup_logging
-from app.models.recording.events import RecordingEvent, RecordingEndRequest
+from app.models.recording.events import RecordingEvent, RecordingEndRequest, RecordingStartRequest
 from app.plugins.events.models import EventContext
 
 # Configure logging
@@ -126,26 +126,46 @@ async def shutdown() -> None:
         if event_bus:
             await event_bus.stop()
             
-        # Wait for in-flight requests to complete (with timeout)
-        logger.info("Waiting for in-flight requests to complete")
-        await asyncio.sleep(2)  # Give time for requests to finish
-            
         # Then shutdown plugins
         if plugin_manager:
             logger.info("Shutting down plugins")
-            await plugin_manager.shutdown_plugins()
+            try:
+                await asyncio.wait_for(plugin_manager.shutdown_plugins(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Plugin shutdown timed out after 5 seconds")
             plugin_manager = None
 
         # Finally shutdown event bus completely
         if event_bus:
             logger.info("Shutting down event bus")
-            await event_bus.shutdown()
+            try:
+                await asyncio.wait_for(event_bus.shutdown(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Event bus shutdown timed out after 5 seconds")
             event_bus = None
             
         # Close database connections last
         logger.info("Closing database connections")
-        db = await DatabaseManager.get_instance()
-        await db.close()
+        try:
+            db = await DatabaseManager.get_instance()
+            await asyncio.wait_for(db.close(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning("Database shutdown timed out after 5 seconds")
+        except Exception as e:
+            logger.error(f"Error closing database: {str(e)}")
+        
+    except asyncio.CancelledError:
+        logger.info("Shutdown cancelled - cleaning up remaining resources")
+        try:
+            # Ensure critical cleanup still happens
+            if event_bus:
+                await event_bus.stop()
+            if plugin_manager:
+                await plugin_manager.shutdown_plugins()
+            db = await DatabaseManager.get_instance()
+            await db.close()
+        finally:
+            raise
         
     except Exception as e:
         logger.error(
@@ -251,11 +271,17 @@ async def validation_exception_handler(
 
 
 @app.post("/api/recording-started")
-async def recording_started(request: Request) -> dict[str, Any]:
+async def recording_started(
+    background_tasks: BackgroundTasks,
+    request: RecordingStartRequest,
+    x_api_key: str = Depends(get_api_key)
+) -> dict[str, Any]:
     """Handle recording started event.
 
     Args:
-        request: FastAPI request object
+        background_tasks: FastAPI background tasks
+        request: Recording start request model
+        x_api_key: API key for authentication
 
     Returns:
         Response with recording ID and status
@@ -263,24 +289,22 @@ async def recording_started(request: Request) -> dict[str, Any]:
     Raises:
         HTTPException: If recording_id is missing
     """
-    data = await request.json()
-    recording_id = data.get("recording_id")
-    if not recording_id:
-        raise HTTPException(status_code=HTTP_BAD_REQUEST, detail="Missing recording_id")
-
     logger.info(
         "Processing recording started event",
-        extra={"recording_id": recording_id},
+        extra={"recording_id": request.recording_id},
     )
 
-    # Insert into recordings table
-    db = DatabaseManager.get_instance()
+    # Insert or update recordings table
+    db = await DatabaseManager.get_instance()
     await db.execute(
         """
         INSERT INTO recordings (recording_id, status)
         VALUES (?, ?)
+        ON CONFLICT(recording_id) DO UPDATE SET
+            status = 'active',
+            updated_at = CURRENT_TIMESTAMP
         """,
-        (recording_id, "active"),
+        (request.recording_id, "active"),
     )
 
     # Insert into recording_events table
@@ -292,27 +316,46 @@ async def recording_started(request: Request) -> dict[str, Any]:
         ) VALUES (?, ?, datetime('now'), ?, ?, ?)
         """,
         (
-            recording_id,
+            request.recording_id,
             "recording.started",
-            data.get("system_audio_path"),
-            data.get("microphone_audio_path"),
-            json.dumps(data.get("metadata", {})),
+            request.system_audio_path,
+            request.microphone_audio_path,
+            json.dumps(request.metadata or {}),
         ),
     )
 
-    # Notify plugins
-    event_data = {
-        "event": "recording.started",
-        "recording_id": recording_id,
-        "system_audio_path": data.get("system_audio_path"),
-        "microphone_audio_path": data.get("microphone_audio_path"),
-        "metadata": data.get("metadata", {}),
-        # Include other data from request except event name
-        **{k: v for k, v in data.items() if k not in ["event", "name"]}
-    }
-    await event_bus.publish(event_data)
+    # Commit the transaction
+    await db.commit()
 
-    return {"status": "success", "recording_id": recording_id}
+    # Create event
+    event = request.to_event()
+    
+    # Process event in background
+    async def process_event(event: RecordingEvent):
+        try:
+            # Publish event
+            logger.debug(
+                "Publishing event to event bus",
+                extra={
+                    "recording_id": event.recording_id,
+                    "event_type": "RecordingEvent",
+                }
+            )
+            await event_bus.publish(event)
+        except Exception as e:
+            logger.error(
+                "Error publishing recording start event",
+                extra={
+                    "recording_id": event.recording_id,
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            )
+
+    # Add event processing to background tasks
+    background_tasks.add_task(process_event, event)
+
+    return {"status": "success", "recording_id": request.recording_id}
 
 
 @app.post("/api/recording-ended")

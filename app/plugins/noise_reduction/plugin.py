@@ -652,8 +652,8 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": event_id,
                     "plugin_name": self.name,
-                    "recording_id": event.recording_id,
-                    "event_id": event.event_id
+                    "recording_id": event.recording_id if hasattr(event, "recording_id") else event.get("recording_id"),
+                    "event_id": event.event_id if hasattr(event, "event_id") else event.get("event_id")
                 }
             )
 
@@ -666,11 +666,9 @@ class NoiseReductionPlugin(PluginBase):
                 mic_path = audio_paths.get("microphone")
                 sys_path = audio_paths.get("system")
             else:
-                recording_id = event.recording_id if hasattr(event, "recording_id") else None
-                recording_data = event.data.get("current_event", {}).get("recording", {})
-                audio_paths = recording_data.get("audio_paths", {})
-                mic_path = audio_paths.get("microphone")
-                sys_path = audio_paths.get("system")
+                recording_id = event.recording_id
+                mic_path = event.microphone_audio_path
+                sys_path = event.system_audio_path
 
             if not recording_id:
                 logger.error(
