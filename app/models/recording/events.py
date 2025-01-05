@@ -211,7 +211,7 @@ class RecordingEvent(BaseModel):
             """
             SELECT * FROM recording_events
             WHERE recording_id = ?
-            ORDER BY event_timestamp
+            ORDER BY event_timestamp DESC
             """,
             (recording_id,),
         )
@@ -227,16 +227,72 @@ class RecordingEvent(BaseModel):
             for row in rows
         ]
 
-    @classmethod
-    def from_timestamp(cls, timestamp_str: str) -> str:
-        """Parse timestamp string to datetime and return ISO format."""
-        try:
-            dt = parse_timestamp(timestamp_str)
-            return dt.isoformat()
-        except ValueError as e:
-            logger.error(f"Error parsing timestamp: {e}")
-            return datetime.utcnow().isoformat()
+    async def is_duplicate(self) -> bool:
+        """Check if this event is a duplicate based on recording_id and event type.
+        
+        Returns:
+            bool: True if a duplicate exists, False otherwise
+        """
+        db = DatabaseManager.get_instance()
+        result = await db.fetch_one(
+            """
+            SELECT 1 FROM recording_events 
+            WHERE recording_id = ? 
+            AND event_type = ?
+            AND event != 'recording.started'
+            LIMIT 1
+            """,
+            (self.recording_id, self.event),
+        )
+        return bool(result)
 
+    def set_data(self, v: dict[str, Any] | None = None) -> None:
+        """Set the data field with relevant event information."""
+        if v is None:
+            v = {}
+        
+        v.update({
+            "recording_id": self.recording_id,
+            "event": self.event,
+            "event_id": self.event_id,
+            "current_event": {
+                "recording": {
+                    "status": "completed" if self.event == "recording.ended" else "in_progress",
+                    "timestamp": self.recording_timestamp,
+                    "audio_paths": {
+                        "system": self.system_audio_path,
+                        "microphone": self.microphone_audio_path
+                    } if self.system_audio_path and self.microphone_audio_path else None,
+                    "metadata": self.metadata.dict() if isinstance(self.metadata, EventMetadata) else self.metadata
+                }
+            },
+            "event_history": {}
+        })
+        self.data = v
+
+    @classmethod
+    async def get_by_recording_id(cls, recording_id: str) -> list["RecordingEvent"]:
+        """Retrieve all events for a specific recording."""
+        db = DatabaseManager.get_instance()
+        rows = await db.fetch_all(
+            """
+            SELECT * FROM recording_events
+            WHERE recording_id = ?
+            ORDER BY event_timestamp DESC
+            """,
+            (recording_id,),
+        )
+        return [
+            cls(
+                recording_id=row["recording_id"],
+                event=row["event_type"],
+                recording_timestamp=row["event_timestamp"],
+                system_audio_path=row["system_audio_path"],
+                microphone_audio_path=row["microphone_audio_path"],
+                metadata=json.loads(row["metadata"]) if row["metadata"] else None,
+            )
+            for row in rows
+        ]
 
 class RecordingStartRequest(BaseModel):
     """Request model for starting a recording session."""

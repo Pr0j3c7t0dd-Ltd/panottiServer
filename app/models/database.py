@@ -390,21 +390,36 @@ class DatabaseManager:
         await asyncio.get_event_loop().run_in_executor(self._executor, _commit)
 
     async def close(self) -> None:
-        """Close the database connection asynchronously."""
-
-        logger.info(
-            "Closing database connection",
-            extra={
-                "req_id": self._req_id
-            }
-        )
-
-        def _close() -> None:
+        """Close all database connections."""
+        try:
+            # Close thread pool executor
+            self._executor.shutdown(wait=True)
+            
+            # Close any remaining connections
             if hasattr(self._local, "connection"):
-                self._local.connection.close()
-                del self._local.connection
-
-        await asyncio.get_event_loop().run_in_executor(self._executor, _close)
+                def _close() -> None:
+                    if hasattr(self._local, "connection"):
+                        self._local.connection.close()
+                        del self._local.connection
+                
+                await asyncio.get_event_loop().run_in_executor(None, _close)
+                
+            logger.info(
+                "Database connections closed",
+                extra={
+                    "req_id": self._req_id,
+                    "db_path": self.db_path
+                }
+            )
+        except Exception as e:
+            logger.error(
+                "Error closing database connections",
+                extra={
+                    "req_id": self._req_id,
+                    "error": str(e)
+                }
+            )
+            raise
 
     def close_connections(self) -> None:
         """Close all connections - useful for cleanup."""

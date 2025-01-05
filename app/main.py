@@ -1,5 +1,6 @@
 """Main FastAPI application module."""
 
+import asyncio
 import json
 import logging
 import os
@@ -7,21 +8,22 @@ import traceback
 import uuid
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, Annotated, Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, Header
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 
-from .models.database import DatabaseManager
-from .plugins.events import bus
-from .plugins.events.persistence import EventStore
-from .plugins.manager import PluginManager
-from .utils.logging_config import setup_logging
-from .models.recording.events import RecordingEvent
-from .plugins.events.models import EventContext
+from app.models.database import DatabaseManager
+from app.plugins.events import bus
+from app.plugins.events.persistence import EventStore
+from app.plugins.manager import PluginManager
+from app.utils.logging_config import setup_logging
+from app.models.recording.events import RecordingEvent
+from app.plugins.events.models import EventContext
+from app.models.recording.requests import RecordingEndRequest
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -120,18 +122,28 @@ async def shutdown() -> None:
     logger.info("Starting application shutdown")
     
     try:
+        # First stop accepting new requests
+        logger.info("Stopping event bus to prevent new events")
+        if event_bus:
+            await event_bus.stop()
+            
+        # Wait for in-flight requests to complete (with timeout)
+        logger.info("Waiting for in-flight requests to complete")
+        await asyncio.sleep(2)  # Give time for requests to finish
+            
+        # Then shutdown plugins
         if plugin_manager:
             logger.info("Shutting down plugins")
             await plugin_manager.shutdown_plugins()
             plugin_manager = None
 
+        # Finally shutdown event bus completely
         if event_bus:
             logger.info("Shutting down event bus")
             await event_bus.shutdown()
-            await event_bus.stop()
             event_bus = None
             
-        # Close any remaining database connections
+        # Close database connections last
         logger.info("Closing database connections")
         db = await DatabaseManager.get_instance()
         await db.close()
@@ -298,107 +310,64 @@ async def recording_started(request: Request) -> dict[str, Any]:
 
 
 @app.post("/api/recording-ended")
-async def recording_ended(request: Request) -> dict[str, Any]:
+async def recording_ended(
+    request: Request,
+    recording_end: RecordingEndRequest,
+    x_api_key: Annotated[str, Header()] = Depends(get_api_key),
+) -> dict[str, Any]:
     """Handle recording ended event."""
-    data = await request.json()
-    recording_id = data.get("recordingId") or data.get("recording_id")
-    if not recording_id:
-        raise HTTPException(status_code=HTTP_BAD_REQUEST, detail="Missing recordingId")
-
     logger.info(
         "Processing recording ended event",
-        extra={
-            "req_id": str(uuid.uuid4()),
-            "req_headers": dict(request.headers),
-            "req_method": request.method,
-            "req_path": str(request.url),
-            "recording_id": recording_id,
-            "raw_request": data
-        }
+        req_headers=dict(request.headers),
+        req_method=request.method,
+        req_path=str(request.url),
+        recording_id=recording_end.recording_id,
+        raw_request=await request.json(),
     )
 
-    # Generate a unique event ID for this specific recording end event
-    event_timestamp = datetime.utcnow().isoformat()
-    event_id = f"{recording_id}_ended_{event_timestamp}"
-    request_id = str(uuid.uuid4())
-
+    # Create event
+    event = recording_end.to_event()
+    event_id = f"{event.recording_id}_ended_{event.recording_timestamp}"
+    event.event_id = event_id
+    
     logger.debug(
         "Generated event details",
-        extra={
-            "req_id": request_id,
-            "recording_id": recording_id,
-            "event_id": event_id,
-            "event_timestamp": event_timestamp
-        }
+        recording_id=event.recording_id,
+        event_id=event_id,
+        event_timestamp=event.recording_timestamp,
     )
 
-    # Check if this specific event was already processed
-    db = await DatabaseManager.get_instance()
-    rows = await db.execute_fetchall(
-        """
-        SELECT 1 FROM recording_events 
-        WHERE recording_id = ? 
-        AND event_type = 'recording.ended'
-        AND event_timestamp = ?
-        """,
-        (recording_id, event_timestamp)
-    )
-
-    if rows:
-        logger.warning(
-            "This specific recording end event was already processed",
-            extra={
-                "recording_id": recording_id,
-                "event_id": event_id,
-                "timestamp": event_timestamp,
-                "stack_trace": "".join(traceback.format_stack())
-            }
+    # Check for duplicates
+    if await event.is_duplicate():
+        logger.info(
+            "Skipping duplicate recording end event",
+            recording_id=event.recording_id,
+            event_id=event_id,
         )
-        return {"status": "event_already_processed", "recording_id": recording_id}
+        return {"status": "skipped", "reason": "duplicate_event"}
 
+    # Insert event record
     logger.debug(
         "Inserting event record",
-        extra={
-            "req_id": request_id,
-            "recording_id": recording_id,
-            "event_id": event_id,
-            "system_audio_path": data.get("systemAudioPath"),
-            "microphone_audio_path": data.get("microphoneAudioPath"),
-            "metadata": data.get("metadata", {})
-        }
+        recording_id=event.recording_id,
+        event_id=event_id,
+        system_audio_path=event.system_audio_path,
+        microphone_audio_path=event.microphone_audio_path,
+        metadata=event.metadata,
     )
+    await event.save()
 
-    # Insert event record first
-    await db.execute(
-        """
-        INSERT INTO recording_events (
-            recording_id, event_type, event_timestamp,
-            system_audio_path, microphone_audio_path, metadata
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            recording_id,
-            "recording.ended",
-            event_timestamp,
-            data.get("systemAudioPath"),
-            data.get("microphoneAudioPath"),
-            json.dumps(data.get("metadata", {}))
-        )
-    )
-
+    # Update recording status
     logger.debug(
         "Updating recording status",
-        extra={
-            "req_id": request_id,
-            "recording_id": recording_id,
-            "event_id": event_id,
-            "status": "completed",
-            "system_audio_path": data.get("systemAudioPath"),
-            "microphone_audio_path": data.get("microphoneAudioPath")
-        }
+        recording_id=event.recording_id,
+        event_id=event_id,
+        status="completed",
+        system_audio_path=event.system_audio_path,
+        microphone_audio_path=event.microphone_audio_path,
     )
-
-    # Update recording in database
+    
+    db = DatabaseManager.get_instance()
     await db.execute(
         """
         INSERT INTO recordings (recording_id, status, system_audio_path, microphone_audio_path)
@@ -410,78 +379,34 @@ async def recording_ended(request: Request) -> dict[str, Any]:
             updated_at = CURRENT_TIMESTAMP
         """,
         (
-            recording_id,
+            event.recording_id,
             "completed",
-            data.get("systemAudioPath"),
-            data.get("microphoneAudioPath"),
+            event.system_audio_path,
+            event.microphone_audio_path,
         ),
     )
-    await db.commit()
 
-    # Structure initial event data properly
-    event_data = {
-        "recording_id": recording_id,
-        "event": "recording.ended",
-        "event_id": event_id,  # Include the unique event ID
-        "current_event": {
-            "recording": {
-                "status": "completed",
-                "timestamp": event_timestamp,
-                "audio_paths": {
-                    "system": data.get("systemAudioPath"),
-                    "microphone": data.get("microphoneAudioPath")
-                },
-                "metadata": data.get("metadata", {})
-            }
-        },
-        "event_history": {}  # Empty at start of chain
-    }
-
+    # Create and publish event
     logger.debug(
         "Creating RecordingEvent",
-        extra={
-            "req_id": request_id,
-            "recording_id": recording_id,
-            "event_id": event_id,
-            "event_data": event_data
-        }
+        recording_id=event.recording_id,
+        event_id=event_id,
+        event_data=event.dict(),
     )
 
-    event = RecordingEvent(
-        recording_timestamp=event_timestamp,
-        recording_id=recording_id,
-        event="recording.ended",
-        event_id=event_id,  # Use our unique event ID
-        data=event_data,
-        context=EventContext(
-            correlation_id=event_id,  # Use the unique event ID as correlation ID
-            source_plugin="api"
-        )
-    )
-
+    event.set_data()
+    
     logger.debug(
         "Publishing event to event bus",
-        extra={
-            "req_id": request_id,
-            "recording_id": recording_id,
-            "event_id": event_id,
-            "event_type": type(event).__name__,
-            "event_data": str(event)
-        }
+        recording_id=event.recording_id,
+        event_id=event_id,
+        event_type="RecordingEvent",
+        event_data=str(event),
     )
-
+    
     await event_bus.publish(event)
 
-    logger.info(
-        "Recording ended event processed successfully",
-        extra={
-            "req_id": request_id,
-            "recording_id": recording_id,
-            "event_id": event_id
-        }
-    )
-
-    return {"status": "success", "recording_id": recording_id}
+    return {"status": "success", "event_id": event_id}
 
 
 if __name__ == "__main__":
