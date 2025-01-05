@@ -246,53 +246,6 @@ class RecordingEvent(BaseModel):
         )
         return bool(result)
 
-    def set_data(self, v: dict[str, Any] | None = None) -> None:
-        """Set the data field with relevant event information."""
-        if v is None:
-            v = {}
-        
-        v.update({
-            "recording_id": self.recording_id,
-            "event": self.event,
-            "event_id": self.event_id,
-            "current_event": {
-                "recording": {
-                    "status": "completed" if self.event == "recording.ended" else "in_progress",
-                    "timestamp": self.recording_timestamp,
-                    "audio_paths": {
-                        "system": self.system_audio_path,
-                        "microphone": self.microphone_audio_path
-                    } if self.system_audio_path and self.microphone_audio_path else None,
-                    "metadata": self.metadata.dict() if isinstance(self.metadata, EventMetadata) else self.metadata
-                }
-            },
-            "event_history": {}
-        })
-        self.data = v
-
-    @classmethod
-    async def get_by_recording_id(cls, recording_id: str) -> list["RecordingEvent"]:
-        """Retrieve all events for a specific recording."""
-        db = DatabaseManager.get_instance()
-        rows = await db.fetch_all(
-            """
-            SELECT * FROM recording_events
-            WHERE recording_id = ?
-            ORDER BY event_timestamp DESC
-            """,
-            (recording_id,),
-        )
-        return [
-            cls(
-                recording_id=row["recording_id"],
-                event=row["event_type"],
-                recording_timestamp=row["event_timestamp"],
-                system_audio_path=row["system_audio_path"],
-                microphone_audio_path=row["microphone_audio_path"],
-                metadata=json.loads(row["metadata"]) if row["metadata"] else None,
-            )
-            for row in rows
-        ]
 
 class RecordingStartRequest(BaseModel):
     """Request model for starting a recording session."""

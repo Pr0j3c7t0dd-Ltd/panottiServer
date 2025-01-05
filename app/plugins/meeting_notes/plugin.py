@@ -149,7 +149,7 @@ class MeetingNotesPlugin(PluginBase):
             return lines
 
         except Exception as e:
-            logger.error(f"Failed to extract transcript lines: {e}", exc_info=True)
+            logger.error("Failed to extract transcript lines: %s", str(e), exc_info=True)
             return []
 
     def _generate_meeting_notes_from_text(self, transcript_text: str) -> str:
@@ -218,7 +218,7 @@ Participants: [Extract speaker names from transcript]
             return cast(str, response.json().get("response", ""))
 
         except Exception as e:
-            logger.error(f"Failed to generate meeting notes: {e}", exc_info=True)
+            logger.error("Failed to generate meeting notes: %s", str(e), exc_info=True)
             return f"Error generating meeting notes: {e}"
 
     async def _process_transcript(
@@ -335,7 +335,7 @@ Participants: [Extract speaker names from transcript]
             if self._executor:
                 await self._process_transcript(recording_id, transcript_text, event)
         except Exception as e:
-            logger.error(f"Failed to handle transcript event: {e}", exc_info=True)
+            logger.error("Failed to handle transcript event: %s", str(e), exc_info=True)
 
     async def handle_transcription_completed(self, event: Event | RecordingEvent) -> None:
         """Handle transcription completed event"""
@@ -411,14 +411,7 @@ Participants: [Extract speaker names from transcript]
             raise
 
     def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
-        """Extract transcript path from event.
-        
-        Args:
-            event: Event object containing transcript path information
-            
-        Returns:
-            Path object if transcript path found, None otherwise
-        """
+        """Extract transcript path from event."""
         # Handle RecordingEvent type
         if isinstance(event, RecordingEvent):
             if event.output_file:
@@ -427,12 +420,31 @@ Participants: [Extract speaker names from transcript]
             
         # Handle generic Event type
         if hasattr(event, 'data') and isinstance(event.data, dict):
-            # Try to get transcript path from event data
             transcript_path = event.data.get('transcript_path') or event.data.get('output_file')
             if transcript_path:
                 return Path(transcript_path)
         
         return None
+
+    def _read_transcript(self, transcript_path: Path) -> str | None:
+        """Read transcript from file."""
+        try:
+            return transcript_path.read_text()
+        except Exception as e:
+            logger.error("Failed to read transcript: %s", str(e), exc_info=True)
+            return None
+
+    async def _generate_notes_with_llm(self, transcript: str, event_id: str) -> str | None:
+        """Generate notes using LLM from transcript text."""
+        try:
+            return self._generate_meeting_notes_from_text(transcript)
+        except Exception as e:
+            logger.error("Failed to generate notes with LLM: %s", str(e), exc_info=True)
+            return None
+
+    def _get_output_path(self, transcript_path: Path) -> Path:
+        """Get output path for meeting notes file."""
+        return self.output_dir / f"{transcript_path.stem}_notes.md"
 
     async def _generate_meeting_notes(
         self,

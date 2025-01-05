@@ -15,7 +15,7 @@ from scipy import signal
 from scipy.io import wavfile
 from scipy.signal import butter, filtfilt
 
-from app.models.database import DatabaseManager, get_db_async
+from app.models.database import get_db_async
 from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.bus import EventBus as PluginEventBus
@@ -56,9 +56,10 @@ class NoiseReductionPlugin(PluginBase):
         self._smoothing_factor = int(config_dict.get("smoothing_factor", 2))
         self._max_workers = int(config_dict.get("max_concurrent_tasks", 4))
         
-        # Initialize thread pool
+        # Initialize thread pool and other attributes
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
         self._req_id = str(uuid.uuid4())
+        self.db = None
 
     async def _initialize(self) -> None:
         """Initialize plugin"""
