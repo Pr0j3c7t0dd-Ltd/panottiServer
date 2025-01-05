@@ -68,66 +68,75 @@ class NoiseReductionPlugin(PluginBase):
         self.db = None
 
     async def _initialize(self) -> None:
-        """Initialize plugin"""
-        if not self.event_bus:
-            logger.warning(
-                "No event bus available for plugin",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "event_bus": None,
-                    "plugin_enabled": self.config.enabled,
-                    "plugin_version": self.config.version
-                }
-            )
-            return
-
+        """Initialize the plugin."""
         try:
-            logger.debug(
-                "Starting noise reduction plugin initialization",
+            logger.info(
+                "Initializing noise reduction plugin",
                 extra={
                     "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "plugin_enabled": self.config.enabled,
-                    "plugin_version": self.config.version,
-                    "config": {
-                        "output_directory": str(self._output_directory),
-                        "noise_reduce_factor": self._noise_reduce_factor,
-                        "wiener_alpha": self._wiener_alpha,
-                        "highpass_cutoff": self._highpass_cutoff,
-                        "spectral_floor": self._spectral_floor,
-                        "smoothing_factor": self._smoothing_factor,
-                        "max_concurrent_tasks": self._max_workers,
-                    }
+                    "plugin_name": self.name
                 }
             )
+
+            # Initialize database connection
+            for attempt in range(3):  # Try 3 times
+                try:
+                    self.db = await get_db_async()
+                    break
+                except Exception as e:
+                    if attempt == 2:  # Last attempt
+                        logger.error(
+                            "Failed to initialize database connection",
+                            extra={
+                                "req_id": self._req_id,
+                                "plugin_name": self.name,
+                                "error": str(e)
+                            },
+                            exc_info=True
+                        )
+                        raise
+                    await asyncio.sleep(1)  # Wait before retrying
 
             # Subscribe to recording.ended event
-            logger.debug(
-                "Subscribing to recording.ended event",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "event": "recording.ended",
-                    "event_bus_type": type(self.event_bus).__name__,
-                    "event_bus_id": id(self.event_bus)
-                }
-            )
+            if self.event_bus:
+                await self.event_bus.subscribe(
+                    "recording.ended",
+                    self.handle_recording_ended
+                )
+                logger.info(
+                    "Subscribed to recording.ended event",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name
+                    }
+                )
 
-            await self.event_bus.subscribe("recording.ended", self.handle_recording_ended)
-            
-            # Create output directory
+            # Create output directory if it doesn't exist
+            config_dict = self.config.config or {}
+            self._output_directory = Path(config_dict.get("output_directory", "data/cleaned_audio"))
             self._output_directory.mkdir(parents=True, exist_ok=True)
-            
+
+            # Initialize other settings
+            self._noise_reduce_factor = float(config_dict.get("noise_reduce_factor", 1.0))
+            self._wiener_alpha = float(config_dict.get("wiener_alpha", 2.5))
+            self._highpass_cutoff = float(config_dict.get("highpass_cutoff", 95))
+            self._spectral_floor = float(config_dict.get("spectral_floor", 0.04))
+            self._smoothing_factor = int(config_dict.get("smoothing_factor", 2))
+            self._max_workers = int(config_dict.get("max_concurrent_tasks", 4))
+            self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
+
             logger.info(
-                "Noise reduction plugin initialized successfully",
+                "Noise reduction plugin initialized",
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
                     "output_directory": str(self._output_directory),
-                    "plugin_enabled": self.config.enabled,
-                    "plugin_version": self.config.version,
-                    "event_subscriptions": ["recording.ended"]
+                    "noise_reduce_factor": self._noise_reduce_factor,
+                    "wiener_alpha": self._wiener_alpha,
+                    "highpass_cutoff": self._highpass_cutoff,
+                    "spectral_floor": self._spectral_floor,
+                    "smoothing_factor": self._smoothing_factor,
+                    "max_workers": self._max_workers
                 }
             )
 
@@ -137,12 +146,9 @@ class NoiseReductionPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "traceback": traceback.format_exc(),
-                    "plugin_enabled": self.config.enabled,
-                    "plugin_version": self.config.version
-                }
+                    "error": str(e)
+                },
+                exc_info=True
             )
             raise
 
@@ -785,18 +791,18 @@ class NoiseReductionPlugin(PluginBase):
                 self.db = await (await get_db_async())
 
             # Check if we've already processed this recording
-            logger.debug(
-                "Checking recording status in database",
-                extra={
-                    "req_id": event_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id,
-                    "query": "SELECT pt.status FROM recordings r LEFT JOIN plugin_tasks pt ON r.recording_id = pt.recording_id AND pt.plugin_name = ?"
-                }
-            )
+            try:
+                logger.debug(
+                    "Checking recording status in database",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "query": "SELECT pt.status FROM recordings r LEFT JOIN plugin_tasks pt ON r.recording_id = pt.recording_id AND pt.plugin_name = ?"
+                    }
+                )
 
-            async with self.db.cursor() as cursor:
-                await cursor.execute(
+                row = await self.db.fetch_one(
                     """
                     SELECT pt.status 
                     FROM recordings r
@@ -806,76 +812,89 @@ class NoiseReductionPlugin(PluginBase):
                     """,
                     (self.name, recording_id)
                 )
-                row = await cursor.fetchone()
 
-            logger.debug(
-                "Database query results",
-                extra={
-                    "req_id": event_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id,
-                    "row_count": len(row) if row else 0,
-                    "status": row['status'] if row and row['status'] else None
-                }
-            )
-
-            if not row:
-                logger.warning(
-                    "Recording not found in database - skipping noise reduction",
-                    extra={
-                        "req_id": event_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id
-                    }
-                )
-                return
-
-            # Check if already processed
-            if row['status'] in ('completed', 'processing'):
-                logger.warning(
-                    "Recording already processed or being processed - skipping",
+                logger.debug(
+                    "Database query results",
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
                         "recording_id": recording_id,
-                        "status": row['status']
+                        "row_count": 1 if row else 0,
+                        "status": row['status'] if row and 'status' in row else None
                     }
                 )
-                return
 
-            # Mark as processing
-            logger.info(
-                "Marking recording for processing",
-                extra={
-                    "req_id": event_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id,
-                    "status": "processing"
-                }
-            )
-            
-            await self.db.execute(
-                """
-                INSERT INTO plugin_tasks 
-                (id, plugin_name, recording_id, status, created_at, updated_at)
-                VALUES (?, ?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """,
-                (str(uuid.uuid4()), self.name, recording_id)
-            )
+                if not row:
+                    logger.warning(
+                        "Recording not found in database - skipping noise reduction",
+                        extra={
+                            "req_id": event_id,
+                            "plugin_name": self.name,
+                            "recording_id": recording_id
+                        }
+                    )
+                    return
 
-            # Process the audio files
-            logger.debug(
-                "Starting audio processing",
-                extra={
-                    "req_id": event_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id,
-                    "mic_path": mic_path,
-                    "sys_path": sys_path
-                }
-            )
+                # Check if already processed
+                if row['status'] in ('completed', 'processing'):
+                    logger.warning(
+                        "Recording already processed or being processed - skipping",
+                        extra={
+                            "req_id": event_id,
+                            "plugin_name": self.name,
+                            "recording_id": recording_id,
+                            "status": row['status']
+                        }
+                    )
+                    return
 
-            # Rest of the handler implementation...
+                # Mark as processing
+                logger.info(
+                    "Marking recording for processing",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "status": "processing"
+                    }
+                )
+                
+                await self.db.execute(
+                    """
+                    INSERT INTO plugin_tasks 
+                    (id, plugin_name, recording_id, status, created_at, updated_at)
+                    VALUES (?, ?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                    (str(uuid.uuid4()), self.name, recording_id)
+                )
+
+                # Process the recording
+                await self.process_recording(recording_id, event)
+
+            except Exception as e:
+                logger.error(
+                    "Database operation failed",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "error": str(e)
+                    },
+                    exc_info=True
+                )
+                # Try to reinitialize database connection
+                try:
+                    self.db = await get_db_async()
+                except Exception as db_error:
+                    logger.error(
+                        "Failed to reinitialize database connection",
+                        extra={
+                            "req_id": event_id,
+                            "plugin_name": self.name,
+                            "error": str(db_error)
+                        },
+                        exc_info=True
+                    )
 
         except Exception as e:
             logger.error(
