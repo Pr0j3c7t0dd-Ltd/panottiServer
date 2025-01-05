@@ -6,6 +6,7 @@ import logging
 import os
 import sqlite3
 import threading
+import uuid
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -16,7 +17,6 @@ from typing import Any, TypeVar, cast
 T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
-
 
 class DatabaseManager:
     _instance = None
@@ -36,6 +36,7 @@ class DatabaseManager:
         data_dir.mkdir(exist_ok=True)
 
         self.db_path = str(data_dir / "panotti.db")
+        self._req_id = str(uuid.uuid4())
         self._init_db()
 
     def __enter__(self) -> Connection:
@@ -62,12 +63,38 @@ class DatabaseManager:
 
     async def initialize(self) -> None:
         """Initialize database connection."""
-        # Initialize connection in thread pool
-        def _init() -> None:
-            conn = self.get_connection()
-            conn.execute("PRAGMA foreign_keys = ON")
-            
-        await asyncio.get_event_loop().run_in_executor(self._executor, _init)
+        logger.info(
+            "Initializing database",
+            extra={
+                "req_id": self._req_id,
+                "db_path": self.db_path
+            }
+        )
+
+        try:
+            # Initialize connection in thread pool
+            def _init() -> None:
+                conn = self.get_connection()
+                conn.execute("PRAGMA foreign_keys = ON")
+                
+            await asyncio.get_event_loop().run_in_executor(self._executor, _init)
+            logger.info(
+                "Database initialized successfully",
+                extra={
+                    "req_id": self._req_id,
+                    "db_path": self.db_path
+                }
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to initialize database",
+                extra={
+                    "req_id": self._req_id,
+                    "db_path": self.db_path,
+                    "error": str(e)
+                }
+            )
+            raise
 
     def _init_db(self) -> None:
         """Initialize the database schema."""
@@ -155,34 +182,67 @@ class DatabaseManager:
 
     def _run_migrations(self, conn: Connection) -> None:
         """Run any pending database migrations."""
-        # Create migrations table if it doesn't exist
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS migrations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
+        logger.info(
+            "Running database migrations",
+            extra={
+                "req_id": self._req_id,
+                "db_path": self.db_path
+            }
         )
 
-        # Get list of applied migrations
-        applied = {row[0] for row in conn.execute("SELECT name FROM migrations")}
-
-        # Get migrations directory
-        migrations_dir = Path(__file__).parent / "migrations"
-        migrations_dir.mkdir(exist_ok=True)
-
-        # Run any new migrations in order
-        for migration_file in sorted(migrations_dir.glob("*.sql")):
-            if migration_file.stem not in applied:
-                logger.info(f"Applying migration: {migration_file.name}")
-                with migration_file.open() as f:
-                    conn.executescript(f.read())
-                conn.execute(
-                    "INSERT INTO migrations (name) VALUES (?)", (migration_file.stem,)
+        try:
+            # Create migrations table if it doesn't exist
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS migrations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-                conn.commit()
+                """
+            )
+
+            # Get list of applied migrations
+            applied = {row[0] for row in conn.execute("SELECT name FROM migrations")}
+
+            # Get migrations directory
+            migrations_dir = Path(__file__).parent / "migrations"
+            migrations_dir.mkdir(exist_ok=True)
+
+            # Run any new migrations in order
+            for migration_file in sorted(migrations_dir.glob("*.sql")):
+                if migration_file.stem not in applied:
+                    logger.info(
+                        "Applying migration",
+                        extra={
+                            "req_id": self._req_id,
+                            "migration": migration_file.name
+                        }
+                    )
+                    
+                    with migration_file.open() as f:
+                        conn.executescript(f.read())
+                    conn.execute(
+                        "INSERT INTO migrations (name) VALUES (?)", (migration_file.stem,)
+                    )
+                    conn.commit()
+
+            logger.info(
+                "Database migrations complete",
+                extra={
+                    "req_id": self._req_id,
+                    "applied_count": len(applied)
+                }
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to apply migrations",
+                extra={
+                    "req_id": self._req_id,
+                    "error": str(e)
+                }
+            )
+            raise
 
     def get_connection(self, name: str = "default") -> sqlite3.Connection:
         """Get a database connection by name.
@@ -204,6 +264,15 @@ class DatabaseManager:
 
     async def execute(self, sql: str, parameters: tuple = ()) -> None:
         """Execute a SQL query asynchronously."""
+        logger.info(
+            "Executing SQL query",
+            extra={
+                "req_id": self._req_id,
+                "sql": sql,
+                "parameters": parameters
+            }
+        )
+
         def _execute() -> None:
             conn = self.get_connection()
             conn.execute(sql, parameters)
@@ -216,6 +285,15 @@ class DatabaseManager:
     ) -> list[sqlite3.Row]:
         """Execute a SQL query and fetch all results asynchronously."""
 
+        logger.info(
+            "Executing SQL query and fetching results",
+            extra={
+                "req_id": self._req_id,
+                "sql": sql,
+                "parameters": parameters
+            }
+        )
+
         def _execute_fetchall() -> list[sqlite3.Row]:
             conn = self.get_connection()
             cursor = conn.execute(sql, parameters)
@@ -227,6 +305,15 @@ class DatabaseManager:
 
     async def insert(self, sql: str, parameters: tuple = ()) -> None:
         """Insert a record into the database."""
+
+        logger.info(
+            "Inserting record into database",
+            extra={
+                "req_id": self._req_id,
+                "sql": sql,
+                "parameters": parameters
+            }
+        )
 
         def _insert() -> None:
             conn = self.get_connection()
@@ -246,6 +333,15 @@ class DatabaseManager:
             sqlite3.Row | None: Single row result or None if no results
         """
 
+        logger.info(
+            "Fetching single row from database",
+            extra={
+                "req_id": self._req_id,
+                "sql": sql,
+                "parameters": parameters
+            }
+        )
+
         def _fetch_one() -> sqlite3.Row | None:
             conn = self.get_connection()
             cursor = conn.execute(sql, parameters)
@@ -259,6 +355,15 @@ class DatabaseManager:
     async def fetch_all(self, sql: str, parameters: tuple = ()) -> list[sqlite3.Row]:
         """Fetch all records from the database."""
 
+        logger.info(
+            "Fetching all records from database",
+            extra={
+                "req_id": self._req_id,
+                "sql": sql,
+                "parameters": parameters
+            }
+        )
+
         def _fetch_all() -> list[sqlite3.Row]:
             conn = self.get_connection()
             cursor = conn.execute(sql, parameters)
@@ -271,6 +376,13 @@ class DatabaseManager:
     async def commit(self) -> None:
         """Commit the current transaction asynchronously."""
 
+        logger.info(
+            "Committing transaction",
+            extra={
+                "req_id": self._req_id
+            }
+        )
+
         def _commit() -> None:
             conn = self.get_connection()
             conn.commit()
@@ -279,6 +391,13 @@ class DatabaseManager:
 
     async def close(self) -> None:
         """Close the database connection asynchronously."""
+
+        logger.info(
+            "Closing database connection",
+            extra={
+                "req_id": self._req_id
+            }
+        )
 
         def _close() -> None:
             if hasattr(self._local, "connection"):

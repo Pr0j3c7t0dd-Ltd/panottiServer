@@ -270,26 +270,27 @@ async def recording_ended(request: Request) -> dict[str, Any]:
     logger.info(
         "Processing recording ended event",
         extra={
+            "req_id": str(uuid.uuid4()),
+            "req_headers": dict(request.headers),
+            "req_method": request.method,
+            "req_path": str(request.url),
             "recording_id": recording_id,
-            "raw_request_data": data,
-            "request_headers": dict(request.headers),
-            "request_method": request.method,
-            "request_url": str(request.url),
-            "stack_trace": "".join(traceback.format_stack())
+            "raw_request": data
         }
     )
 
     # Generate a unique event ID for this specific recording end event
     event_timestamp = datetime.utcnow().isoformat()
     event_id = f"{recording_id}_ended_{event_timestamp}"
+    request_id = str(uuid.uuid4())
 
     logger.debug(
         "Generated event details",
         extra={
+            "req_id": request_id,
             "recording_id": recording_id,
             "event_id": event_id,
-            "event_timestamp": event_timestamp,
-            "stack_trace": "".join(traceback.format_stack())
+            "event_timestamp": event_timestamp
         }
     )
 
@@ -320,12 +321,12 @@ async def recording_ended(request: Request) -> dict[str, Any]:
     logger.debug(
         "Inserting event record",
         extra={
+            "req_id": request_id,
             "recording_id": recording_id,
             "event_id": event_id,
             "system_audio_path": data.get("systemAudioPath"),
             "microphone_audio_path": data.get("microphoneAudioPath"),
-            "metadata": data.get("metadata", {}),
-            "stack_trace": "".join(traceback.format_stack())
+            "metadata": data.get("metadata", {})
         }
     )
 
@@ -350,12 +351,12 @@ async def recording_ended(request: Request) -> dict[str, Any]:
     logger.debug(
         "Updating recording status",
         extra={
+            "req_id": request_id,
             "recording_id": recording_id,
             "event_id": event_id,
             "status": "completed",
             "system_audio_path": data.get("systemAudioPath"),
-            "microphone_audio_path": data.get("microphoneAudioPath"),
-            "stack_trace": "".join(traceback.format_stack())
+            "microphone_audio_path": data.get("microphoneAudioPath")
         }
     )
 
@@ -401,10 +402,10 @@ async def recording_ended(request: Request) -> dict[str, Any]:
     logger.debug(
         "Creating RecordingEvent",
         extra={
+            "req_id": request_id,
             "recording_id": recording_id,
             "event_id": event_id,
-            "event_data": event_data,
-            "stack_trace": "".join(traceback.format_stack())
+            "event_data": event_data
         }
     )
 
@@ -423,11 +424,11 @@ async def recording_ended(request: Request) -> dict[str, Any]:
     logger.debug(
         "Publishing event to event bus",
         extra={
+            "req_id": request_id,
             "recording_id": recording_id,
             "event_id": event_id,
             "event_type": type(event).__name__,
-            "event_data": str(event),
-            "stack_trace": "".join(traceback.format_stack())
+            "event_data": str(event)
         }
     )
 
@@ -436,9 +437,9 @@ async def recording_ended(request: Request) -> dict[str, Any]:
     logger.info(
         "Recording ended event processed successfully",
         extra={
+            "req_id": request_id,
             "recording_id": recording_id,
-            "event_id": event_id,
-            "stack_trace": "".join(traceback.format_stack())
+            "event_id": event_id
         }
     )
 

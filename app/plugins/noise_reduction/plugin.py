@@ -58,6 +58,7 @@ class NoiseReductionPlugin(PluginBase):
         
         # Initialize thread pool
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
+        self._req_id = str(uuid.uuid4())
 
     async def _initialize(self) -> None:
         """Initialize plugin"""
@@ -65,8 +66,9 @@ class NoiseReductionPlugin(PluginBase):
             logger.warning(
                 "No event bus available for plugin",
                 extra={
-                    "plugin": self.name,
-                    "event_bus": str(self.event_bus)
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "event_bus": None
                 }
             )
             return
@@ -75,7 +77,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.debug(
                 "Starting noise reduction plugin initialization",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "config": {
                         "output_directory": str(self._output_directory),
                         "noise_reduce_factor": self._noise_reduce_factor,
@@ -84,42 +87,31 @@ class NoiseReductionPlugin(PluginBase):
                         "spectral_floor": self._spectral_floor,
                         "smoothing_factor": self._smoothing_factor,
                         "max_concurrent_tasks": self._max_workers,
-                    },
-                    "event_bus_type": type(self.event_bus).__name__,
-                    "event_bus_id": id(self.event_bus)
+                    }
                 }
             )
 
             # Subscribe to recording.ended event
             logger.debug(
-                "Attempting to subscribe to recording.ended event",
+                "Subscribing to recording.ended event",
                 extra={
-                    "plugin": self.name,
-                    "event": "recording.ended",
-                    "handler": "handle_recording_ended",
-                    "handler_id": id(self.handle_recording_ended)
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "event": "recording.ended"
                 }
             )
-            
-            await self.event_bus.subscribe(
-                "recording.ended",
-                self.handle_recording_ended
-            )
 
-            # Initialize database connection
-            self.db = await get_db_async()
+            await self.event_bus.subscribe("recording.ended", self.handle_recording_ended)
             
             # Create output directory
             self._output_directory.mkdir(parents=True, exist_ok=True)
-
+            
             logger.info(
-                "Noise reduction plugin initialization complete",
+                "Noise reduction plugin initialized successfully",
                 extra={
-                    "plugin": self.name,
-                    "subscribed_events": ["recording.ended"],
-                    "handler": "handle_recording_ended",
-                    "handler_module": self.handle_recording_ended.__module__,
-                    "handler_id": id(self.handle_recording_ended)
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "output_directory": str(self._output_directory)
                 }
             )
 
@@ -127,12 +119,10 @@ class NoiseReductionPlugin(PluginBase):
             logger.error(
                 "Failed to initialize noise reduction plugin",
                 extra={
-                    "plugin": self.name,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "traceback": traceback.format_exc()
-                },
-                exc_info=True
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "error": str(e)
+                }
             )
             raise
 
@@ -494,7 +484,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.info(
                 "Starting audio processing",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id
                 }
             )
@@ -515,7 +506,7 @@ class NoiseReductionPlugin(PluginBase):
                 event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
-                    event="noise_reduction.completed",  # Changed from recording.ended
+                    event="noise_reduction.completed",  
                     data={
                         "recording_id": recording_id,
                         "current_event": {
@@ -541,7 +532,8 @@ class NoiseReductionPlugin(PluginBase):
                 logger.info(
                     "Emitted noise reduction completed event",
                     extra={
-                        "plugin": self.name,
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
                         "recording_id": recording_id
                     }
                 )
@@ -550,7 +542,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.error(
                 "Failed to process recording",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id,
                     "error": str(e)
                 },
@@ -575,7 +568,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.debug(
                 "Reading audio file",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id,
                     "input_path": input_path
                 }
@@ -588,7 +582,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.debug(
                 "Applying noise reduction",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id
                 }
             )
@@ -604,7 +599,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.debug(
                 "Converting to int16",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id
                 }
             )
@@ -614,7 +610,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.debug(
                 f"Writing output file to {output_path}",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id
                 }
             )
@@ -624,7 +621,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.debug(
                 "Successfully wrote file",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id,
                     "size": os.path.getsize(output_path)
                 }
@@ -634,7 +632,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.error(
                 "Error processing audio file",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id,
                     "error": str(e),
                     "input_path": input_path
@@ -646,14 +645,14 @@ class NoiseReductionPlugin(PluginBase):
     async def handle_recording_ended(self, event: EventData) -> None:
         """Handle recording ended event."""
         try:
-            logger.debug(
-                "Received recording ended event",
+            event_id = str(uuid.uuid4())
+            logger.info(
+                "Processing recording ended event",
                 extra={
-                    "plugin": self.name,
-                    "event_type": type(event).__name__,
-                    "event_data": str(event),
-                    "event_dir": dir(event),
-                    "handler_id": id(self.handle_recording_ended)
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": event.recording_id,
+                    "event_id": event.event_id
                 }
             )
 
@@ -676,7 +675,8 @@ class NoiseReductionPlugin(PluginBase):
                 logger.error(
                     "No recording_id found in event data",
                     extra={
-                        "plugin": self.name,
+                        "req_id": event_id,
+                        "plugin_name": self.name,
                         "event_data": str(event)
                     }
                 )
@@ -693,7 +693,8 @@ class NoiseReductionPlugin(PluginBase):
                 logger.warning(
                     "Skipping event that originated from us",
                     extra={
-                        "plugin": self.name,
+                        "req_id": event_id,
+                        "plugin_name": self.name,
                         "recording_id": recording_id,
                         "source_plugin": source_plugin,
                         "event_type": type(event).__name__
@@ -721,7 +722,8 @@ class NoiseReductionPlugin(PluginBase):
                 logger.warning(
                     "Recording not found in database - skipping noise reduction",
                     extra={
-                        "plugin": self.name,
+                        "req_id": event_id,
+                        "plugin_name": self.name,
                         "recording_id": recording_id
                     }
                 )
@@ -732,7 +734,8 @@ class NoiseReductionPlugin(PluginBase):
                 logger.warning(
                     "Recording already processed or being processed - skipping",
                     extra={
-                        "plugin": self.name,
+                        "req_id": event_id,
+                        "plugin_name": self.name,
                         "recording_id": recording_id,
                         "status": rows[0]['status']
                     }
@@ -753,7 +756,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.debug(
                 "Starting audio processing",
                 extra={
-                    "plugin": self.name,
+                    "req_id": event_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id,
                     "mic_path": mic_path,
                     "sys_path": sys_path
@@ -766,7 +770,8 @@ class NoiseReductionPlugin(PluginBase):
             logger.error(
                 "Failed to handle recording ended event",
                 extra={
-                    "plugin": self.name,
+                    "req_id": event_id,
+                    "plugin_name": self.name,
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "event_data": str(event),
@@ -781,7 +786,10 @@ class NoiseReductionPlugin(PluginBase):
         if self.event_bus is not None:
             logger.info(
                 "Unsubscribing from recording.ended event",
-                extra={"plugin": self.name}
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name
+                }
             )
             await self.event_bus.unsubscribe(
                 "recording.ended",
@@ -791,7 +799,10 @@ class NoiseReductionPlugin(PluginBase):
         if self._executor is not None:
             logger.info(
                 "Shutting down thread pool",
-                extra={"plugin": self.name}
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name
+                }
             )
             self._executor.shutdown(wait=True)
 
@@ -806,7 +817,8 @@ class NoiseReductionPlugin(PluginBase):
         logger.info(
             "Starting noise reduction",
             extra={
-                "plugin": self.name,
+                "req_id": self._req_id,
+                "plugin_name": self.name,
                 "recording_id": recording_id
             }
         )
@@ -835,7 +847,8 @@ class NoiseReductionPlugin(PluginBase):
         logger.info(
             "Successfully processed audio file",
             extra={
-                "plugin": self.name,
+                "req_id": self._req_id,
+                "plugin_name": self.name,
                 "recording_id": recording_id
             }
         )

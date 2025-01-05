@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
-
+from uuid import uuid4
+import logging
 from pydantic import BaseModel
 
 from app.models.recording.events import (
@@ -38,8 +39,9 @@ class PluginBase(ABC):
         self.config = config
         self.event_bus = event_bus
         self.version = config.version
-        self.logger = get_logger(f"plugin.{config.name}")
+        self.logger = logging.getLogger(f"plugin.{config.name}")
         self._initialized = False
+        self._req_id = str(uuid4())  # Add request ID for tracing
 
     @property
     def name(self) -> str:
@@ -55,9 +57,10 @@ class PluginBase(ABC):
         This method should be called only once. Subsequent calls will be ignored.
         """
         if self._initialized:
-            logger.debug(
+            self.logger.debug(
                 f"Plugin {self.name} already initialized",
                 extra={
+                    "req_id": self._req_id,
                     "plugin": self.name,
                     "version": self.version
                 }
@@ -65,26 +68,29 @@ class PluginBase(ABC):
             return
 
         try:
-            logger.debug(
+            self.logger.debug(
                 f"Initializing plugin {self.name}",
                 extra={
+                    "req_id": self._req_id,
                     "plugin": self.name,
                     "version": self.version
                 }
             )
             await self._initialize()
             self._initialized = True
-            logger.info(
+            self.logger.info(
                 f"Plugin {self.name} initialized successfully",
                 extra={
+                    "req_id": self._req_id,
                     "plugin": self.name,
                     "version": self.version
                 }
             )
         except Exception as e:
-            logger.error(
+            self.logger.error(
                 f"Failed to initialize plugin {self.name}",
                 extra={
+                    "req_id": self._req_id,
                     "plugin": self.name,
                     "version": self.version,
                     "error": str(e)
@@ -96,16 +102,30 @@ class PluginBase(ABC):
     async def shutdown(self) -> None:
         """Shutdown the plugin"""
         try:
-            self.logger.info("Shutting down plugin", extra={"plugin_name": self.name})
+            self.logger.info(
+                "Shutting down plugin",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name
+                }
+            )
             await self._shutdown()
             self._initialized = False
             self.logger.info(
-                "Plugin shutdown successfully", extra={"plugin_name": self.name}
+                "Plugin shutdown complete",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name
+                }
             )
         except Exception as e:
             self.logger.error(
-                "Failed to shutdown plugin",
-                extra={"plugin_name": self.name, "error": str(e)},
+                "Error during plugin shutdown",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "error": str(e)
+                }
             )
             raise
 
@@ -116,7 +136,12 @@ class PluginBase(ABC):
         value = self.config.config.get(key, default)
         self.logger.debug(
             "Retrieved plugin config",
-            extra={"plugin_name": self.name, "config_key": key, "config_value": value},
+            extra={
+                "req_id": self._req_id,
+                "plugin_name": self.name,
+                "config_key": key,
+                "config_value": value
+            }
         )
         return value
 
@@ -144,7 +169,14 @@ class PluginBase(ABC):
     ) -> None:
         """Helper method to emit events with proper context"""
         if self.event_bus is None:
-            self.logger.warning(f"Cannot emit event {name}: no event bus available")
+            self.logger.warning(
+                f"Cannot emit event {name}: no event bus available",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "event_name": name
+                }
+            )
             return
 
         # Convert the event to a dict type that EventBus accepts

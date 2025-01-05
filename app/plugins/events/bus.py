@@ -34,13 +34,27 @@ class EventBus:
         self._processed_events: dict[str, datetime] = {}  # event_id -> timestamp
         self._pending_tasks: set[asyncio.Task] = set()
         self._cleanup_events_task = None  # Will be initialized when event loop is available
-        logger.info("Event bus initialized")
+        self._req_id = str(uuid.uuid4())
+        logger.info(
+            "Event bus initialized",
+            extra={
+                "req_id": self._req_id,
+                "component": "event_bus"
+            }
+        )
 
     async def start(self) -> None:
         """Start the event bus background tasks."""
         if self._cleanup_events_task is None:
             self._cleanup_events_task = asyncio.create_task(self._cleanup_old_events())
-            logger.debug("Started event cleanup task")
+            logger.debug(
+                "Started event cleanup task",
+                extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
+                    "task_id": id(self._cleanup_events_task)
+                }
+            )
 
     async def stop(self) -> None:
         """Stop the event bus background tasks."""
@@ -51,7 +65,13 @@ class EventBus:
             except asyncio.CancelledError:
                 pass
             self._cleanup_events_task = None
-            logger.debug("Stopped event cleanup task")
+            logger.debug(
+                "Stopped event cleanup task",
+                extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus"
+                }
+            )
 
     async def _cleanup_old_events(self) -> None:
         """Periodically clean up old processed events."""
@@ -72,6 +92,8 @@ class EventBus:
                         logger.debug(
                             "Cleaned up old events",
                             extra={
+                                "req_id": self._req_id,
+                                "component": "event_bus",
                                 "removed_count": len(old_events),
                                 "remaining_count": len(self._processed_events)
                             }
@@ -79,8 +101,11 @@ class EventBus:
             except Exception as e:
                 logger.error(
                     "Error cleaning up old events",
-                    extra={"error": str(e)},
-                    exc_info=True
+                    extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
+                        "error": str(e)
+                    }
                 )
 
     def _cleanup_task(self, task: asyncio.Task) -> None:
@@ -102,6 +127,8 @@ class EventBus:
             logger.debug(
                 "Starting event handler execution",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "handler": handler.__name__,
                     "handler_module": handler.__module__,
                     "handler_qualname": handler.__qualname__,
@@ -116,6 +143,8 @@ class EventBus:
             logger.debug(
                 "Event handler execution completed",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "handler": handler.__name__,
                     "handler_module": handler.__module__,
                     "handler_qualname": handler.__qualname__,
@@ -130,6 +159,8 @@ class EventBus:
             logger.error(
                 f"Error in event handler {handler.__name__}",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "handler": handler.__name__,
@@ -186,6 +217,8 @@ class EventBus:
             logger.debug(
                 "Getting event name",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_type": type(event).__name__,
                     "event_name": event_name,
                     "event_data": str(event),
@@ -199,6 +232,8 @@ class EventBus:
             logger.error(
                 "Failed to get event name",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "error": str(e),
                     "event_type": type(event).__name__,
                     "event_data": str(event)
@@ -248,6 +283,8 @@ class EventBus:
             logger.error(
                 "Failed to get event ID, generating new one",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "event_type": type(event).__name__,
@@ -286,6 +323,8 @@ class EventBus:
             logger.debug(
                 "Checking event source",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "source_plugin": source,
                     "event_type": event_type,
                     "event_data": str(event)
@@ -297,6 +336,8 @@ class EventBus:
             logger.error(
                 "Error checking event source",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "error": str(e),
                     "event_data": str(event)
                 },
@@ -315,6 +356,8 @@ class EventBus:
             logger.debug(
                 "Attempting to subscribe handler",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_name": event_name,
                     "handler": handler.__name__,
                     "handler_module": handler.__module__,
@@ -333,24 +376,22 @@ class EventBus:
 
             if handler not in self._subscribers[event_name]:
                 self._subscribers[event_name].append(handler)
-                logger.info(
-                    "Subscribed to event",
+                logger.debug(
+                    "Added event subscription",
                     extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
                         "event_name": event_name,
-                        "handler": handler.__name__,
-                        "handler_module": handler.__module__,
-                        "current_handlers": [
-                            {
-                                "name": h.__name__,
-                                "module": h.__module__
-                            } for h in self._subscribers[event_name]
-                        ]
+                        "handler": handler.__qualname__,
+                        "subscriber_count": len(self._subscribers[event_name])
                     }
                 )
             else:
                 logger.warning(
                     "Handler already subscribed to event",
                     extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
                         "event_name": event_name,
                         "handler": handler.__name__,
                         "handler_module": handler.__module__
@@ -367,12 +408,15 @@ class EventBus:
         async with self._lock:
             if handler in self._subscribers[event_name]:
                 self._subscribers[event_name].remove(handler)
-                logger.info(
-                    "Unsubscribed from event",
+                logger.debug(
+                    "Removed event subscription",
                     extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
                         "event_name": event_name,
-                        "subscriber": handler.__name__,
-                    },
+                        "handler": handler.__qualname__,
+                        "subscriber_count": len(self._subscribers[event_name])
+                    }
                 )
 
     async def publish(
@@ -388,6 +432,8 @@ class EventBus:
         logger.debug(
             "BEGIN Event Publishing",
             extra={
+                "req_id": self._req_id,
+                "component": "event_bus",
                 "event_type": type(event).__name__,
                 "raw_event": str(event),
                 "event_dict": event.dict() if hasattr(event, "dict") else event,
@@ -408,6 +454,8 @@ class EventBus:
             logger.warning(
                 "Event processing skipped by source check",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_data": str(event),
                     "event_type": type(event).__name__,
                     "source": (event.context.source_plugin if hasattr(event, "context") else 
@@ -422,6 +470,8 @@ class EventBus:
             logger.error(
                 "Could not determine event name",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_type": type(event).__name__,
                     "event_data": str(event),
                     "event_module": event.__class__.__module__ if not isinstance(event, dict) else None,
@@ -435,6 +485,8 @@ class EventBus:
         logger.debug(
             "Event details determined",
             extra={
+                "req_id": self._req_id,
+                "component": "event_bus",
                 "event_name": event_name,
                 "event_id": event_id,
                 "event_type": type(event).__name__,
@@ -451,6 +503,8 @@ class EventBus:
             logger.debug(
                 "Event processing status check",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_id": event_id,
                     "event_name": event_name,
                     "is_processed": is_processed,
@@ -464,6 +518,8 @@ class EventBus:
                 logger.warning(
                     f"Event {event_id} already processed, skipping",
                     extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
                         "event_id": event_id,
                         "event_name": event_name,
                         "event_data": str(event),
@@ -479,6 +535,8 @@ class EventBus:
             logger.debug(
                 "Marked event as processed",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_id": event_id,
                     "event_name": event_name,
                     "processed_events_count": len(self._processed_events),
@@ -492,6 +550,8 @@ class EventBus:
             logger.warning(
                 "No handlers found for event",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_name": event_name,
                     "event_id": event_id,
                     "available_subscriptions": {
@@ -509,6 +569,8 @@ class EventBus:
             logger.debug(
                 "Creating handler task",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_name": event_name,
                     "event_id": event_id,
                     "handler": handler.__name__,
@@ -528,6 +590,8 @@ class EventBus:
             logger.debug(
                 "Waiting for handler tasks",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_name": event_name,
                     "event_id": event_id,
                     "num_tasks": len(tasks),
@@ -546,6 +610,8 @@ class EventBus:
             logger.debug(
                 "Handler tasks completed",
                 extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
                     "event_name": event_name,
                     "event_id": event_id,
                     "num_completed": len(tasks),
@@ -565,4 +631,10 @@ class EventBus:
             await asyncio.gather(*self._pending_tasks, return_exceptions=True)
         
         self._pending_tasks.clear()
-        logger.info("Event bus shutdown complete")
+        logger.info(
+            "Event bus shutdown complete",
+            extra={
+                "req_id": self._req_id,
+                "component": "event_bus"
+            }
+        )

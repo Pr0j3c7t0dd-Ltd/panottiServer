@@ -33,6 +33,7 @@ class MeetingNotesPlugin(PluginBase):
     def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin"""
         super().__init__(config, event_bus)
+        self._req_id = str(uuid.uuid4())
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         self.model = "mistral"  # Default model
         self.output_dir = Path("data/meeting_notes")  # Default output directory
@@ -52,7 +53,13 @@ class MeetingNotesPlugin(PluginBase):
     async def _initialize(self) -> None:
         """Initialize plugin"""
         if not self.event_bus:
-            logger.warning("No event bus available for plugin")
+            logger.warning(
+                "No event bus available for plugin",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name
+                }
+            )
             return
 
         try:
@@ -66,12 +73,11 @@ class MeetingNotesPlugin(PluginBase):
             logger.debug(
                 "Initializing meeting notes plugin",
                 extra={
-                    "plugin": self.name,
-                    "config": {
-                        "max_workers": max_workers,
-                        "model": self.model,
-                        "output_dir": str(self.output_dir)
-                    }
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "max_workers": max_workers,
+                    "model": self.model,
+                    "output_dir": str(self.output_dir)
                 }
             )
 
@@ -86,13 +92,11 @@ class MeetingNotesPlugin(PluginBase):
             logger.info(
                 "Meeting notes plugin initialized",
                 extra={
-                    "plugin": self.name,
-                    "subscribed_events": ["transcription.completed"],
-                    "handler": "handle_transcription_completed",
-                    "config": {
-                        "max_workers": max_workers,
-                        "model": self.model
-                    }
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "max_workers": max_workers,
+                    "model": self.model,
+                    "event": "transcription.completed"
                 }
             )
 
@@ -100,10 +104,10 @@ class MeetingNotesPlugin(PluginBase):
             logger.error(
                 "Failed to initialize plugin",
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "error": str(e)
-                },
-                exc_info=True
+                }
             )
             raise
 
@@ -268,7 +272,8 @@ Participants: [Extract speaker names from transcript]
                 logger.info(
                     "Meeting notes generation completed",
                     extra={
-                        "plugin": self.name,
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
                         "recording_id": recording_id,
                         "event": "meeting_notes.completed",
                         "output_file": str(output_file)
@@ -280,7 +285,8 @@ Participants: [Extract speaker names from transcript]
             logger.error(
                 error_msg,
                 extra={
-                    "plugin": self.name,
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
                     "recording_id": recording_id,
                     "error": str(e)
                 },
@@ -331,37 +337,158 @@ Participants: [Extract speaker names from transcript]
         except Exception as e:
             logger.error(f"Failed to handle transcript event: {e}", exc_info=True)
 
-    async def handle_transcription_completed(self, event: Event) -> None:
+    async def handle_transcription_completed(self, event: Event | RecordingEvent) -> None:
         """Handle transcription completed event"""
+        event_id = str(uuid.uuid4())
         try:
-            recording_id = event.data.get("recording_id")
-            transcription_details = event.data.get("current_event", {}).get("transcription", {})
-            output_paths = transcription_details.get("output_paths", {})
-            transcript_path = output_paths.get("transcript")
+            logger.info(
+                "Processing transcription completed event",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "event_id": event.event_id if hasattr(event, 'event_id') else None
+                }
+            )
 
-            # Process transcript and generate notes
-            if transcript_path:
-                with open(transcript_path) as f:
-                    transcript_text = f.read()
-                await self._process_transcript(recording_id, transcript_text, event)
+            # Extract transcript path from event
+            transcript_path = self._get_transcript_path(event)
+            if not transcript_path:
+                logger.warning(
+                    "No transcript path found in event",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "event_id": event.event_id if hasattr(event, 'event_id') else None
+                    }
+                )
+                return
+
+            # Generate meeting notes
+            output_path = await self._generate_meeting_notes(
+                transcript_path,
+                event_id,
+                event.recording_id if hasattr(event, 'recording_id') else None
+            )
+
+            if output_path:
+                logger.info(
+                    "Meeting notes generated successfully",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "output_path": str(output_path),
+                        "recording_id": event.recording_id if hasattr(event, 'recording_id') else None
+                    }
+                )
+
+                # Emit completion event
+                await self.emit_event(
+                    "meeting_notes.completed",
+                    {
+                        "recording_id": event.recording_id if hasattr(event, 'recording_id') else None,
+                        "notes_path": str(output_path)
+                    }
+                )
             else:
-                logger.error("No transcript path found in event data")
+                logger.error(
+                    "Failed to generate meeting notes",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "transcript_path": str(transcript_path)
+                    }
+                )
+
         except Exception as e:
             logger.error(
-                "Failed to handle transcription completed event",
+                "Error processing transcription event",
                 extra={
-                    "recording_id": recording_id
-                    if "recording_id" in locals()
-                    else None,
-                    "error": str(e),
-                    "event_payload": event.data if event else None,
-                },
-                exc_info=True,
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "error": str(e)
+                }
             )
             raise
+
+    async def _generate_meeting_notes(
+        self,
+        transcript_path: Path,
+        event_id: str,
+        recording_id: str | None = None
+    ) -> Path | None:
+        """Generate meeting notes from transcript."""
+        try:
+            logger.debug(
+                "Starting meeting notes generation",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "transcript_path": str(transcript_path),
+                    "recording_id": recording_id
+                }
+            )
+
+            # Read transcript
+            transcript = self._read_transcript(transcript_path)
+            if not transcript:
+                logger.error(
+                    "Failed to read transcript",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "transcript_path": str(transcript_path)
+                    }
+                )
+                return None
+
+            # Generate notes using LLM
+            notes = await self._generate_notes_with_llm(transcript, event_id)
+            if not notes:
+                logger.error(
+                    "Failed to generate notes with LLM",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "transcript_length": len(transcript)
+                    }
+                )
+                return None
+
+            # Save notes to file
+            output_path = self._get_output_path(transcript_path)
+            output_path.write_text(notes)
+
+            logger.debug(
+                "Meeting notes saved to file",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "output_path": str(output_path),
+                    "notes_length": len(notes)
+                }
+            )
+
+            return output_path
+
+        except Exception as e:
+            logger.error(
+                "Error generating meeting notes",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "error": str(e)
+                }
+            )
+            return None
 
     async def _shutdown(self) -> None:
         """Shutdown plugin"""
         if self._executor:
             self._executor.shutdown(wait=True)
-        logger.info("Meeting notes plugin shutdown")
+        logger.info(
+            "Meeting notes plugin shutdown",
+            extra={
+                "req_id": self._req_id,
+                "plugin_name": self.name
+            }
+        )
