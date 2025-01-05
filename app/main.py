@@ -107,7 +107,7 @@ async def shutdown() -> None:
         await plugin_manager.shutdown_plugins()
 
         # Close database connections
-        db = DatabaseManager.get_instance()
+        db = await DatabaseManager.get_instance()
         db.close_connections()  # This returns None, which is fine for cleanup
 
         logger.info("Shutdown complete")
@@ -268,6 +268,27 @@ async def recording_ended(request: Request) -> dict[str, Any]:
         "Processing recording ended event",
         extra={"recording_id": recording_id},
     )
+
+    # Update recording in database
+    db = await DatabaseManager.get_instance()
+    await db.execute(
+        """
+        INSERT INTO recordings (recording_id, status, system_audio_path, microphone_audio_path)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(recording_id) DO UPDATE SET
+            status = 'completed',
+            system_audio_path = excluded.system_audio_path,
+            microphone_audio_path = excluded.microphone_audio_path,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (
+            recording_id,
+            "completed",
+            data.get("systemAudioPath"),
+            data.get("microphoneAudioPath"),
+        ),
+    )
+    await db.commit()
 
     # Structure initial event data properly
     event_data = {

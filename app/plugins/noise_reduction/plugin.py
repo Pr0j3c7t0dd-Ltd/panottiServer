@@ -641,9 +641,76 @@ class NoiseReductionPlugin(PluginBase):
                 )
                 return
 
-            # Extract paths and process recording
-            recording_id = event_data.recording_id if hasattr(event_data, 'recording_id') else event_data.get("recording_id")
-            await self.process_recording(recording_id, event_data)
+            # Extract recording_id and validate
+            if isinstance(event_data, dict):
+                recording_id = event_data.get("recording_id")
+                current_event = event_data.get("current_event", {})
+                recording_info = current_event.get("recording", {})
+                audio_paths = recording_info.get("audio_paths", {})
+                system_audio_path = audio_paths.get("system")
+                microphone_audio_path = audio_paths.get("microphone")
+            else:
+                recording_id = event_data.recording_id
+                data = event_data.data if hasattr(event_data, 'data') else {}
+                current_event = data.get("current_event", {})
+                recording_info = current_event.get("recording", {})
+                audio_paths = recording_info.get("audio_paths", {})
+                system_audio_path = audio_paths.get("system")
+                microphone_audio_path = audio_paths.get("microphone")
+
+            if not recording_id:
+                logger.error(
+                    "No recording_id found in event data",
+                    extra={"plugin": self.name, "event_data": str(event_data)}
+                )
+                return
+
+            # Log the paths we found
+            logger.info(
+                "Processing recording ended event",
+                extra={
+                    "plugin": self.name,
+                    "recording_id": recording_id,
+                    "system_audio_path": system_audio_path,
+                    "microphone_audio_path": microphone_audio_path
+                }
+            )
+
+            # Check if recording exists before processing
+            if not self.db:
+                self.db = await DatabaseManager.get_instance()
+
+            rows = await self.db.execute_fetchall(
+                "SELECT 1 FROM recordings WHERE recording_id = ?",
+                (recording_id,)
+            )
+            
+            if not rows or len(rows) == 0:
+                logger.warning(
+                    f"Recording {recording_id} not found in database - skipping noise reduction",
+                    extra={"plugin": self.name, "recording_id": recording_id}
+                )
+                return
+
+            # Add debug logging
+            logger.info(
+                "Found recording in database, starting noise reduction",
+                extra={
+                    "plugin": self.name,
+                    "recording_id": recording_id
+                }
+            )
+
+            # Create a new event data with the paths
+            event_with_paths = {
+                "recording_id": recording_id,
+                "system_audio_path": system_audio_path,
+                "microphone_audio_path": microphone_audio_path,
+                "event_type": "recording.ended",
+                "metadata": event_data.get("metadata", {}) if isinstance(event_data, dict) else getattr(event_data, "metadata", {})
+            }
+
+            await self.process_recording(recording_id, event_with_paths)
 
         except Exception as e:
             logger.error(
@@ -655,7 +722,6 @@ class NoiseReductionPlugin(PluginBase):
                 },
                 exc_info=True
             )
-            raise
 
     async def _shutdown(self) -> None:
         """Shutdown plugin."""
