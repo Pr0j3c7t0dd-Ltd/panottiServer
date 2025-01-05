@@ -83,22 +83,27 @@ class ExamplePlugin(PluginBase):
             raise
 
     async def _handle_recording_ended(
-        self, event_data: EventData, context: EventContext
+        self, event: EventData
     ) -> None:
         """Handle recording.ended event.
         
         This is an example event handler that demonstrates how to process events.
         
         Args:
-            event_data: Event data
-            context: Event context
+            event: Event data containing both event data and context
         """
         try:
+            # Extract context from event
+            context = event.get('context') if isinstance(event, dict) else getattr(event, 'context', None)
+            if not context:
+                logger.warning("No context found in event")
+                context = EventContext(correlation_id=str(uuid.uuid4()))
+
             logger.debug(
                 "Handling recording.ended event",
                 extra={
-                    "event_id": context.event_id,
-                    "event_type": context.event_type,
+                    "event_id": getattr(context, 'event_id', None),
+                    "event_type": getattr(context, 'event_type', None),
                 },
             )
 
@@ -109,7 +114,7 @@ class ExamplePlugin(PluginBase):
             logger.info(
                 "Example plugin processed recording.ended event",
                 extra={
-                    "event_id": context.event_id,
+                    "event_id": getattr(context, 'event_id', None),
                     "debug_mode": debug_mode,
                     "example_setting": example_setting,
                 },
@@ -119,7 +124,7 @@ class ExamplePlugin(PluginBase):
             logger.error(
                 "Error handling recording.ended event",
                 extra={
-                    "event_id": context.event_id,
+                    "event_id": getattr(context, 'event_id', None) if context else None,
                     "error": str(e),
                     "error_type": type(e).__name__,
                 },

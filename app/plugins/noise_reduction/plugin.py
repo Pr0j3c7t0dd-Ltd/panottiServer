@@ -759,33 +759,32 @@ class NoiseReductionPlugin(PluginBase):
                     "is_our_event": source_plugin == self.name
                 }
             )
-            
-            if source_plugin == self.name:
-                logger.warning(
-                    "Skipping event that originated from us",
-                    extra={
-                        "req_id": event_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "source_plugin": source_plugin,
-                        "event_type": type(event).__name__
-                    }
-                )
-                return
 
-            # Check if we've already processed this recording
-            if not self.db:
+            if source_plugin == self.name:
                 logger.debug(
-                    "Initializing database connection",
+                    "Skipping our own event",
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
                         "recording_id": recording_id
                     }
                 )
-                self.db = await get_db_async()
+                return
 
-            # Check both recording existence and processing status
+            # Initialize database connection
+            logger.debug(
+                "Initializing database connection",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id
+                }
+            )
+
+            if not self.db:
+                self.db = await (await get_db_async())
+
+            # Check if we've already processed this recording
             logger.debug(
                 "Checking recording status in database",
                 extra={
@@ -795,17 +794,19 @@ class NoiseReductionPlugin(PluginBase):
                     "query": "SELECT pt.status FROM recordings r LEFT JOIN plugin_tasks pt ON r.recording_id = pt.recording_id AND pt.plugin_name = ?"
                 }
             )
-            
-            rows = await self.db.execute_fetchall(
-                """
-                SELECT pt.status 
-                FROM recordings r
-                LEFT JOIN plugin_tasks pt ON r.recording_id = pt.recording_id 
-                    AND pt.plugin_name = ?
-                WHERE r.recording_id = ?
-                """,
-                (self.name, recording_id)
-            )
+
+            async with self.db.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    SELECT pt.status 
+                    FROM recordings r
+                    LEFT JOIN plugin_tasks pt ON r.recording_id = pt.recording_id 
+                        AND pt.plugin_name = ?
+                    WHERE r.recording_id = ?
+                    """,
+                    (self.name, recording_id)
+                )
+                row = await cursor.fetchone()
 
             logger.debug(
                 "Database query results",
@@ -813,12 +814,12 @@ class NoiseReductionPlugin(PluginBase):
                     "req_id": event_id,
                     "plugin_name": self.name,
                     "recording_id": recording_id,
-                    "row_count": len(rows) if rows else 0,
-                    "status": rows[0]['status'] if rows and rows[0]['status'] else None
+                    "row_count": len(row) if row else 0,
+                    "status": row['status'] if row and row['status'] else None
                 }
             )
 
-            if not rows:
+            if not row:
                 logger.warning(
                     "Recording not found in database - skipping noise reduction",
                     extra={
@@ -830,14 +831,14 @@ class NoiseReductionPlugin(PluginBase):
                 return
 
             # Check if already processed
-            if rows[0]['status'] in ('completed', 'processing'):
+            if row['status'] in ('completed', 'processing'):
                 logger.warning(
                     "Recording already processed or being processed - skipping",
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
                         "recording_id": recording_id,
-                        "status": rows[0]['status']
+                        "status": row['status']
                     }
                 )
                 return
