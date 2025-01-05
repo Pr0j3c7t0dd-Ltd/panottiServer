@@ -1,4 +1,4 @@
-"""Noise reduction plugin for cleaning audio recordings."""
+"""Noise reduction plugin package."""
 
 from .plugin import NoiseReductionPlugin
 

@@ -19,6 +19,8 @@ from .plugins.events import bus
 from .plugins.events.persistence import EventStore
 from .plugins.manager import PluginManager
 from .utils.logging_config import setup_logging
+from .models.recording.events import RecordingEvent
+from .plugins.events.models import EventContext
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -75,29 +77,26 @@ async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
 
 @app.on_event("startup")
 async def startup() -> None:
-    """Initialize application components on startup."""
-    # Setup logging
+    """Initialize application state."""
+    # Setup logging first
     setup_logging()
+    
+    # Set log level from environment
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    print(f"Setting log level to: {log_level}")
+    logging.basicConfig(level=log_level)
 
-    try:
-        # Set log level from environment
-        log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-        logging.basicConfig(level=log_level)
+    logger.info("Initializing database")
+    
+    # Get database instance and test connection
+    db = await DatabaseManager.get_instance()
+    await db.execute("SELECT 1")
 
-        logger.info("Initializing database")
-        db = DatabaseManager.get_instance()
-        await db.execute("SELECT 1")  # Test database connection
-
-        # Initialize plugins
-        logger.info("Initializing plugins")
-        await plugin_manager.discover_plugins()
-        await plugin_manager.initialize_plugins()
-
-        logger.info("Startup complete")
-
-    except Exception as e:
-        logger.error(f"Error during startup: {e}", exc_info=True)
-        raise
+    logger.info("Initializing plugins")
+    await plugin_manager.discover_plugins()
+    await plugin_manager.initialize_plugins()
+    
+    logger.info("Startup complete")
 
 
 @app.on_event("shutdown")
@@ -233,8 +232,16 @@ async def recording_started(request: Request) -> dict[str, Any]:
     )
 
     # Notify plugins
-    event_data = {"event": "recording.started", **data}
-    await event_bus.emit(event_data)
+    event_data = {
+        "event": "recording.started",
+        "recording_id": recording_id,
+        "system_audio_path": data.get("system_audio_path"),
+        "microphone_audio_path": data.get("microphone_audio_path"),
+        "metadata": data.get("metadata", {}),
+        # Include other data from request except event name
+        **{k: v for k, v in data.items() if k not in ["event", "name"]}
+    }
+    await event_bus.publish(event_data)
 
     return {"status": "success", "recording_id": recording_id}
 
@@ -262,61 +269,35 @@ async def recording_ended(request: Request) -> dict[str, Any]:
         extra={"recording_id": recording_id},
     )
 
-    # Initialize database connection
-    db = DatabaseManager.get_instance()
-
-    # Ensure recording exists in recordings table with paths
-    await db.execute(
-        """
-        INSERT OR REPLACE INTO recordings (
-            recording_id,
-            status,
-            system_audio_path,
-            microphone_audio_path,
-            created_at,
-            updated_at
-        ) VALUES (?, 'completed', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """,
-        (
-            recording_id,
-            data.get("systemAudioPath"),
-            data.get("microphoneAudioPath"),
-        ),
-    )
-
-    # Insert into recording_events table
-    await db.execute(
-        """
-        INSERT INTO recording_events (
-            recording_id,
-            event_type,
-            event_timestamp,
-            system_audio_path,
-            microphone_audio_path,
-            metadata
-        ) VALUES (?, ?, datetime('now'), ?, ?, ?)
-        """,
-        (
-            recording_id,
-            "recording.ended",
-            data.get("systemAudioPath"),
-            data.get("microphoneAudioPath"),
-            json.dumps(data.get("metadata", {})),
-        ),
-    )
-
-    await db.commit()  # Ensure both operations are committed
-
-    # Notify plugins
+    # Structure initial event data properly
     event_data = {
-        "event": "recording.ended",
         "recording_id": recording_id,
-        "system_audio_path": data.get("systemAudioPath"),
-        "microphone_audio_path": data.get("microphoneAudioPath"),
-        "metadata": data.get("metadata", {}),
-        "timestamp": data.get("timestamp"),
+        "event_type": "recording.ended",
+        "current_event": {
+            "recording": {
+                "status": "completed",
+                "timestamp": datetime.utcnow().isoformat(),
+                "audio_paths": {
+                    "system": data.get("systemAudioPath"),
+                    "microphone": data.get("microphoneAudioPath")
+                },
+                "metadata": data.get("metadata", {})
+            }
+        },
+        "event_history": {}  # Empty at start of chain
     }
-    await event_bus.emit(event_data)
+
+    event = RecordingEvent(
+        recording_timestamp=datetime.utcnow().isoformat(),
+        recording_id=recording_id,
+        event="recording.ended",
+        data=event_data,
+        context=EventContext(
+            correlation_id=str(uuid.uuid4()),
+            source_plugin="api"
+        )
+    )
+    await event_bus.publish(event)
 
     return {"status": "success", "recording_id": recording_id}
 

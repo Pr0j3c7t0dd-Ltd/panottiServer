@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
-    _instance: DatabaseManager | None = None
-    _lock = threading.Lock()
+    _instance = None
+    _lock = asyncio.Lock()
     _local = threading.local()
     _executor = ThreadPoolExecutor(max_workers=4)
 
@@ -52,13 +52,22 @@ class DatabaseManager:
             del self._local.connection
 
     @classmethod
-    def get_instance(cls) -> DatabaseManager:
-        """Get the singleton instance."""
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = cls()
-        return cls._instance
+    async def get_instance(cls) -> 'DatabaseManager':
+        """Get singleton instance of DatabaseManager."""
+        async with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+                await cls._instance.initialize()
+            return cls._instance
+
+    async def initialize(self) -> None:
+        """Initialize database connection."""
+        # Initialize connection in thread pool
+        def _init() -> None:
+            conn = self.get_connection()
+            conn.execute("PRAGMA foreign_keys = ON")
+            
+        await asyncio.get_event_loop().run_in_executor(self._executor, _init)
 
     def _init_db(self) -> None:
         """Initialize the database schema."""
@@ -82,12 +91,7 @@ class DatabaseManager:
                     event_timestamp TEXT NOT NULL,
                     metadata TEXT,  -- JSON object with event metadata
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE (
-                        recording_id,
-                        event_type,
-                        event_timestamp
-                    )  -- Composite unique key
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
@@ -200,7 +204,6 @@ class DatabaseManager:
 
     async def execute(self, sql: str, parameters: tuple = ()) -> None:
         """Execute a SQL query asynchronously."""
-
         def _execute() -> None:
             conn = self.get_connection()
             conn.execute(sql, parameters)

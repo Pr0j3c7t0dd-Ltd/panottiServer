@@ -1,0 +1,6 @@
+fastapi>=0.109.0
+uvicorn>=0.25.0
+python-json-logger>=2.0.7
+faster-whisper>=0.10.0
+scipy>=1.11.4
+numpy>=1.26.3 

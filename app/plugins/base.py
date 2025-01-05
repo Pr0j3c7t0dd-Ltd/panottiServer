@@ -128,11 +128,6 @@ class PluginBase(ABC):
         if self.event_bus is not None:
             await self.event_bus.publish(event)
 
-    async def emit(self, event: EventType) -> None:
-        """Emit an event safely."""
-        if self.event_bus is not None:
-            await self.event_bus.emit(event)
-
     async def emit_event(
         self, name: str, data: dict[str, Any], correlation_id: str | None = None
     ) -> None:
@@ -148,7 +143,7 @@ class PluginBase(ABC):
             "correlation_id": correlation_id or "unknown",
             "source_plugin": self.name,
         }
-        await self.event_bus.emit(event_data)
+        await self.event_bus.publish(event_data)
 
     @abstractmethod
     async def _initialize(self) -> None:

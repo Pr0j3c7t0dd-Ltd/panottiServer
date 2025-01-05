@@ -76,8 +76,7 @@ class RecordingEvent(BaseModel):
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
     event: Literal[
-        "Recording Started",
-        "Recording Ended",
+        "recording.started",
         "recording.ended",
         "noise_reduction.completed",
         "transcription.completed",
@@ -89,21 +88,12 @@ class RecordingEvent(BaseModel):
     metadata: dict[str, Any] | EventMetadata | None = None
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     plugin_id: str = Field(default="recording_plugin")
-    name: str = Field(default="")  # Required by event store
     data: dict[str, Any] = Field(default_factory=dict)  # Required by event store
     context: EventContext = Field(
         default_factory=lambda: EventContext(correlation_id=str(uuid.uuid4()))
     )
     output_file: str | None = None  # For plugin completion events
     status: str | None = None  # For plugin completion events
-
-    @field_validator("name")
-    @classmethod
-    def set_name_from_event(cls, v: str, info: ValidationInfo) -> str:
-        """Set the name field based on the event type."""
-        if not v and "event" in info.data:
-            return str(info.data["event"])
-        return v
 
     @field_validator("data")
     @classmethod
@@ -237,7 +227,7 @@ class RecordingStartRequest(BaseModel):
     timestamp: str | None = None
     recording_timestamp: str | None = None
     recording_id: str
-    event: Literal["Recording Started"] = Field(default="Recording Started")
+    event: Literal["recording.started"] = Field(default="recording.started")
     metadata: dict[str, Any] | None = None
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
@@ -265,7 +255,6 @@ class RecordingStartRequest(BaseModel):
             microphone_audio_path=self.microphone_audio_path,
             event=self.event,
             metadata=self.metadata,
-            name=self.event,  # Set name to event type
             data={  # Populate data field
                 "recording_id": self.recording_id,
                 "recording_timestamp": timestamp,
@@ -284,9 +273,7 @@ class RecordingEndRequest(BaseModel):
     recording_id: str = Field(..., alias="recordingId")
     system_audio_path: str = Field(..., alias="systemAudioPath")
     microphone_audio_path: str = Field(..., alias="microphoneAudioPath")
-    event: Literal["Recording Ended", "recording.ended"] = Field(
-        default="recording.ended"
-    )
+    event: Literal["recording.ended"] = Field(default="recording.ended")
     metadata: dict[str, Any]
 
     @field_validator("event")
@@ -323,7 +310,6 @@ class RecordingEndRequest(BaseModel):
             microphone_audio_path=self.microphone_audio_path,
             event=self.event,
             metadata=self.metadata,
-            name=self.event,
             data={
                 "recording_id": self.recording_id,
                 "recording_timestamp": timestamp,

@@ -256,3 +256,42 @@ class PluginManager:
         else:
             logger.debug("Plugin not found", extra={"plugin_name": name})
         return plugin
+
+    async def _load_plugin(self, plugin_path: Path) -> None:
+        """Load a plugin from the given path."""
+        try:
+            # Import the plugin module
+            module_name = plugin_path.stem
+            spec = importlib.util.spec_from_file_location(
+                f"app.plugins.{module_name}",
+                plugin_path / "plugin.py"
+            )
+            if not spec or not spec.loader:
+                raise ImportError(f"Could not load plugin spec for {module_name}")
+            
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            # Get plugin class
+            plugin_class = None
+            for item in dir(module):
+                if item.endswith("Plugin"):
+                    plugin_class = getattr(module, item)
+                    break
+
+            if not plugin_class:
+                raise ValueError(f"No plugin class found in {module_name}")
+
+            # Initialize plugin
+            plugin = plugin_class(self.config, self.event_bus)
+            await plugin._initialize()
+            
+            self.plugins[module_name] = plugin
+            logger.info("✨ Plugin loaded successfully")
+
+        except Exception as e:
+            logger.error(
+                f"Failed to load plugin module {plugin_path.stem}",
+                exc_info=True
+            )
+            raise
