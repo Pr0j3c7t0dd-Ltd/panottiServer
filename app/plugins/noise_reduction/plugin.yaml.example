@@ -1,12 +1,17 @@
-name: "noise_reduction"
+name: noise_reduction
 version: "1.0.0"
 enabled: true
 dependencies: []
 config:
   output_directory: "data/cleaned_audio"
-  noise_reduce_factor: 0.8  # Slightly reduced to preserve more speech
-  wiener_alpha: 2.0  # More balanced Wiener filtering
-  highpass_cutoff: 85  # Lower cutoff to preserve more voice frequencies
-  spectral_floor: 0.06  # Slightly higher floor to reduce musical noise
-  smoothing_factor: 3  # Increased smoothing for better noise estimation
+  noise_reduce_factor: 0.5
+  wiener_alpha: 1.2
+  highpass_cutoff: 80
+  spectral_floor: 0.12
+  smoothing_factor: 2
   max_concurrent_tasks: 4
+  # If true => time-domain bleed removal; if false => spectral subtraction
+  time_domain_subtraction: false
+  # For alignment
+  use_fft_alignment: true
+  alignment_chunk_seconds: 10
