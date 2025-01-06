@@ -11,5 +11,6 @@ config:
   smoothing_factor: 2
   max_concurrent_tasks: 4
   time_domain_subtraction: false
+  freq_domain_bleed_removal: true
   use_fft_alignment: true
   alignment_chunk_seconds: 10

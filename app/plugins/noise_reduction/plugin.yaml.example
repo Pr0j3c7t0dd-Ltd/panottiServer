@@ -10,8 +10,7 @@ config:
   spectral_floor: 0.12
   smoothing_factor: 2
   max_concurrent_tasks: 4
-  # If true => time-domain bleed removal; if false => spectral subtraction
   time_domain_subtraction: false
-  # For alignment
+  freq_domain_bleed_removal: true
   use_fft_alignment: true
   alignment_chunk_seconds: 10
