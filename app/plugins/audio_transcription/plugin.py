@@ -229,6 +229,9 @@ class AudioTranscriptionPlugin(PluginBase):
                     metadata = original_event["recording"]["metadata"]
                 elif "metadata" in event_data:
                     metadata = event_data["metadata"]
+
+                # Store metadata for use in _process_audio
+                self._current_event_metadata = metadata
             else:
                 recording_id = event_data.recording_id
                 processed_mic_audio = getattr(event_data, "output_path", None)
@@ -687,6 +690,26 @@ class AudioTranscriptionPlugin(PluginBase):
             f.write("# Audio Transcript\n\n")
             if speaker_label:
                 f.write(f"Speaker: {speaker_label}\n\n")
+
+            # Add metadata if available from event data
+            if hasattr(self, '_current_event_metadata'):
+                metadata = {
+                    "event": {
+                        "title": self._current_event_metadata.get("eventTitle"),
+                        "provider": self._current_event_metadata.get("eventProvider"),
+                        "providerId": self._current_event_metadata.get("eventProviderId"),
+                        "started": self._current_event_metadata.get("recordingStarted"),
+                        "ended": self._current_event_metadata.get("recordingEnded"),
+                        "attendees": self._current_event_metadata.get("eventAttendees", [])
+                    },
+                    "speakers": [self._current_event_metadata.get("microphoneLabel", "Microphone"), 
+                               self._current_event_metadata.get("systemLabel", "System")],
+                    "transcriptionCompleted": datetime.utcnow().isoformat()
+                }
+                f.write("## Metadata\n\n```json\n")
+                f.write(json.dumps(metadata, indent=2))
+                f.write("\n```\n\n")
+            
             f.write("## Segments\n\n")
             
             # Write segments with adjusted timestamps

@@ -15,6 +15,8 @@ from app.plugins.events.models import Event
 from app.utils.logging_config import get_logger
 from app.models.recording.events import RecordingEvent, EventContext
 
+EventData = dict[str, Any] | RecordingEvent
+
 logger = get_logger(__name__)
 
 
@@ -337,28 +339,48 @@ Participants: [Extract speaker names from transcript]
         except Exception as e:
             logger.error("Failed to handle transcript event: %s", str(e), exc_info=True)
 
-    async def handle_transcription_completed(self, event: Event | RecordingEvent) -> None:
+    async def handle_transcription_completed(self, event_data: EventData) -> None:
         """Handle transcription completed event"""
-        event_id = str(uuid.uuid4())
         try:
+            event_id = str(uuid.uuid4())  # Generate new event ID
+            
             logger.info(
                 "Processing transcription completed event",
                 extra={
-                    "req_id": event_id,
                     "plugin_name": self.name,
-                    "event_id": event.event_id if hasattr(event, 'event_id') else None
+                    "event_id": getattr(event_data, "event_id", None)
                 }
             )
 
-            # Extract transcript path from event
-            transcript_path = self._get_transcript_path(event)
+            # Debug logging for event data
+            logger.debug(
+                "Transcription event data",
+                extra={
+                    "plugin_name": self.name,
+                    "event_data": str(event_data),
+                    "event_data_type": type(event_data).__name__,
+                    "has_transcript_path": "transcript_path" in event_data if isinstance(event_data, dict) else hasattr(event_data, "transcript_path"),
+                    "has_transcript_paths": "transcript_paths" in event_data if isinstance(event_data, dict) else hasattr(event_data, "transcript_paths"),
+                    "transcript_path": event_data.get("transcript_path") if isinstance(event_data, dict) else getattr(event_data, "transcript_path", None),
+                    "transcript_paths": event_data.get("transcript_paths") if isinstance(event_data, dict) else getattr(event_data, "transcript_paths", None)
+                }
+            )
+
+            # Get transcript path
+            transcript_path = None
+            if isinstance(event_data, dict):
+                transcript_path = event_data.get("transcript_path") or \
+                                (event_data.get("transcript_paths", {}).get("merged") if event_data.get("transcript_paths") else None)
+            else:
+                transcript_path = getattr(event_data, "transcript_path", None) or \
+                                (getattr(event_data, "transcript_paths", {}).get("merged") if hasattr(event_data, "transcript_paths") else None)
+
             if not transcript_path:
                 logger.warning(
                     "No transcript path found in event",
                     extra={
-                        "req_id": event_id,
                         "plugin_name": self.name,
-                        "event_id": event.event_id if hasattr(event, 'event_id') else None
+                        "event_id": getattr(event_data, "event_id", None)
                     }
                 )
                 return
@@ -367,7 +389,7 @@ Participants: [Extract speaker names from transcript]
             output_path = await self._generate_meeting_notes(
                 transcript_path,
                 event_id,
-                event.recording_id if hasattr(event, 'recording_id') else None
+                event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None)
             )
 
             if output_path:
@@ -377,7 +399,7 @@ Participants: [Extract speaker names from transcript]
                         "req_id": event_id,
                         "plugin_name": self.name,
                         "output_path": str(output_path),
-                        "recording_id": event.recording_id if hasattr(event, 'recording_id') else None
+                        "recording_id": event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None)
                     }
                 )
 
@@ -385,7 +407,7 @@ Participants: [Extract speaker names from transcript]
                 await self.emit_event(
                     "meeting_notes.completed",
                     {
-                        "recording_id": event.recording_id if hasattr(event, 'recording_id') else None,
+                        "recording_id": event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None),
                         "notes_path": str(output_path)
                     }
                 )
@@ -393,7 +415,6 @@ Participants: [Extract speaker names from transcript]
                 logger.error(
                     "Failed to generate meeting notes",
                     extra={
-                        "req_id": event_id,
                         "plugin_name": self.name,
                         "transcript_path": str(transcript_path)
                     }
@@ -403,7 +424,6 @@ Participants: [Extract speaker names from transcript]
             logger.error(
                 "Error processing transcription event",
                 extra={
-                    "req_id": event_id,
                     "plugin_name": self.name,
                     "error": str(e)
                 }
