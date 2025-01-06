@@ -579,13 +579,22 @@ class NoiseReductionPlugin(PluginBase):
                 audio_paths = recording_data.get("audio_paths", {})
                 mic_path = audio_paths.get("microphone")
                 sys_path = audio_paths.get("system")
+                metadata = event.get("metadata", {})
             else:
                 recording_id = event.recording_id
                 mic_path = event.microphone_audio_path
                 sys_path = event.system_audio_path
+                metadata = event.metadata if hasattr(event, "metadata") else {}
 
             if not recording_id:
-                logger.error("No recording_id found in event data", extra={...})
+                logger.error(
+                    "No recording_id found in event data",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "event_data": str(event)
+                    }
+                )
                 return
 
             source_plugin = (
@@ -594,7 +603,14 @@ class NoiseReductionPlugin(PluginBase):
                 else None
             )
             if source_plugin == self.name:
-                logger.debug("Skipping our own event", extra={...})
+                logger.debug(
+                    "Skipping our own event",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "source_plugin": source_plugin
+                    }
+                )
                 return
 
             if not self._db:
@@ -610,10 +626,18 @@ class NoiseReductionPlugin(PluginBase):
                 (recording_id, self.name)
             )
 
-            await self._process_audio_files(recording_id, sys_path, mic_path)
+            await self._process_audio_files(recording_id, sys_path, mic_path, metadata)
 
         except Exception as e:
-            logger.error("Error handling recording ended event", extra={...}, exc_info=True)
+            logger.error(
+                "Error handling recording ended event",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
 
     async def process_recording(self, recording_id: str, event_data: EventData) -> None:
         """Called from code to process a recording with the configured approach."""
@@ -626,7 +650,7 @@ class NoiseReductionPlugin(PluginBase):
             logger.error("Failed to process recording", extra={...}, exc_info=True)
             raise
 
-    async def _process_audio_files(self, recording_id: str, system_audio_path: str | None, microphone_audio_path: str | None) -> None:
+    async def _process_audio_files(self, recording_id: str, system_audio_path: str | None, microphone_audio_path: str | None, event_metadata: dict | None = None) -> None:
         """
         Decide which approach to use:
           1) time_domain_subtraction => simple time-domain approach
@@ -650,7 +674,7 @@ class NoiseReductionPlugin(PluginBase):
             if system_audio_path and microphone_audio_path \
                and os.path.exists(system_audio_path) \
                and os.path.exists(microphone_audio_path):
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
 
                 if self._freq_domain_bleed_removal:
                     # 2) Frequency-domain bleed removal
@@ -728,12 +752,24 @@ class NoiseReductionPlugin(PluginBase):
                         "recording_id": recording_id,
                         "output_path": str(final_output),
                         "original_audio_path": microphone_audio_path,
+                        "system_audio_path": system_audio_path,
                         "event_id": f"{recording_id}_noise_reduction_completed",
                         "timestamp": datetime.utcnow().isoformat(),
                         "plugin_id": self.name,
                         "metadata": {
                             "time_domain_subtraction": self._time_domain_subtraction,
                             "freq_domain_bleed_removal": self._freq_domain_bleed_removal
+                        },
+                        "data": {
+                            "current_event": {
+                                "recording": {
+                                    "audio_paths": {
+                                        "system": system_audio_path,
+                                        "microphone": microphone_audio_path
+                                    },
+                                    "metadata": event_metadata or {}
+                                }
+                            }
                         }
                     })
 
@@ -750,7 +786,16 @@ class NoiseReductionPlugin(PluginBase):
                 )
 
         except Exception as e:
-            logger.error("Error processing audio files", extra={...}, exc_info=True)
+            logger.error(
+                "Error processing audio files",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
             if self._db:
                 try:
                     await self._db.execute(
@@ -763,28 +808,69 @@ class NoiseReductionPlugin(PluginBase):
                         (str(e), recording_id, self.name)
                     )
                 except Exception as db_error:
-                    logger.error("Failed to update task status", extra={...}, exc_info=True)
+                    logger.error(
+                        "Failed to update task status",
+                        extra={
+                            "req_id": self._req_id,
+                            "plugin_name": self.name,
+                            "recording_id": recording_id,
+                            "error": str(db_error)
+                        },
+                        exc_info=True
+                    )
 
     async def _shutdown(self) -> None:
         """Shutdown plugin."""
         try:
             if self.event_bus is not None:
-                logger.info("Unsubscribing from recording.ended event", extra={...})
+                logger.info(
+                    "Unsubscribing from recording.ended event",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name
+                    }
+                )
                 await self.event_bus.unsubscribe("recording.ended", self.handle_recording_ended)
 
             if self._executor is not None:
-                logger.info("Shutting down thread pool", extra={...})
+                logger.info(
+                    "Shutting down thread pool",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name
+                    }
+                )
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._executor.shutdown, True)
                 self._executor = None
 
             if self._db is not None:
-                logger.info("Closing database connection", extra={...})
+                logger.info(
+                    "Closing database connection",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name
+                    }
+                )
                 await self._db.close()
                 self._db = None
 
-            logger.info("Plugin shutdown complete", extra={...})
+            logger.info(
+                "Plugin shutdown complete",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name
+                }
+            )
 
         except Exception as e:
-            logger.error("Error during plugin shutdown", extra={...}, exc_info=True)
+            logger.error(
+                "Error during plugin shutdown",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
             raise
