@@ -305,7 +305,7 @@ class AudioTranscriptionPlugin(PluginBase):
 
             # Create merged transcript
             output_base = self._output_dir / f"{recording_id}_merged"
-            merged_transcript = output_base.with_suffix(".txt")
+            merged_transcript = output_base.with_suffix(".md")
 
             logger.debug(
                 "Merging transcripts",
@@ -347,6 +347,7 @@ class AudioTranscriptionPlugin(PluginBase):
                     "system": str(sys_transcript) if sys_transcript else None,
                     "merged": str(merged_transcript)
                 },
+                "transcript_path": str(merged_transcript),
                 "event_id": f"{recording_id}_transcription_completed",
                 "timestamp": datetime.utcnow().isoformat(),
                 "plugin_id": self.name,
@@ -368,6 +369,7 @@ class AudioTranscriptionPlugin(PluginBase):
                                 "system": str(sys_transcript) if sys_transcript else None,
                                 "merged": str(merged_transcript)
                             },
+                            "transcript_path": str(merged_transcript),
                             "speaker_labels": {
                                 "microphone": mic_label,
                                 "system": sys_label
@@ -600,30 +602,34 @@ class AudioTranscriptionPlugin(PluginBase):
         with open(output_path, "w") as f:
             # Add metadata header
             f.write("# Merged Transcript\n\n")
-            f.write("## Metadata\n")
+            f.write("## Metadata\n\n")
             
-            # Add event metadata
-            if "eventTitle" in original_event:
-                f.write(f"- Event: {original_event['eventTitle']}\n")
-            if "eventProvider" in original_event:
-                f.write(f"- Source: {original_event['eventProvider']}\n")
-            if "eventProviderId" in original_event:
-                f.write(f"- Event ID: {original_event['eventProviderId']}\n")
-            if "recordingStarted" in original_event:
-                f.write(f"- Started: {original_event['recordingStarted']}\n")
-            if "recordingEnded" in original_event:
-                f.write(f"- Ended: {original_event['recordingEnded']}\n")
-            if "eventAttendees" in original_event:
-                f.write("- Attendees:\n")
-                for attendee in original_event["eventAttendees"]:
-                    f.write(f"  - {attendee}\n")
-            f.write("\n")
+            # Create metadata object
+            metadata = {
+                "event": {
+                    "title": original_event.get("eventTitle"),
+                    "provider": original_event.get("eventProvider"),
+                    "providerId": original_event.get("eventProviderId"),
+                    "started": original_event.get("recordingStarted"),
+                    "ended": original_event.get("recordingEnded"),
+                    "attendees": original_event.get("eventAttendees", [])
+                },
+                "speakers": labels,
+                "transcriptionCompleted": datetime.utcnow().isoformat()
+            }
+            
+            # Write metadata as JSON in markdown code block
+            f.write("```json\n")
+            f.write(json.dumps(metadata, indent=2))
+            f.write("\n```\n\n")
 
             # Write chronologically ordered segments
             f.write("## Transcript\n\n")
             for start_time, label, text in segments:
                 minutes = int(start_time // 60)
                 seconds = start_time % 60
+                # Remove doubled label from text if it exists
+                text = text.replace(f"{label}: ", "").strip()
                 f.write(f"[{minutes:02d}:{seconds:05.2f}] {label}: {text}\n")
 
     async def _process_audio(self, audio_path: str, speaker_label: str | None = None) -> Path:
@@ -662,7 +668,7 @@ class AudioTranscriptionPlugin(PluginBase):
         )
             
         # Transcribe the audio with accurate timestamps
-        segments, _ = self._model.transcribe(
+        segments, info = self._model.transcribe(
             audio_path,
             condition_on_previous_text=False,  # Don't condition on previous text for accurate timestamps
             word_timestamps=True,  # Get accurate word-level timestamps
@@ -670,7 +676,8 @@ class AudioTranscriptionPlugin(PluginBase):
             vad_parameters=dict(
                 min_silence_duration_ms=500,  # Minimum silence duration to split segments
                 speech_pad_ms=100  # Padding around speech segments
-            )
+            ),
+            beam_size=5  # Increase beam size for better word-level timestamps
         )
         
         # Write transcript to file
@@ -684,15 +691,53 @@ class AudioTranscriptionPlugin(PluginBase):
             
             # Write segments with adjusted timestamps
             for segment in segments:
-                # Format timestamp as MM:SS.ss
-                start_minutes = int(segment.start // 60)
-                start_seconds = segment.start % 60
-                end_minutes = int(segment.end // 60)
-                end_seconds = segment.end % 60
-                
-                timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
-                speaker = f"{speaker_label}: " if speaker_label else ""
-                f.write(f"{timestamp} {speaker}{segment.text.strip()}\n")
+                # Break up long segments into smaller chunks based on words
+                if hasattr(segment, "words") and segment.words:
+                    # Group words into chunks of ~5 seconds
+                    chunk_words = []
+                    chunk_start = segment.words[0].start
+                    current_text = []
+                    
+                    for word in segment.words:
+                        if word.start - chunk_start > 5.0 and current_text:
+                            # Write current chunk
+                            chunk_end = word.start
+                            start_minutes = int(chunk_start // 60)
+                            start_seconds = chunk_start % 60
+                            end_minutes = int(chunk_end // 60)
+                            end_seconds = chunk_end % 60
+                            
+                            timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
+                            speaker = f"{speaker_label}: " if speaker_label else ""
+                            f.write(f"{timestamp} {speaker}{' '.join(current_text).strip()}\n")
+                            
+                            # Start new chunk
+                            chunk_start = word.start
+                            current_text = []
+                        
+                        current_text.append(word.word)
+                    
+                    # Write final chunk if any words remain
+                    if current_text:
+                        chunk_end = segment.words[-1].end
+                        start_minutes = int(chunk_start // 60)
+                        start_seconds = chunk_start % 60
+                        end_minutes = int(chunk_end // 60)
+                        end_seconds = chunk_end % 60
+                        
+                        timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
+                        speaker = f"{speaker_label}: " if speaker_label else ""
+                        f.write(f"{timestamp} {speaker}{' '.join(current_text).strip()}\n")
+                else:
+                    # Fallback for segments without word-level info
+                    start_minutes = int(segment.start // 60)
+                    start_seconds = segment.start % 60
+                    end_minutes = int(segment.end // 60)
+                    end_seconds = segment.end % 60
+                    
+                    timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
+                    speaker = f"{speaker_label}: " if speaker_label else ""
+                    f.write(f"{timestamp} {speaker}{segment.text.strip()}\n")
         
         return transcript_file
 
