@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any
 import uuid
 import asyncio
+import numpy as np
+import soundfile as sf
+from scipy.signal import find_peaks
 
 from app.models.database import DatabaseManager
 from app.models.recording.events import RecordingEvent
@@ -274,8 +277,12 @@ class AudioTranscriptionPlugin(PluginBase):
                 }
             )
 
-            # Process both audio files
-            mic_transcript = await self._process_audio(processed_mic_audio)
+            # Get speaker labels from metadata
+            mic_label = metadata.get("microphoneLabel", "Microphone")
+            sys_label = metadata.get("systemLabel", "System")
+
+            # Process both audio files with speaker labels
+            mic_transcript = await self._process_audio(processed_mic_audio, mic_label)
             sys_transcript = None
             if original_sys_audio and os.path.exists(original_sys_audio):
                 logger.info(
@@ -285,7 +292,7 @@ class AudioTranscriptionPlugin(PluginBase):
                         "system_audio_path": original_sys_audio
                     }
                 )
-                sys_transcript = await self._process_audio(original_sys_audio)
+                sys_transcript = await self._process_audio(original_sys_audio, sys_label)
             else:
                 logger.warning(
                     "System audio not found or not accessible",
@@ -299,10 +306,6 @@ class AudioTranscriptionPlugin(PluginBase):
             # Create merged transcript
             output_base = self._output_dir / f"{recording_id}_merged"
             merged_transcript = output_base.with_suffix(".txt")
-
-            # Get labels from metadata
-            mic_label = metadata.get("microphoneLabel", "Microphone")
-            sys_label = metadata.get("systemLabel", "System")
 
             logger.debug(
                 "Merging transcripts",
@@ -330,26 +333,53 @@ class AudioTranscriptionPlugin(PluginBase):
                 original_event=metadata
             )
 
-            # Create and emit event
+            # Create enriched event data
+            enriched_event = {
+                "event": "transcription.completed",
+                "recording_id": recording_id,
+                "output_path": str(merged_transcript),
+                "input_paths": {
+                    "microphone": processed_mic_audio,
+                    "system": original_sys_audio
+                },
+                "transcript_paths": {
+                    "microphone": str(mic_transcript),
+                    "system": str(sys_transcript) if sys_transcript else None,
+                    "merged": str(merged_transcript)
+                },
+                "event_id": f"{recording_id}_transcription_completed",
+                "timestamp": datetime.utcnow().isoformat(),
+                "plugin_id": self.name,
+                "metadata": metadata,
+                "data": {
+                    "current_event": {
+                        "recording": {
+                            "audio_paths": {
+                                "system": original_sys_audio,
+                                "microphone": processed_mic_audio
+                            },
+                            "metadata": metadata
+                        },
+                        "transcription": {
+                            "status": "completed",
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "transcript_paths": {
+                                "microphone": str(mic_transcript),
+                                "system": str(sys_transcript) if sys_transcript else None,
+                                "merged": str(merged_transcript)
+                            },
+                            "speaker_labels": {
+                                "microphone": mic_label,
+                                "system": sys_label
+                            }
+                        }
+                    }
+                }
+            }
+
+            # Emit enriched event
             if self.event_bus:
-                await self.event_bus.publish({
-                    "event": "transcription.completed",
-                    "recording_id": recording_id,
-                    "output_path": str(merged_transcript),
-                    "input_paths": {
-                        "microphone": processed_mic_audio,
-                        "system": original_sys_audio
-                    },
-                    "transcript_paths": {
-                        "microphone": str(mic_transcript),
-                        "system": str(sys_transcript) if sys_transcript else None,
-                        "merged": str(merged_transcript)
-                    },
-                    "event_id": f"{recording_id}_transcription_completed",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "plugin_id": self.name,
-                    "metadata": metadata
-                })
+                await self.event_bus.publish(enriched_event)
 
         except Exception as e:
             logger.error(
@@ -534,6 +564,9 @@ class AudioTranscriptionPlugin(PluginBase):
         original_event: dict,
     ) -> None:
         """Merge multiple transcript files ordered by timestamp"""
+        # Update output path to .md
+        output_path = str(Path(output_path).with_suffix(".md"))
+        
         # Create output directory if it doesn't exist
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -546,7 +579,8 @@ class AudioTranscriptionPlugin(PluginBase):
                         try:
                             # Parse timestamp and text
                             time_part = line[line.find("[")+1:line.find("]")]
-                            start_time = float(time_part.split("->")[0].strip()[:-1])  # Remove 's' suffix
+                            start_time = float(time_part.split("->")[0].strip().split(":")[0]) * 60 + \
+                                       float(time_part.split("->")[0].strip().split(":")[1])
                             text = line[line.find("]")+1:].strip()
                             segments.append((start_time, label, text))
                         except (ValueError, IndexError) as e:
@@ -592,24 +626,73 @@ class AudioTranscriptionPlugin(PluginBase):
                 seconds = start_time % 60
                 f.write(f"[{minutes:02d}:{seconds:05.2f}] {label}: {text}\n")
 
-    async def _process_audio(self, audio_path: str) -> Path:
+    async def _process_audio(self, audio_path: str, speaker_label: str | None = None) -> Path:
         """Process audio file and return transcript path"""
         # Create output paths
         output_base = self._output_dir / Path(audio_path).stem
-        transcript_file = output_base.with_suffix(".txt")
+        transcript_file = output_base.with_suffix(".md")
         
         # Process audio file here...
         if self._model is None:
             self._init_model()
             
-        # Transcribe the audio
-        segments, _ = self._model.transcribe(audio_path)
+        # Get audio duration and detect silence at start
+        audio_data, sample_rate = sf.read(audio_path)
+        duration = len(audio_data) / sample_rate
+        
+        # Detect silence threshold
+        rms = np.sqrt(np.mean(audio_data**2))
+        silence_threshold = rms * 0.1  # 10% of RMS as threshold
+        
+        # Find first non-silent segment
+        non_silent = np.where(np.abs(audio_data) > silence_threshold)[0]
+        start_offset = non_silent[0] / sample_rate if len(non_silent) > 0 else 0
+        
+        logger.debug(
+            "Audio analysis",
+            extra={
+                "plugin": self.name,
+                "audio_path": audio_path,
+                "duration": duration,
+                "start_offset": start_offset,
+                "sample_rate": sample_rate,
+                "rms": rms,
+                "silence_threshold": silence_threshold
+            }
+        )
+            
+        # Transcribe the audio with accurate timestamps
+        segments, _ = self._model.transcribe(
+            audio_path,
+            condition_on_previous_text=False,  # Don't condition on previous text for accurate timestamps
+            word_timestamps=True,  # Get accurate word-level timestamps
+            vad_filter=True,  # Use voice activity detection
+            vad_parameters=dict(
+                min_silence_duration_ms=500,  # Minimum silence duration to split segments
+                speech_pad_ms=100  # Padding around speech segments
+            )
+        )
         
         # Write transcript to file
         transcript_file.parent.mkdir(parents=True, exist_ok=True)
         with open(transcript_file, "w") as f:
+            # Add markdown header
+            f.write("# Audio Transcript\n\n")
+            if speaker_label:
+                f.write(f"Speaker: {speaker_label}\n\n")
+            f.write("## Segments\n\n")
+            
+            # Write segments with adjusted timestamps
             for segment in segments:
-                f.write(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}\n")
+                # Format timestamp as MM:SS.ss
+                start_minutes = int(segment.start // 60)
+                start_seconds = segment.start % 60
+                end_minutes = int(segment.end // 60)
+                end_seconds = segment.end % 60
+                
+                timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
+                speaker = f"{speaker_label}: " if speaker_label else ""
+                f.write(f"{timestamp} {speaker}{segment.text.strip()}\n")
         
         return transcript_file
 
