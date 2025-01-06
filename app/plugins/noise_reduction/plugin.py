@@ -812,92 +812,19 @@ class NoiseReductionPlugin(PluginBase):
             if not self._db:
                 self._db = await get_db_async()
 
-            # Check if we've already processed this recording
-            try:
-                logger.debug(
-                    "Checking recording status in database",
-                    extra={
-                        "req_id": event_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "query": "SELECT pt.status FROM recordings r LEFT JOIN plugin_tasks pt ON r.recording_id = pt.recording_id AND pt.plugin_name = ?"
-                    }
-                )
+            # Insert or update task status - always allow reprocessing
+            await self._db.execute(
+                """
+                INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
+                VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(recording_id, plugin_name) 
+                DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+                """,
+                (recording_id, self.name)
+            )
 
-                row = await self._db.fetch_one(
-                    """
-                    SELECT pt.status 
-                    FROM recordings r
-                    LEFT JOIN plugin_tasks pt ON r.recording_id = pt.recording_id 
-                        AND pt.plugin_name = ?
-                    WHERE r.recording_id = ?
-                    """,
-                    (self.name, recording_id)
-                )
-
-                logger.debug(
-                    "Database query results",
-                    extra={
-                        "req_id": event_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "row_count": 1 if row else 0,
-                        "status": row['status'] if row and 'status' in row else None
-                    }
-                )
-
-                if row and row['status'] in ('completed', 'processing'):
-                    logger.warning(
-                        "Recording already processed or being processed - skipping",
-                        extra={
-                            "req_id": event_id,
-                            "plugin_name": self.name,
-                            "recording_id": recording_id,
-                            "status": row['status']
-                        }
-                    )
-                    return
-
-                # Insert or update task status
-                await self._db.execute(
-                    """
-                    INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
-                    VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ON CONFLICT(recording_id, plugin_name) 
-                    DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (recording_id, self.name)
-                )
-
-                # Process the audio files
-                await self._process_audio_files(recording_id, sys_path, mic_path)
-
-            except Exception as e:
-                logger.error(
-                    "Database operation failed",
-                    extra={
-                        "req_id": event_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "error": str(e)
-                    },
-                    exc_info=True
-                )
-                # Try to reinitialize database connection
-                try:
-                    self._db = await get_db_async()
-                except Exception as db_error:
-                    logger.error(
-                        "Failed to reinitialize database connection",
-                        extra={
-                            "req_id": event_id,
-                            "plugin_name": self.name,
-                            "recording_id": recording_id,
-                            "error": str(db_error)
-                        },
-                        exc_info=True
-                    )
-                return
+            # Process the audio files
+            await self._process_audio_files(recording_id, sys_path, mic_path)
 
         except Exception as e:
             logger.error(
