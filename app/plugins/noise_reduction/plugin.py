@@ -243,176 +243,141 @@ class NoiseReductionPlugin(PluginBase):
         mic_file: str,
         noise_file: str,
         output_file: str,
-        noise_reduce_factor: float = 1.0,
-        wiener_alpha: float = 2.5,
-        highpass_cutoff: float = 95,
-        spectral_floor: float = 0.04,
-        smoothing_factor: int = 2,
+        noise_reduce_factor: float = 0.3,
+        wiener_alpha: float = 1.8,
+        highpass_cutoff: float = 80,
+        spectral_floor: float = 0.15,
+        smoothing_factor: int = 2
     ) -> None:
         """
         Enhanced noise reduction using spectral subtraction and Wiener filtering.
-
+        
         Args:
             mic_file: Path to microphone recording WAV file
             noise_file: Path to system recording WAV file (noise profile)
             output_file: Path to save cleaned audio
-            noise_reduce_factor: Amount of noise reduction
-                (0 to 1, default 1.0 for maximum)
-            wiener_alpha: Wiener filter strength (default 2.5 for aggressive filtering)
-            highpass_cutoff: Highpass filter cutoff in Hz (default 95Hz)
-            spectral_floor: Minimum spectral magnitude (default 0.04)
-            smoothing_factor: Noise profile smoothing (default 2)
+            noise_reduce_factor: Amount of noise reduction (0 to 1)
+            wiener_alpha: Wiener filter strength
+            highpass_cutoff: Highpass filter cutoff in Hz
+            spectral_floor: Minimum spectral magnitude
+            smoothing_factor: Noise profile smoothing
         """
-        import warnings
-
-        from scipy.io.wavfile import WavFileWarning
-
+        logger.info(
+            "Starting enhanced noise reduction",
+            extra={
+                "plugin": self.name,
+                "mic_file": mic_file,
+                "noise_file": noise_file,
+                "output_file": output_file,
+                "settings": {
+                    "noise_reduce_factor": noise_reduce_factor,
+                    "wiener_alpha": wiener_alpha,
+                    "highpass_cutoff": highpass_cutoff,
+                    "spectral_floor": spectral_floor,
+                    "smoothing_factor": smoothing_factor
+                }
+            }
+        )
+        
+        # Validate input files
+        if not os.path.exists(mic_file):
+            raise FileNotFoundError(f"Microphone audio file not found: {mic_file}")
+        if not os.path.exists(noise_file):
+            raise FileNotFoundError(f"System audio file not found: {noise_file}")
+            
+        # Create output directory
+        output_dir = os.path.dirname(os.path.abspath(output_file))
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Read audio files
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", wavfile.WavFileWarning)
+            mic_rate, mic_data = wavfile.read(mic_file)
+            noise_rate, noise_data = wavfile.read(noise_file)
+        
+        # Convert to mono if stereo
+        if len(mic_data.shape) > 1:
+            mic_data = np.mean(mic_data, axis=1)
+        if len(noise_data.shape) > 1:
+            noise_data = np.mean(noise_data, axis=1)
+            
+        # Convert to float32 and normalize
+        mic_data = mic_data.astype(np.float32)
+        noise_data = noise_data.astype(np.float32)
+        
+        mic_max = np.max(np.abs(mic_data))
+        noise_max = np.max(np.abs(noise_data))
+        
+        if mic_max == 0 or noise_max == 0:
+            raise ValueError("Input audio is silent")
+            
+        mic_data = mic_data / mic_max
+        noise_data = noise_data / noise_max
+        
+        # Apply highpass filter if configured
+        if highpass_cutoff > 0:
+            b, a = butter(5, highpass_cutoff / (mic_rate/2), btype='high')
+            mic_data = filtfilt(b, a, mic_data)
+            noise_data = filtfilt(b, a, noise_data)
+        
+        # STFT parameters optimized for speech
+        nperseg = 2048  # Longer window for better frequency resolution
+        noverlap = nperseg // 2  # 50% overlap
+        
+        # Compute STFTs
+        _, _, mic_spec = signal.stft(mic_data, fs=mic_rate, nperseg=nperseg, noverlap=noverlap)
+        
+        # Compute noise profile with speech emphasis
+        noise_profile = self.compute_noise_profile(
+            noise_data,
+            fs=noise_rate,
+            nperseg=nperseg,
+            noverlap=noverlap,
+            smooth_factor=smoothing_factor
+        )
+        
+        # Apply Wiener filter with speech preservation
+        if wiener_alpha > 0:
+            cleaned_spec = self.wiener_filter(
+                mic_spec,
+                noise_profile * noise_reduce_factor,
+                alpha=wiener_alpha
+            )
+        else:
+            # Simple spectral subtraction with floor
+            mic_mag = np.abs(mic_spec)
+            reduction = noise_profile * noise_reduce_factor
+            cleaned_mag = np.maximum(mic_mag - reduction, mic_mag * spectral_floor)
+            cleaned_spec = cleaned_mag * np.exp(1j * np.angle(mic_spec))
+        
+        # Inverse STFT
+        _, cleaned_audio = signal.istft(cleaned_spec, fs=mic_rate, nperseg=nperseg, noverlap=noverlap)
+        
+        # Normalize output
+        cleaned_max = np.max(np.abs(cleaned_audio))
+        if cleaned_max > 0:
+            cleaned_audio = cleaned_audio / cleaned_max
+            
+        # Convert to int16
+        cleaned_audio = np.clip(cleaned_audio * 32767, -32768, 32767).astype(np.int16)
+        
+        # Save output
         try:
-            # Validate input files exist
-            if not os.path.exists(mic_file):
-                raise FileNotFoundError(f"Microphone file not found: {mic_file}")
-            if not os.path.exists(noise_file):
-                raise FileNotFoundError(f"System audio file not found: {noise_file}")
-
-            # Create output directory
-            output_dir = os.path.dirname(output_file)
-            os.makedirs(output_dir, exist_ok=True)
-
-            # Verify output directory is writable
-            if not os.access(output_dir, os.W_OK):
-                raise PermissionError(f"Output directory not writable: {output_dir}")
-
+            wavfile.write(output_file, mic_rate, cleaned_audio)
+            
+            if not os.path.exists(output_file):
+                raise IOError("Failed to write output file")
+                
             logger.info(
-                "Starting noise reduction",
+                "Successfully saved cleaned audio",
                 extra={
                     "plugin": self.name,
-                    "mic_file": mic_file,
-                    "noise_file": noise_file,
                     "output_file": output_file,
-                    "mic_size": os.path.getsize(mic_file),
-                    "noise_size": os.path.getsize(noise_file),
-                },
-            )
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=WavFileWarning)
-                logger.debug("Reading mic file")
-                mic_rate, mic_data = wavfile.read(mic_file)
-                logger.debug("Reading noise file")
-                noise_rate, noise_data = wavfile.read(noise_file)
-
-            logger.debug(
-                "Audio file details",
-                extra={
-                    "mic_rate": int(mic_rate),
-                    "mic_shape": self._format_shape(mic_data.shape),
-                    "mic_dtype": self._format_dtype(mic_data.dtype),
-                    "noise_rate": int(noise_rate),
-                    "noise_shape": self._format_shape(noise_data.shape),
-                    "noise_dtype": self._format_dtype(noise_data.dtype),
-                },
-            )
-
-            # Preprocess audio data
-            mic_data, noise_data = self._preprocess_audio(
-                mic_data, noise_data, highpass_cutoff, mic_rate, noise_rate
-            )
-
-            # Simple STFT parameters - adjusted for better frequency resolution
-            nperseg = 4096  # Increased for better frequency resolution
-            noverlap = 3072  # 75% overlap for better time resolution
-
-            logger.debug("Computing STFT")
-            # Compute STFT of microphone signal
-            _, _, mic_spec = signal.stft(
-                mic_data,
-                fs=mic_rate,
-                nperseg=nperseg,
-                noverlap=noverlap,
-                window="hann",
-            )
-
-            logger.debug("Computing noise profile")
-            # Compute noise profile with specified smoothing
-            noise_profile = self.compute_noise_profile(
-                noise_data,
-                noise_rate,
-                nperseg=nperseg,
-                noverlap=noverlap,
-                smooth_factor=smoothing_factor,
-            )
-
-            logger.debug("Applying noise reduction")
-            # Enhanced spectral subtraction with Wiener filtering
-            if wiener_alpha > 0:
-                # Apply Wiener filter with specified alpha
-                cleaned_spec = self.wiener_filter(
-                    mic_spec, noise_profile[:, np.newaxis] ** 2, alpha=wiener_alpha
-                )
-            else:
-                # Simple spectral subtraction
-                mic_mag = np.abs(mic_spec)
-                reduction = noise_profile[:, np.newaxis] * noise_reduce_factor
-                cleaned_mag = np.maximum(mic_mag - reduction, mic_mag * spectral_floor)
-                cleaned_spec = cleaned_mag * np.exp(1j * np.angle(mic_spec))
-
-            logger.debug("Computing inverse STFT")
-            # Inverse STFT
-            _, cleaned_data = signal.istft(
-                cleaned_spec,
-                fs=mic_rate,
-                nperseg=nperseg,
-                noverlap=noverlap,
-                window="hann",
-            )
-
-            logger.debug("Converting to int16")
-            # Convert back to int16 for saving
-            cleaned_data = np.clip(cleaned_data * 32767, -32768, 32767).astype(np.int16)
-
-            logger.debug(f"Writing output file to {output_file}")
-            try:
-                wavfile.write(output_file, mic_rate, cleaned_data)
-                logger.debug(
-                    f"Successfully wrote file, size: {os.path.getsize(output_file)}"
-                )
-            except Exception as write_error:
-                logger.error(
-                    "Failed to write output file",
-                    extra={
-                        "error": str(write_error),
-                        "output_file": output_file,
-                        "output_dir": output_dir,
-                        "output_dir_exists": os.path.exists(output_dir),
-                        "output_dir_writable": os.access(output_dir, os.W_OK),
-                    },
-                )
-                raise
-
-            logger.info(
-                "Successfully processed audio file",
-                extra={
-                    "plugin_name": self.config.name,
-                    "input_file": mic_file,
-                    "output_file": output_file,
-                    "output_size": os.path.getsize(output_file),
-                },
+                    "output_size": os.path.getsize(output_file)
+                }
             )
         except Exception as e:
-            logger.error(
-                "Error in reduce_noise",
-                extra={
-                    "plugin_name": self.config.name,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "traceback": traceback.format_exc(),
-                    "mic_file": mic_file,
-                    "noise_file": noise_file,
-                    "output_file": output_file,
-                    "cwd": os.getcwd(),
-                },
-            )
-            raise
+            raise IOError(f"Failed to save cleaned audio: {str(e)}")
 
     def _format_dtype(self, dtype: np.dtype) -> str:
         """Convert numpy dtype to string representation."""
@@ -425,68 +390,57 @@ class NoiseReductionPlugin(PluginBase):
     def compute_noise_profile(
         self,
         noise_data: np.ndarray,
-        sample_rate: int,
-        nperseg: int = 4096,
-        noverlap: int = 3072,
-        smooth_factor: int = 2,
+        fs: float,
+        nperseg: int = 2048,
+        noverlap: int = 1024,
+        smooth_factor: int = 2
     ) -> np.ndarray:
-        """
-        Compute noise profile from noise data using STFT.
-
-        Args:
-            noise_data: Noise audio data
-            sample_rate: Sample rate of the audio
-            nperseg: Number of samples per FFT segment
-            noverlap: Number of samples to overlap between segments
-            smooth_factor: Factor for smoothing the noise profile
-
-        Returns:
-            Smoothed noise profile magnitude spectrum
-        """
-        # Compute STFT of noise
-        _, _, noise_spec = signal.stft(
-            noise_data,
-            fs=sample_rate,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            window="hann",
-        )
-
-        # Compute magnitude spectrum
-        noise_mag = np.abs(noise_spec)
-
-        # Average across time
-        noise_profile = np.mean(noise_mag, axis=1)
-
-        # Apply smoothing if requested
-        if smooth_factor > 1:
-            kernel = np.ones(smooth_factor) / smooth_factor
-            noise_profile = np.convolve(noise_profile, kernel, mode="same")
-
-        return noise_profile
+        """Compute and smooth the noise profile with emphasis on speech frequencies."""
+        # Compute STFT
+        f, t, noise_spec = signal.stft(noise_data, fs=fs, nperseg=nperseg, noverlap=noverlap)
+        
+        # Get frequency axis
+        freqs = f
+        
+        # Compute average magnitude spectrum
+        noise_profile = np.mean(np.abs(noise_spec), axis=1)
+        
+        # Apply frequency-dependent weighting
+        # Emphasize frequencies in speech range (300-3000 Hz)
+        speech_mask = np.ones_like(freqs)
+        speech_range = (freqs >= 300) & (freqs <= 3000)
+        speech_mask[speech_range] = 1.2  # Boost speech frequencies
+        
+        noise_profile = noise_profile * speech_mask
+        
+        if smooth_factor > 0:
+            # Smooth the profile
+            window_size = 2 * smooth_factor + 1
+            noise_profile = np.convolve(noise_profile, np.ones(window_size)/window_size, mode='same')
+        
+        return noise_profile.reshape(-1, 1)
 
     def wiener_filter(
-        self, signal_spec: np.ndarray, noise_power: np.ndarray, alpha: float = 2.0
+        self,
+        spec: np.ndarray,
+        noise_power: np.ndarray,
+        alpha: float = 1.8
     ) -> np.ndarray:
-        """
-        Apply Wiener filter to the signal spectrum.
-
-        Args:
-            signal_spec: Complex spectrum of the signal
-            noise_power: Power spectrum of the noise
-            alpha: Wiener filter parameter (larger values = more aggressive filtering)
-
-        Returns:
-            Filtered signal spectrum
-        """
+        """Apply Wiener filter with speech-focused processing."""
         # Compute signal power
-        signal_power = np.abs(signal_spec) ** 2
-
-        # Compute Wiener filter
-        wiener_gain = np.maximum(1 - (alpha * noise_power) / (signal_power + 1e-10), 0)
-
-        # Apply filter
-        return signal_spec * wiener_gain
+        sig_power = np.abs(spec)**2
+        
+        # Compute SNR-dependent Wiener filter
+        snr = sig_power / (noise_power + 1e-10)
+        wiener_gain = np.maximum(1 - alpha / (snr + 1), 0.1)
+        
+        # Apply additional weighting for speech preservation
+        # This helps preserve speech transients
+        power_ratio = sig_power / (np.max(sig_power) + 1e-10)
+        speech_weight = np.minimum(1.0, 2.0 * power_ratio)
+        wiener_gain = wiener_gain * speech_weight
+        
+        return spec * wiener_gain
 
     async def process_recording(self, recording_id: str, event_data: EventData) -> None:
         """Process a recording by applying noise reduction."""
@@ -998,55 +952,57 @@ class NoiseReductionPlugin(PluginBase):
             # Create output directory if it doesn't exist
             os.makedirs(self._output_directory, exist_ok=True)
 
-            processing_tasks = []
-
-            # Process system audio if available
-            if system_audio_path and os.path.exists(system_audio_path):
-                system_output_path = Path(self._output_directory) / f"{recording_id}_system_cleaned.wav"
-                processing_tasks.append(
-                    self._process_audio(recording_id, system_audio_path, str(system_output_path))
+            # Process audio files
+            if system_audio_path and microphone_audio_path and os.path.exists(system_audio_path) and os.path.exists(microphone_audio_path):
+                output_path = Path(self._output_directory) / f"{recording_id}_microphone_cleaned.wav"
+                
+                # Process in thread pool
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    self._executor,
+                    self.reduce_noise,
+                    microphone_audio_path,
+                    system_audio_path,
+                    str(output_path),
+                    self._noise_reduce_factor,
+                    self._wiener_alpha,
+                    self._highpass_cutoff,
+                    self._spectral_floor,
+                    self._smoothing_factor
                 )
 
-            # Process microphone audio if available
-            if microphone_audio_path and os.path.exists(microphone_audio_path):
-                mic_output_path = Path(self._output_directory) / f"{recording_id}_microphone_cleaned.wav"
-                processing_tasks.append(
-                    self._process_audio(recording_id, microphone_audio_path, str(mic_output_path))
-                )
+                # Update task status to completed
+                if self._db:
+                    await self._db.execute(
+                        """
+                        UPDATE plugin_tasks 
+                        SET status = 'completed', updated_at = CURRENT_TIMESTAMP,
+                            output_paths = ?
+                        WHERE recording_id = ? AND plugin_name = ?
+                        """,
+                        (str(output_path), recording_id, self.name)
+                    )
 
-            if not processing_tasks:
-                logger.warning(
-                    "No valid audio files to process",
+                logger.info(
+                    "Audio processing completed successfully",
                     extra={
                         "req_id": self._req_id,
                         "plugin_name": self.name,
-                        "recording_id": recording_id
+                        "recording_id": recording_id,
+                        "output_path": str(output_path)
                     }
                 )
-                return
-
-            # Process audio files concurrently
-            await asyncio.gather(*processing_tasks)
-
-            # Update task status to completed
-            if self._db:
-                await self._db.execute(
-                    """
-                    UPDATE plugin_tasks 
-                    SET status = 'completed', updated_at = CURRENT_TIMESTAMP
-                    WHERE recording_id = ? AND plugin_name = ?
-                    """,
-                    (recording_id, self.name)
+            else:
+                logger.warning(
+                    "Missing audio files",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "system_exists": os.path.exists(system_audio_path) if system_audio_path else False,
+                        "mic_exists": os.path.exists(microphone_audio_path) if microphone_audio_path else False
+                    }
                 )
-
-            logger.info(
-                "Audio processing completed successfully",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id
-                }
-            )
 
         except Exception as e:
             logger.error(
@@ -1065,10 +1021,11 @@ class NoiseReductionPlugin(PluginBase):
                     await self._db.execute(
                         """
                         UPDATE plugin_tasks 
-                        SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+                        SET status = 'failed', updated_at = CURRENT_TIMESTAMP,
+                            error_message = ?
                         WHERE recording_id = ? AND plugin_name = ?
                         """,
-                        (recording_id, self.name)
+                        (str(e), recording_id, self.name)
                     )
                 except Exception as db_error:
                     logger.error(
