@@ -1,9 +1,8 @@
 import os
-import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 import uuid
 from datetime import datetime
 
@@ -18,15 +17,6 @@ from app.models.recording.events import RecordingEvent, EventContext
 EventData = dict[str, Any] | RecordingEvent
 
 logger = get_logger(__name__)
-
-
-class TranscriptLine(TypedDict):
-    """Type for a transcript line"""
-
-    start_time: float
-    end_time: float
-    speaker: str
-    content: str
 
 
 class MeetingNotesPlugin(PluginBase):
@@ -113,61 +103,10 @@ class MeetingNotesPlugin(PluginBase):
             )
             raise
 
-    def _extract_transcript_lines(self, transcript_text: str) -> list[TranscriptLine]:
-        """Extract transcript lines from markdown text"""
-        try:
-            # Find the transcript section
-            if "## Transcript" not in transcript_text:
-                return []
-
-            transcript_section = transcript_text.split("## Transcript")[1].strip()
-            lines: list[TranscriptLine] = []
-
-            # Process each line
-            for raw_line in transcript_section.split("\n"):
-                line = raw_line.strip()
-                if not line:
-                    continue
-
-                # Parse timestamp and speaker
-                match = re.match(
-                    r"\[(\d+\.\d+)s - (\d+\.\d+)s\] \(([^)]+)\) (.+)", line
-                )
-                if match:
-                    start_time = float(match.group(1))
-                    end_time = float(match.group(2))
-                    speaker = match.group(3)
-                    content = match.group(4)
-
-                    lines.append(
-                        TranscriptLine(
-                            start_time=start_time,
-                            end_time=end_time,
-                            speaker=speaker,
-                            content=content,
-                        )
-                    )
-
-            return lines
-
-        except Exception as e:
-            logger.error("Failed to extract transcript lines: %s", str(e), exc_info=True)
-            return []
-
     def _generate_meeting_notes_from_text(self, transcript_text: str) -> str:
         """Generate meeting notes using Ollama LLM"""
-        transcript_lines = self._extract_transcript_lines(transcript_text)
-
-        if not transcript_lines:
-            return "No transcript lines found to generate notes from."
-
-        # Format transcript lines as text
-        lines = [
-            f"[{line['start_time']}s - {line['end_time']}s] "
-            f"({line['speaker']}) {line['content']}"
-            for line in transcript_lines
-        ]
-        formatted_text = "\n".join(lines)
+        if not transcript_text:
+            return "No transcript text found to generate notes from."
 
         # Prepare prompt
         prompt = f"""Please analyze the following transcript and create
@@ -176,9 +115,7 @@ clear and concise.
 
 ---
 
-Meeting Transcript:
-
-{formatted_text}
+{transcript_text}
 
 The meeting notes should include the following sections:
 
@@ -409,14 +346,29 @@ Participants: [Extract speaker names from transcript]
                     }
                 )
 
-                # Emit completion event
-                await self.emit_event(
-                    "meeting_notes.completed",
-                    {
-                        "recording_id": recording_id,
-                        "notes_path": str(output_path)
-                    }
-                )
+                # Emit completion event with proper event structure
+                event_data = {
+                    "event": "meeting_notes.completed",
+                    "recording_id": recording_id,
+                    "output_path": str(output_path),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "plugin_id": self.name,
+                    "data": {
+                        "current_event": {
+                            "meeting_notes": {
+                                "status": "completed",
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "output_path": str(output_path)
+                            }
+                        },
+                        "event_history": {
+                            "transcription": event_data.get("data", {}).get("current_event", {}).get("transcription", {}),
+                            "recording": event_data.get("data", {}).get("current_event", {}).get("recording", {})
+                        }
+                    },
+                    "metadata": event_data.get("metadata", {})
+                }
+                await self.event_bus.publish(event_data)
             else:
                 logger.error(
                     "Failed to generate meeting notes",
