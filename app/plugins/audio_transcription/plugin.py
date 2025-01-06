@@ -11,6 +11,7 @@ from faster_whisper import WhisperModel
 from pathlib import Path
 from typing import Any
 import uuid
+import asyncio
 
 from app.models.database import DatabaseManager
 from app.models.recording.events import RecordingEvent
@@ -85,23 +86,57 @@ class AudioTranscriptionPlugin(PluginBase):
 
     async def _shutdown(self) -> None:
         """Shutdown plugin"""
-        if not self.event_bus:
-            return
+        try:
+            logger.info(
+                "Shutting down audio transcription plugin",
+                extra={
+                    "plugin": self.name
+                }
+            )
 
-        # Unsubscribe from events
-        await self.event_bus.unsubscribe(
-            "noise_reduction.completed", self.handle_noise_reduction_completed
-        )
+            # Unsubscribe from events
+            if self.event_bus:
+                logger.debug("Unsubscribing from events", extra={"plugin": self.name})
+                await self.event_bus.unsubscribe(
+                    "noise_reduction.completed", self.handle_noise_reduction_completed
+                )
 
-        # Shutdown thread pool
-        if self._executor:
-            self._executor.shutdown(wait=True)
+            # Shutdown thread pool
+            if self._executor:
+                logger.debug("Shutting down thread pool", extra={"plugin": self.name})
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self._executor.shutdown, True)
+                self._executor = None
+
+            # Release model resources
+            if self._model:
+                logger.debug("Releasing model resources", extra={"plugin": self.name})
+                del self._model
+                self._model = None
+
+            logger.info(
+                "Audio transcription plugin shutdown complete",
+                extra={
+                    "plugin": self.name
+                }
+            )
+
+        except Exception as e:
+            logger.error(
+                "Error during plugin shutdown",
+                extra={
+                    "plugin": self.name,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
 
     async def handle_noise_reduction_completed(self, event_data: EventData) -> None:
         """Handle noise reduction completed event"""
         try:
+            # Extract event type
             if isinstance(event_data, dict):
-                event_type = event_data.get("event_type")
+                event_type = event_data.get("event")
             else:
                 event_type = getattr(event_data, "event", None)
 
@@ -116,77 +151,88 @@ class AudioTranscriptionPlugin(PluginBase):
                 return
 
             # Extract paths from event data
-            recording_id = event_data.recording_id if hasattr(event_data, 'recording_id') else event_data.get("recording_id")
-            current_event = (event_data.data.get("current_event", {}) 
-                            if hasattr(event_data, 'data') 
-                            else event_data.get("current_event", {}))
-            
-            noise_reduction_data = current_event.get("noise_reduction", {})
-            audio_paths = noise_reduction_data.get("audio_paths", {})
-            processed_paths = audio_paths.get("processed", {})
-            
-            mic_path = processed_paths.get("noise_reduced_microphone")
-            sys_path = processed_paths.get("noise_reduced_system")
+            if isinstance(event_data, dict):
+                recording_id = event_data.get("recording_id")
+                processed_mic_audio = event_data.get("output_path")
+                original_sys_audio = event_data.get("system_audio_path")
+                metadata = event_data.get("metadata", {})
+            else:
+                recording_id = event_data.recording_id
+                processed_mic_audio = getattr(event_data, "output_path", None)
+                original_sys_audio = getattr(event_data, "system_audio_path", None)
+                metadata = getattr(event_data, "metadata", {})
 
-            if not mic_path or not sys_path:
-                raise ValueError("Missing processed audio paths in event data")
+            if not recording_id or not processed_mic_audio:
+                logger.error(
+                    "Missing required data in noise reduction event",
+                    extra={
+                        "plugin": self.name,
+                        "event_data": str(event_data)
+                    }
+                )
+                return
 
-            # Process the audio files
-            transcript_file = await self._process_audio(mic_path, sys_path)
+            # Process both audio files
+            mic_transcript = await self._process_audio(processed_mic_audio)
+            sys_transcript = None
+            if original_sys_audio and os.path.exists(original_sys_audio):
+                sys_transcript = await self._process_audio(original_sys_audio)
+
+            # Create merged transcript
+            output_base = self._output_dir / f"{recording_id}_merged"
+            merged_transcript = output_base.with_suffix(".txt")
+
+            # Get labels from metadata
+            mic_label = metadata.get("microphoneLabel", "Microphone")
+            sys_label = metadata.get("systemLabel", "Meeting Participants")
+
+            # Merge transcripts
+            transcript_files = [str(mic_transcript)]
+            labels = [mic_label]
+            if sys_transcript:
+                transcript_files.append(str(sys_transcript))
+                labels.append(sys_label)
+
+            self.merge_transcripts(
+                transcript_files=transcript_files,
+                output_path=str(merged_transcript),
+                labels=labels,
+                original_event=event_data if isinstance(event_data, dict) else event_data.__dict__
+            )
 
             # Create and emit event
-            event_data = {
-                "recording_id": recording_id,
-                "event_type": "transcription.completed",
-                "current_event": {
-                    "transcription": {
-                        "status": "completed",
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "output_paths": {
-                            "transcript": str(transcript_file)
-                        }
-                    }
-                },
-                "event_history": {
-                    "noise_reduction": current_event,
-                    "recording": (event_data.data.get("event_history", {}).get("recording", {})
-                                if hasattr(event_data, 'data')
-                                else event_data.get("event_history", {}).get("recording", {}))
-                }
-            }
-
-            event = RecordingEvent(
-                recording_timestamp=datetime.utcnow().isoformat(),
-                recording_id=recording_id,
-                event="transcription.completed",
-                data=event_data,
-                context=EventContext(
-                    correlation_id=str(uuid.uuid4()),
-                    source_plugin=self.name
-                )
-            )
-            await self.event_bus.publish(event)
-            
-            logger.info(
-                "Emitted transcription completed event",
-                extra={
-                    "plugin": self.name,
+            if self.event_bus:
+                await self.event_bus.publish({
+                    "event": "transcription.completed",
                     "recording_id": recording_id,
-                    "transcript_file": str(transcript_file)
-                }
-            )
+                    "output_path": str(merged_transcript),
+                    "input_paths": {
+                        "microphone": processed_mic_audio,
+                        "system": original_sys_audio
+                    },
+                    "transcript_paths": {
+                        "microphone": str(mic_transcript),
+                        "system": str(sys_transcript) if sys_transcript else None,
+                        "merged": str(merged_transcript)
+                    },
+                    "event_id": f"{recording_id}_transcription_completed",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "plugin_id": self.name,
+                    "metadata": {
+                        "microphone_label": mic_label,
+                        "system_label": sys_label
+                    }
+                })
 
         except Exception as e:
             logger.error(
-                "Failed to handle noise reduction completed event",
+                "Error handling noise reduction completed event",
                 extra={
                     "plugin": self.name,
-                    "error": str(e),
-                    "event_data": event_data
+                    "error": str(e)
                 },
                 exc_info=True
             )
-            raise
 
     async def _emit_transcription_event(
         self,
@@ -360,52 +406,76 @@ class AudioTranscriptionPlugin(PluginBase):
         labels: list[str],
         original_event: dict,
     ) -> None:
-        """Merge multiple transcript files"""
+        """Merge multiple transcript files ordered by timestamp"""
         # Create output directory if it doesn't exist
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        # Read all transcripts and parse timestamps
+        segments = []
+        for transcript_file, label in zip(transcript_files, labels, strict=False):
+            with open(transcript_file) as tf:
+                for line in tf:
+                    if line.strip() and "[" in line and "]" in line:
+                        try:
+                            # Parse timestamp and text
+                            time_part = line[line.find("[")+1:line.find("]")]
+                            start_time = float(time_part.split("->")[0].strip()[:-1])  # Remove 's' suffix
+                            text = line[line.find("]")+1:].strip()
+                            segments.append((start_time, label, text))
+                        except (ValueError, IndexError) as e:
+                            logger.warning(
+                                f"Failed to parse line in transcript: {line}",
+                                extra={
+                                    "plugin": self.name,
+                                    "error": str(e),
+                                    "line": line
+                                }
+                            )
+
+        # Sort segments by timestamp
+        segments.sort(key=lambda x: x[0])
 
         # Write merged transcript to file
         with open(output_path, "w") as f:
             # Add metadata header
             f.write("# Merged Transcript\n\n")
             f.write("## Metadata\n")
-            f.write(
-                f"- Recording ID: {original_event.get('recording_id', 'Unknown')}\n"
-            )
-            f.write(
-                f"- Timestamp: {original_event.get('recording_timestamp', 'Unknown')}\n"
-            )
-            f.write(f"- Meeting ID: {original_event.get('meeting_id', 'Unknown')}\n")
-            f.write(f"- User ID: {original_event.get('user_id', 'Unknown')}\n\n")
-
-            # Add transcripts
-            f.write("## Transcripts\n\n")
-            for transcript_file, label in zip(transcript_files, labels, strict=False):
-                f.write(f"### {label}'s Transcript\n\n")
-                with open(transcript_file) as tf:
-                    f.write(tf.read())
-                f.write("\n\n")
-
-            # Add any additional metadata from original event
-            additional_metadata = {
-                k: v
-                for k, v in original_event.items()
-                if k
-                not in ["recording_id", "recording_timestamp", "meeting_id", "user_id"]
-            }
-            if additional_metadata:
-                f.write("## Additional Metadata\n")
-                for key, value in additional_metadata.items():
-                    if isinstance(value, str | int | float | bool):
+            f.write(f"- Recording ID: {original_event.get('recording_id', 'Unknown')}\n")
+            f.write(f"- Timestamp: {original_event.get('timestamp', datetime.utcnow().isoformat())}\n")
+            
+            # Add any additional metadata
+            metadata = original_event.get("metadata", {})
+            if metadata:
+                for key, value in metadata.items():
+                    if isinstance(value, (str, int, float, bool)):
                         f.write(f"- {key}: {value}\n")
+            f.write("\n")
 
-    async def _process_audio(self, mic_path: str, sys_path: str) -> Path:
-        """Process audio files and return transcript path"""
+            # Write chronologically ordered segments
+            f.write("## Transcript\n\n")
+            for start_time, label, text in segments:
+                minutes = int(start_time // 60)
+                seconds = start_time % 60
+                f.write(f"[{minutes:02d}:{seconds:05.2f}] {label}: {text}\n")
+
+    async def _process_audio(self, audio_path: str) -> Path:
+        """Process audio file and return transcript path"""
         # Create output paths
-        output_base = self._output_dir / Path(mic_path).stem
+        output_base = self._output_dir / Path(audio_path).stem
         transcript_file = output_base.with_suffix(".txt")
         
-        # Process audio files here...
+        # Process audio file here...
+        if self._model is None:
+            self._init_model()
+            
+        # Transcribe the audio
+        segments, _ = self._model.transcribe(audio_path)
+        
+        # Write transcript to file
+        transcript_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(transcript_file, "w") as f:
+            for segment in segments:
+                f.write(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}\n")
         
         return transcript_file
 
