@@ -385,11 +385,17 @@ Participants: [Extract speaker names from transcript]
                 )
                 return
 
+            # Convert transcript path to Path object
+            transcript_path = Path(transcript_path)
+
+            # Get recording ID
+            recording_id = event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None)
+
             # Generate meeting notes
             output_path = await self._generate_meeting_notes(
                 transcript_path,
                 event_id,
-                event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None)
+                recording_id
             )
 
             if output_path:
@@ -399,7 +405,7 @@ Participants: [Extract speaker names from transcript]
                         "req_id": event_id,
                         "plugin_name": self.name,
                         "output_path": str(output_path),
-                        "recording_id": event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None)
+                        "recording_id": recording_id
                     }
                 )
 
@@ -407,7 +413,7 @@ Participants: [Extract speaker names from transcript]
                 await self.emit_event(
                     "meeting_notes.completed",
                     {
-                        "recording_id": event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None),
+                        "recording_id": recording_id,
                         "notes_path": str(output_path)
                     }
                 )
@@ -472,7 +478,24 @@ Participants: [Extract speaker names from transcript]
 
     def _get_output_path(self, transcript_path: Path) -> Path:
         """Get output path for meeting notes file."""
-        return self.output_dir / f"{transcript_path.stem}_notes.md"
+        logger.debug(
+            "Generating output path",
+            extra={
+                "plugin_name": self.name,
+                "transcript_path": str(transcript_path),
+                "transcript_path_type": type(transcript_path).__name__,
+                "output_dir": str(self.output_dir)
+            }
+        )
+        output_path = self.output_dir / f"{transcript_path.stem}_notes.md"
+        logger.debug(
+            "Generated output path",
+            extra={
+                "plugin_name": self.name,
+                "output_path": str(output_path)
+            }
+        )
+        return output_path
 
     async def _generate_meeting_notes(
         self,
