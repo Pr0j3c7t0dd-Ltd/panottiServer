@@ -446,13 +446,21 @@ Participants: [Extract speaker names from transcript]
         
         return None
 
-    def _read_transcript(self, transcript_path: Path) -> str | None:
-        """Read transcript from file."""
+    def _read_transcript(self, transcript_path: str | Path) -> str:
+        """Read transcript file contents"""
         try:
-            return transcript_path.read_text()
+            # Convert string path to Path object if needed
+            path = Path(transcript_path) if isinstance(transcript_path, str) else transcript_path
+            return path.read_text()
         except Exception as e:
-            logger.error("Failed to read transcript: %s", str(e), exc_info=True)
-            return None
+            logger.error(
+                "Failed to read transcript",
+                extra={
+                    "plugin_name": self.name,
+                    "transcript_path": str(transcript_path)
+                }
+            )
+            raise
 
     async def _generate_notes_with_llm(self, transcript: str, event_id: str) -> str | None:
         """Generate notes using LLM from transcript text."""

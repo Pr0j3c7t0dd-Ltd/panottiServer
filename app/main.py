@@ -114,83 +114,45 @@ async def startup() -> None:
 
 
 @app.on_event("shutdown")
-async def shutdown() -> None:
-    """Clean up application components."""
-    global event_bus, plugin_manager
-    
-    logger.info("Starting application shutdown")
-    
+async def shutdown_event():
+    """Handle application shutdown."""
     try:
-        # First stop accepting new requests
-        logger.info("Stopping event bus to prevent new events")
-        if event_bus:
-            await event_bus.stop()
-            
-        # Then shutdown plugins
-        if plugin_manager:
-            logger.info("Shutting down plugins")
-            try:
-                await asyncio.shield(
-                    asyncio.wait_for(plugin_manager.shutdown_plugins(), timeout=5.0)
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Plugin shutdown timed out after 5 seconds")
-            except asyncio.CancelledError:
-                logger.warning("Plugin shutdown cancelled")
-            plugin_manager = None
-
-        # Finally shutdown event bus completely
-        if event_bus:
-            logger.info("Shutting down event bus")
-            try:
-                await asyncio.shield(
-                    asyncio.wait_for(event_bus.shutdown(), timeout=5.0)
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Event bus shutdown timed out after 5 seconds")
-            except asyncio.CancelledError:
-                logger.warning("Event bus shutdown cancelled")
-            event_bus = None
-            
-        # Close database connections last
-        logger.info("Closing database connections")
+        logger.info("Starting application shutdown")
+        
+        # Get plugin manager instance
+        plugin_manager = await PluginManager.get_instance()
+        
+        # Shutdown plugins
         try:
-            db = await DatabaseManager.get_instance()
-            await asyncio.shield(
-                asyncio.wait_for(db.close(), timeout=5.0)
-            )
-        except asyncio.TimeoutError:
-            logger.warning("Database shutdown timed out after 5 seconds")
-        except asyncio.CancelledError:
-            logger.warning("Database shutdown cancelled")
+            await plugin_manager.shutdown()
         except Exception as e:
-            logger.error(f"Error closing database: {str(e)}")
+            logger.error(f"Error shutting down plugins: {str(e)}", exc_info=True)
+        
+        # Close database connections
+        try:
+            db = await DatabaseManager.get_instance() 
+            await db.close()
+        except Exception as e:
+            logger.error(f"Error closing database: {str(e)}", exc_info=True)
+            
+        logger.info("Shutdown complete")
         
     except asyncio.CancelledError:
-        logger.info("Shutdown cancelled - cleaning up remaining resources")
+        # Handle cancellation gracefully
+        logger.info("Shutdown cancelled - completing cleanup")
+        # Still try to cleanup critical resources
         try:
-            # Ensure critical cleanup still happens
-            if event_bus:
-                await event_bus.stop()
-            if plugin_manager:
-                await plugin_manager.shutdown_plugins()
+            plugin_manager = await PluginManager.get_instance()
+            await plugin_manager.shutdown()
             db = await DatabaseManager.get_instance()
             await db.close()
         except Exception as e:
-            logger.error(f"Error during emergency cleanup: {str(e)}")
-        finally:
-            logger.info("Emergency cleanup complete")
+            logger.error(f"Error during cancelled shutdown: {str(e)}", exc_info=True)
+        logger.info("Cancelled shutdown complete")
         
     except Exception as e:
-        logger.error(
-            "Error during shutdown",
-            extra={
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            }
-        )
-    finally:
-        logger.info("Shutdown complete")
+        logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
+        raise
 
 
 @app.middleware("http")

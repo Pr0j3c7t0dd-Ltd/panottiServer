@@ -785,20 +785,23 @@ class AudioTranscriptionPlugin(PluginBase):
             model_dir = project_root / "models" / "whisper"
             model_dir.mkdir(parents=True, exist_ok=True)
             
-            # Initialize the model
+            # Initialize the model with offline settings
             self._model = WhisperModel(
-                model_size_or_path=str(model_dir),
+                model_size_or_path=model_name,
                 device="cpu",
                 device_index=0,
-                compute_type="default"
+                compute_type="default",
+                download_root=str(model_dir),
+                local_files_only=True  # Ensure offline mode
             )
 
             logger.info(
-                "Faster-Whisper model initialized",
+                "Faster-Whisper model initialized in offline mode",
                 extra={
                     "plugin": self.name,
                     "model_name": model_name,
-                    "model_dir": str(model_dir)
+                    "model_dir": str(model_dir),
+                    "offline_mode": True
                 }
             )
 
