@@ -722,6 +722,14 @@ class AudioTranscriptionPlugin(PluginBase):
                     current_text = []
                     
                     for word in segment.words:
+                        # Check if this word is a repeat of the last few words
+                        last_n_words = ' '.join(current_text[-3:]) if len(current_text) >= 3 else ''
+                        current_word = word.word.strip()
+                        
+                        # Skip if this word would create a repetition
+                        if last_n_words and current_word in last_n_words:
+                            continue
+                            
                         if word.start - chunk_start > 5.0 and current_text:
                             # Write current chunk
                             chunk_end = word.start
