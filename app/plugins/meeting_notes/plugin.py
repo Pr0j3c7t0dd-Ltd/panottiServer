@@ -189,6 +189,14 @@ IMPORTANT:
 2. For attendees, use ONLY the email addresses or names from event.attendees in the METADATA JSON, not the speakers list
 3. Don't include any other information in the notes, just the meeting notes"""
 
+        logger.debug(
+            "Generated prompt for meeting notes",
+            extra={
+                "plugin_name": self.name,
+                "prompt": prompt
+            }
+        )
+
         # Call Ollama API
         try:
             response = requests.post(
