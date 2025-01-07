@@ -98,107 +98,145 @@ class DesktopNotifierPlugin(PluginBase):
     async def handle_meeting_notes_completed(self, event_data: EventData) -> None:
         """Handle meeting notes completed event"""
         try:
+            # Log the raw event data first
             logger.debug(
-                "Received meeting notes completed event",
+                "Raw meeting notes completed event received",
                 extra={
                     "plugin": self.name,
+                    "event_type": type(event_data).__name__,
                     "event_data": str(event_data),
-                    "event_data_type": type(event_data).__name__,
-                    "has_recording_id": "recording_id" in event_data.get("data", {}) if isinstance(event_data, dict) else hasattr(event_data, "recording_id"),
-                    "has_output_path": "output_path" in event_data.get("data", {}) if isinstance(event_data, dict) else hasattr(event_data, "output_path"),
-                    "has_notes_path": "notes_path" in event_data.get("data", {}) if isinstance(event_data, dict) else hasattr(event_data, "notes_path")
+                    "event_keys": list(event_data.keys()) if isinstance(event_data, dict) else None
                 }
             )
 
-            if isinstance(event_data, dict):
-                data = event_data.get("data", {})
-                recording_id = data.get("recording_id", "unknown")
-                output_path = data.get("output_path") or data.get("notes_path")
-
+            # Handle both Event and dict types
+            if isinstance(event_data, Event):
+                data = event_data.data
                 logger.debug(
-                    "Extracted event data",
+                    "Processing Event object",
                     extra={
                         "plugin": self.name,
-                        "recording_id": recording_id,
-                        "output_path": output_path,
+                        "event_name": event_data.name,
+                        "event_id": event_data.event_id,
+                        "data_keys": list(data.keys()) if data else None
+                    }
+                )
+            elif isinstance(event_data, dict):
+                data = event_data.get("data", {})
+                logger.debug(
+                    "Processing dict event",
+                    extra={
+                        "plugin": self.name,
+                        "event_name": event_data.get("name"),
                         "data_keys": list(data.keys())
                     }
                 )
+            else:
+                logger.error(
+                    "Unexpected event data type",
+                    extra={
+                        "plugin": self.name,
+                        "type": type(event_data).__name__
+                    }
+                )
+                return
 
-                if output_path:
-                    # Send notification
-                    await self._send_notification(recording_id, output_path)
+            recording_id = data.get("recording_id", "unknown")
+            output_path = data.get("output_path") or data.get("notes_path")
 
-                    # Auto-open if configured
-                    config_dict = self.config.config or {}
-                    auto_open = config_dict.get("auto_open_notes", False)
-                    logger.debug(
-                        "Auto-open setting",
-                        extra={
-                            "plugin": self.name,
-                            "auto_open": auto_open,
-                            "config": str(config_dict)
-                        }
-                    )
-                    
-                    if auto_open:
-                        await self._open_notes_file(output_path)
+            logger.debug(
+                "Extracted event data",
+                extra={
+                    "plugin": self.name,
+                    "recording_id": recording_id,
+                    "output_path": output_path,
+                    "data_keys": list(data.keys()),
+                    "current_event": data.get("current_event", {}),
+                    "event_history": data.get("event_history", {})
+                }
+            )
 
-                    # Record notification in database
-                    with self.db.get_connection() as conn:
-                        conn.execute(
-                            """
-                            INSERT INTO notifications 
-                            (recording_id, notification_type) 
-                            VALUES (?, ?)
-                            """,
-                            (recording_id, "meeting_notes_complete")
-                        )
-                        conn.commit()
+            if not output_path:
+                logger.warning(
+                    "No output path in event data",
+                    extra={
+                        "plugin": self.name,
+                        "event_data": str(data)
+                    }
+                )
+                return
 
-                    # Emit completion event with proper event structure
-                    completion_event = Event(
-                        name="desktop_notification.completed",
-                        data={
-                            "recording_id": recording_id,
-                            "output_path": output_path,
-                            "current_event": {
-                                "desktop_notification": {
-                                    "status": "completed",
-                                    "timestamp": datetime.utcnow().isoformat(),
-                                    "notification_type": "terminal-notifier",
-                                    "settings": {
-                                        "auto_open_notes": auto_open
-                                    }
-                                }
-                            },
-                            "event_history": {
-                                "meeting_notes": event_data.get("data", {}).get("current_event", {}).get("meeting_notes", {}),
-                                "transcription": event_data.get("data", {}).get("event_history", {}).get("transcription", {}),
-                                "recording": event_data.get("data", {}).get("event_history", {}).get("recording", {})
+            # Send notification
+            await self._send_notification(recording_id, output_path)
+
+            # Auto-open if configured
+            config_dict = self.config.config or {}
+            auto_open = config_dict.get("auto_open_notes", False)
+            logger.debug(
+                "Auto-open setting",
+                extra={
+                    "plugin": self.name,
+                    "auto_open": auto_open,
+                    "config": str(config_dict)
+                }
+            )
+            
+            if auto_open:
+                await self._open_notes_file(output_path)
+
+            # Record notification in database
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO notifications 
+                    (recording_id, notification_type) 
+                    VALUES (?, ?)
+                    """,
+                    (recording_id, "meeting_notes_complete")
+                )
+                conn.commit()
+
+            # Emit completion event with proper event structure
+            completion_event = RecordingEvent(
+                recording_timestamp=datetime.utcnow().isoformat(),
+                recording_id=recording_id,
+                event="desktop_notification.completed",
+                data={
+                    "recording_id": recording_id,
+                    "output_path": output_path,
+                    "current_event": {
+                        "desktop_notification": {
+                            "status": "completed",
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "notification_type": "terminal-notifier",
+                            "settings": {
+                                "auto_open_notes": auto_open
                             }
-                        },
-                        correlation_id=str(uuid.uuid4()),
-                        source_plugin=self.name,
-                        metadata=event_data.get("metadata", {})
-                    )
+                        }
+                    },
+                    "event_history": {
+                        "meeting_notes": data.get("current_event", {}).get("meeting_notes", {}),
+                        "transcription": data.get("event_history", {}).get("transcription", {}),
+                        "recording": data.get("event_history", {}).get("recording", {})
+                    }
+                },
+                context=EventContext(
+                    correlation_id=str(uuid.uuid4()),
+                    timestamp=datetime.utcnow().isoformat(),
+                    source_plugin=self.name
+                )
+            )
 
-                    logger.debug(
-                        "Publishing completion event",
-                        extra={
-                            "plugin": self.name,
-                            "event": str(completion_event)
-                        }
-                    )
-                    await self.event_bus.publish(completion_event)
-                else:
-                    logger.warning(
-                        "No output path in event data",
-                        extra={
-                            "plugin": self.name,
-                            "event_data": str(event_data)
-                        }
-                    )
+            logger.debug(
+                "Publishing completion event",
+                extra={
+                    "plugin": self.name,
+                    "event_name": completion_event.event,
+                    "recording_id": recording_id,
+                    "event_data": str(completion_event.data)
+                }
+            )
+            await self.event_bus.publish(completion_event)
 
         except Exception as e:
             error_msg = f"Failed to handle meeting notes completion: {str(e)}"
@@ -213,29 +251,33 @@ class DesktopNotifierPlugin(PluginBase):
             )
             
             if self.event_bus and "recording_id" in locals():
-                # Emit error event with preserved chain
-                event = RecordingEvent(
+                # Emit error event with proper event structure
+                error_event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
                     event="desktop_notification.error",
                     data={
                         "recording_id": recording_id,
-                        "desktop_notification": {
-                            "status": "error",
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "error": str(e)
+                        "current_event": {
+                            "desktop_notification": {
+                                "status": "error",
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "error": str(e)
+                            }
                         },
-                        # Preserve previous event data
-                        "meeting_notes": event_data.get("data", {}).get("current_event", {}).get("meeting_notes", {}),
-                        "transcription": event_data.get("data", {}).get("event_history", {}).get("transcription", {}),
-                        "recording": event_data.get("data", {}).get("event_history", {}).get("recording", {})
+                        "event_history": {
+                            "meeting_notes": data.get("current_event", {}).get("meeting_notes", {}) if "data" in locals() else {},
+                            "transcription": data.get("event_history", {}).get("transcription", {}) if "data" in locals() else {},
+                            "recording": data.get("event_history", {}).get("recording", {}) if "data" in locals() else {}
+                        }
                     },
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
+                        timestamp=datetime.utcnow().isoformat(),
                         source_plugin=self.name
                     )
                 )
-                await self.event_bus.publish(event)
+                await self.event_bus.publish(error_event)
 
     async def _send_notification(self, recording_id: str, notes_path: str) -> None:
         """Send desktop notification"""

@@ -151,7 +151,7 @@ Please create meeting notes with the following sections:
 [Extract and format from metadata JSON:
 - Date: Format event.started as a readable date/time 
 - Duration: Calculate from event.started to event.ended
-- Attendees: List from event.attendees field]
+- Attendees: List ALL email addresses from event.attendees array in the metadata JSON (NOT from the speakers list)]
 
 ## Executive Summary
 [Provide a brief, high-level overview of the meeting's purpose and key outcomes in 2-3 sentences]
@@ -169,7 +169,7 @@ Keep each bullet point concise but informative]
 ## Action Items
 [List action items in the following format:
 - (OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED]
-Make sure to identify the owner from the speakers or attendees list in the metadata]
+Make sure to identify the owner from the attendees list in the metadata]
 
 ## Decisions Made
 [List specific decisions or conclusions reached during the meeting]
@@ -178,7 +178,9 @@ Make sure to identify the owner from the speakers or attendees list in the metad
 [Outline any planned next steps or future actions discussed]
 
 Please ensure the notes are clear, concise, and well-organized using markdown formatting.
-IMPORTANT: Do not use placeholders - extract and use the actual values from the metadata JSON."""
+IMPORTANT: 
+1. Do not use placeholders - extract and use the actual values from the metadata JSON
+2. For attendees, use ONLY the email addresses from event.attendees in the metadata JSON, not the speakers list"""
 
         # Call Ollama API
         try:
@@ -384,44 +386,41 @@ IMPORTANT: Do not use placeholders - extract and use the actual values from the 
                     }
                 )
 
-                # Emit completion event with proper event structure
-                completion_event = Event(
-                    event_id=str(uuid.uuid4()),
-                    plugin_id=self.name,
-                    name="meeting_notes.completed",
+                # Publish completion event
+                completion_event = RecordingEvent(
+                    recording_timestamp=datetime.utcnow().isoformat(),
+                    recording_id=recording_id,
+                    event="meeting_notes.completed",
                     data={
                         "recording_id": recording_id,
-                        "output_path": str(output_path),
-                        "notes_path": str(output_path),
+                        "output_path": output_path,
+                        "notes_path": output_path,
                         "status": "completed",
                         "timestamp": datetime.utcnow().isoformat(),
                         "current_event": {
                             "meeting_notes": {
                                 "status": "completed",
                                 "timestamp": datetime.utcnow().isoformat(),
-                                "output_path": str(output_path)
+                                "output_path": output_path
                             }
                         },
-                        "event_history": event_data.get("data", {}).get("event_history", {})
+                        "event_history": {}
                     },
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
                         timestamp=datetime.utcnow().isoformat(),
-                        source_plugin=self.name,
-                        metadata={}
-                    ),
-                    priority="normal",
-                    payload={}
+                        source_plugin=self.name
+                    )
                 )
 
                 logger.debug(
-                    "Publishing meeting notes completion event",
+                    "Publishing completion event",
                     extra={
-                        "plugin_name": self.name,
-                        "event": str(completion_event),
-                        "event_name": completion_event.name,
+                        "plugin": self.name,
+                        "event_name": completion_event.event,
                         "recording_id": recording_id,
-                        "output_path": str(output_path)
+                        "output_path": output_path,
+                        "event_data": str(completion_event.data)
                     }
                 )
                 await self.event_bus.publish(completion_event)
