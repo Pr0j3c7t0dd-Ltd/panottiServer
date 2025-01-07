@@ -1,10 +1,10 @@
-name: "meeting_notes"
+name: "meeting_notes_local"
 version: "1.0.0"
 enabled: true
 dependencies: ["audio_transcription"]
 config:
-  output_directory: "data/meeting_notes"
+  output_directory: "data/meeting_notes_local"
   ollama_url: "http://localhost:11434/api/generate"
   model_name: "llama3.1:latest"
-  num_ctx: 128000
+  num_ctx: 131072
   max_concurrent_tasks: 4

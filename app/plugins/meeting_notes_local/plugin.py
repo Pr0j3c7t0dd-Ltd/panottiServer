@@ -19,7 +19,7 @@ EventData = dict[str, Any] | RecordingEvent
 logger = get_logger(__name__)
 
 
-class MeetingNotesPlugin(PluginBase):
+class MeetingNotesLocalPlugin(PluginBase):
     """Plugin for generating meeting notes from transcripts using Ollama LLM"""
 
     def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
@@ -30,7 +30,7 @@ class MeetingNotesPlugin(PluginBase):
         # Default values
         self.ollama_url = "http://localhost:11434/api/generate"
         self.model = "llama3.1:latest"
-        self.output_dir = Path("data/meeting_notes")
+        self.output_dir = Path("data/meeting_notes_local")
         self.num_ctx = 128000
         self.max_concurrent_tasks = 4
 

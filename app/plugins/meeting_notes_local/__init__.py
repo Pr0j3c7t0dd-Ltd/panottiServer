@@ -1,8 +1,8 @@
 """Meeting notes plugin for generating meeting notes from transcripts using
 Ollama LLM"""
 
-from .plugin import MeetingNotesPlugin
+from .plugin import MeetingNotesLocalPlugin
 
-Plugin = MeetingNotesPlugin
+Plugin = MeetingNotesLocalPlugin
 
 __all__ = ["Plugin"]
