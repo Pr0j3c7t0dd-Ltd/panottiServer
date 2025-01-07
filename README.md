@@ -330,3 +330,22 @@ This implementation uses FastAPI with Pydantic V2, which requires Rust for its h
 - Improved memory usage
 - Better CPU utilization
 - Enhanced type safety
+
+## Model Requirements
+
+### Meeting Notes Generation
+
+For optimal meeting notes generation, this application requires a large language model. We recommend:
+
+- **Recommended**: `llama3.3:70b` - Best quality notes, requires significant GPU resources (minimum 80GB VRAM)
+- **Alternative**: `llama3.1:latest` - Acceptable quality, lower resource requirements (minimum 24GB VRAM)
+
+Note: Using smaller models may result in reduced quality of meeting notes and summaries. The model choice significantly impacts the quality of:
+- Meeting summaries
+- Action item extraction
+- Key point identification
+
+Configure your preferred model in the meeting notes `plugin.yaml` file:
+```bash
+model_name: "llama3.3:70b"  # or llama3.1:latest
+```
