@@ -144,12 +144,12 @@ Transcript:
 
 Please create meeting notes with the following sections:
 
-# Event Title
-[Use the title from the metadata JSON event.title field]
+# Meeting Title
+[Extract the exact title from metadata JSON event.title field]
 
 ## Meeting Information
-[Extract from metadata JSON:
-- Date: Use event.started field formatted as a readable date/time
+[Extract and format from metadata JSON:
+- Date: Format event.started as a readable date/time 
 - Duration: Calculate from event.started to event.ended
 - Attendees: List from event.attendees field]
 
@@ -177,7 +177,8 @@ Make sure to identify the owner from the speakers or attendees list in the metad
 ## Next Steps
 [Outline any planned next steps or future actions discussed]
 
-Please ensure the notes are clear, concise, and well-organized using markdown formatting."""
+Please ensure the notes are clear, concise, and well-organized using markdown formatting.
+IMPORTANT: Do not use placeholders - extract and use the actual values from the metadata JSON."""
 
         # Call Ollama API
         try:
@@ -213,47 +214,45 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
             # Emit completion event
             if self.event_bus:
                 from datetime import datetime
-                from app.models.recording.events import RecordingEvent
 
                 event_data = {
                     "recording_id": recording_id,
-                    "event_type": "meeting_notes.completed",
+                    "output_path": str(output_file),
+                    "notes_path": str(output_file),
+                    "status": "completed",
+                    "timestamp": datetime.utcnow().isoformat(),
                     "current_event": {
                         "meeting_notes": {
                             "status": "completed",
                             "timestamp": datetime.utcnow().isoformat(),
-                            "output_paths": {
-                                "notes": str(output_file)
-                            }
+                            "output_path": str(output_file)
                         }
                     },
-                    "event_history": {
-                        "transcription": original_event.data.get("current_event", {}),
-                        "noise_reduction": original_event.data.get("event_history", {}).get("noise_reduction", {}),
-                        "recording": original_event.data.get("event_history", {}).get("recording", {})
-                    }
+                    "event_history": {}
                 }
 
-                event = RecordingEvent(
-                    recording_timestamp=datetime.utcnow().isoformat(),
-                    recording_id=recording_id,
-                    event="meeting_notes.completed",
+                event = Event(
+                    event_id=str(uuid.uuid4()),
+                    plugin_id=self.name,
+                    name="meeting_notes.completed",
                     data=event_data,
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
+                        timestamp=datetime.utcnow().isoformat(),
                         source_plugin=self.name
-                    )
+                    ),
+                    priority="normal"
                 )
+                
                 await self.event_bus.publish(event)
                 
                 logger.info(
-                    "Meeting notes generation completed",
+                    "Meeting notes completion event published",
                     extra={
-                        "req_id": self._req_id,
                         "plugin_name": self.name,
+                        "event_name": "meeting_notes.completed",
                         "recording_id": recording_id,
-                        "event": "meeting_notes.completed",
-                        "output_file": str(output_file)
+                        "output_path": str(output_file)
                     }
                 )
 
@@ -272,10 +271,10 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
             
             if self.event_bus:
                 # Emit error event with preserved chain
-                event = RecordingEvent(
-                    recording_timestamp=datetime.utcnow().isoformat(),
-                    recording_id=recording_id,
-                    event="meeting_notes.error",
+                event = Event(
+                    event_id=str(uuid.uuid4()),
+                    plugin_id=self.name,
+                    name="meeting_notes.error",
                     data={
                         "recording_id": recording_id,
                         "meeting_notes": {
@@ -288,7 +287,8 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
                         "noise_reduction": original_event.data.get("noise_reduction", {}),
                         "recording": original_event.data.get("recording", {})
                     },
-                    context=original_event.context
+                    context=original_event.context,
+                    priority="normal"
                 )
                 await self.event_bus.publish(event)
 
