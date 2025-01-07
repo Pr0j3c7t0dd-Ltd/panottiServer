@@ -103,20 +103,25 @@ class DesktopNotifierPlugin(PluginBase):
                 extra={
                     "plugin": self.name,
                     "event_data": str(event_data),
-                    "event_data_type": type(event_data).__name__
+                    "event_data_type": type(event_data).__name__,
+                    "has_recording_id": "recording_id" in event_data.get("data", {}) if isinstance(event_data, dict) else hasattr(event_data, "recording_id"),
+                    "has_output_path": "output_path" in event_data.get("data", {}) if isinstance(event_data, dict) else hasattr(event_data, "output_path"),
+                    "has_notes_path": "notes_path" in event_data.get("data", {}) if isinstance(event_data, dict) else hasattr(event_data, "notes_path")
                 }
             )
 
             if isinstance(event_data, dict):
-                recording_id = event_data.get("recording_id", "unknown")
-                output_path = event_data.get("output_path")
+                data = event_data.get("data", {})
+                recording_id = data.get("recording_id", "unknown")
+                output_path = data.get("output_path") or data.get("notes_path")
 
                 logger.debug(
                     "Extracted event data",
                     extra={
                         "plugin": self.name,
                         "recording_id": recording_id,
-                        "output_path": output_path
+                        "output_path": output_path,
+                        "data_keys": list(data.keys())
                     }
                 )
 

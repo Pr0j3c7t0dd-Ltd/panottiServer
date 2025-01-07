@@ -379,6 +379,9 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
                     data={
                         "recording_id": recording_id,
                         "output_path": str(output_path),
+                        "notes_path": str(output_path),  # Add explicit notes_path for clarity
+                        "status": "completed",
+                        "timestamp": datetime.utcnow().isoformat(),
                         "current_event": {
                             "meeting_notes": {
                                 "status": "completed",
@@ -400,10 +403,25 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
                     "Publishing meeting notes completion event",
                     extra={
                         "plugin_name": self.name,
-                        "event": str(completion_event)
+                        "event": str(completion_event),
+                        "event_name": completion_event.name,
+                        "recording_id": recording_id,
+                        "output_path": str(output_path)
                     }
                 )
                 await self.event_bus.publish(completion_event)
+
+                # Add verification log after publishing
+                logger.info(
+                    "Meeting notes completion event published",
+                    extra={
+                        "plugin_name": self.name,
+                        "event_name": "meeting_notes.completed",
+                        "recording_id": recording_id,
+                        "output_path": str(output_path),
+                        "subscribers": await self.event_bus.get_subscriber_count("meeting_notes.completed")
+                    }
+                )
             else:
                 logger.error(
                     "Failed to generate meeting notes",
