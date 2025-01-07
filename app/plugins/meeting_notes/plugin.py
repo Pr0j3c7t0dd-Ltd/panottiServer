@@ -116,13 +116,23 @@ class MeetingNotesPlugin(PluginBase):
         if "## Metadata" in transcript_text:
             parts = transcript_text.split("## Metadata", 1)
             if len(parts) > 1:
-                metadata_parts = parts[1].split("```", 2)
-                if len(metadata_parts) > 1:
-                    metadata_section = metadata_parts[1]
-                    # Remove metadata section from transcript content
-                    transcript_content = parts[0] + "".join(metadata_parts[2:])
+                metadata_parts = parts[1].split("```", 3)  # Split into 3 parts to handle both json and transcript sections
+                if len(metadata_parts) > 2:
+                    metadata_section = metadata_parts[1].strip()  # Get the JSON content
+                    # Get the transcript section after metadata
+                    transcript_content = "## Transcript" + metadata_parts[2].split("## Transcript", 1)[1] if "## Transcript" in metadata_parts[2] else ""
 
-        # Prepare prompt
+        logger.debug(
+            "Extracted metadata and transcript",
+            extra={
+                "plugin_name": self.name,
+                "has_metadata": bool(metadata_section),
+                "metadata_length": len(metadata_section),
+                "transcript_length": len(transcript_content)
+            }
+        )
+
+        # Prepare prompt with explicit metadata handling
         prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format.
 The transcript includes metadata in JSON format that you should use for the meeting information section.
 
@@ -135,13 +145,13 @@ Transcript:
 Please create meeting notes with the following sections:
 
 # Event Title
-[Use the title from the metadata JSON]
+[Use the title from the metadata JSON event.title field]
 
 ## Meeting Information
 [Extract from metadata JSON:
-- Date and time
-- Duration
-- Attendees]
+- Date: Use event.started field formatted as a readable date/time
+- Duration: Calculate from event.started to event.ended
+- Attendees: List from event.attendees field]
 
 ## Executive Summary
 [Provide a brief, high-level overview of the meeting's purpose and key outcomes in 2-3 sentences]
@@ -159,6 +169,7 @@ Keep each bullet point concise but informative]
 ## Action Items
 [List action items in the following format:
 - (OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED]
+Make sure to identify the owner from the speakers or attendees list in the metadata]
 
 ## Decisions Made
 [List specific decisions or conclusions reached during the meeting]
@@ -375,11 +386,13 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
 
                 # Emit completion event with proper event structure
                 completion_event = Event(
+                    event_id=str(uuid.uuid4()),
+                    plugin_id=self.name,
                     name="meeting_notes.completed",
                     data={
                         "recording_id": recording_id,
                         "output_path": str(output_path),
-                        "notes_path": str(output_path),  # Add explicit notes_path for clarity
+                        "notes_path": str(output_path),
                         "status": "completed",
                         "timestamp": datetime.utcnow().isoformat(),
                         "current_event": {
@@ -389,14 +402,16 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
                                 "output_path": str(output_path)
                             }
                         },
-                        "event_history": {
-                            "transcription": event_data.get("data", {}).get("current_event", {}).get("transcription", {}),
-                            "recording": event_data.get("data", {}).get("current_event", {}).get("recording", {})
-                        }
+                        "event_history": event_data.get("data", {}).get("event_history", {})
                     },
-                    correlation_id=str(uuid.uuid4()),
-                    source_plugin=self.name,
-                    metadata=event_data.get("metadata", {})
+                    context=EventContext(
+                        correlation_id=str(uuid.uuid4()),
+                        timestamp=datetime.utcnow().isoformat(),
+                        source_plugin=self.name,
+                        metadata={}
+                    ),
+                    priority="normal",
+                    payload={}
                 )
 
                 logger.debug(
@@ -418,8 +433,7 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
                         "plugin_name": self.name,
                         "event_name": "meeting_notes.completed",
                         "recording_id": recording_id,
-                        "output_path": str(output_path),
-                        "subscribers": await self.event_bus.get_subscriber_count("meeting_notes.completed")
+                        "output_path": str(output_path)
                     }
                 )
             else:
