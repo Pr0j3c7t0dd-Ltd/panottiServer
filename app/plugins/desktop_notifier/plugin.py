@@ -95,75 +95,26 @@ class DesktopNotifierPlugin(PluginBase):
             }
         )
 
-    async def handle_meeting_notes_completed(self, event_data: EventData) -> None:
+    async def handle_meeting_notes_completed(self, event_data: RecordingEvent) -> None:
         """Handle meeting notes completed event"""
         try:
-            # Log the raw event data first
             logger.debug(
                 "Raw meeting notes completed event received",
                 extra={
                     "plugin": self.name,
                     "event_type": type(event_data).__name__,
-                    "event_data": str(event_data),
-                    "event_keys": list(event_data.keys()) if isinstance(event_data, dict) else None
+                    "event_data": str(event_data)
                 }
             )
 
-            # Handle both Event and dict types
-            if isinstance(event_data, Event):
-                data = event_data.data
-                logger.debug(
-                    "Processing Event object",
-                    extra={
-                        "plugin": self.name,
-                        "event_name": event_data.name,
-                        "event_id": event_data.event_id,
-                        "data_keys": list(data.keys()) if data else None
-                    }
-                )
-            elif isinstance(event_data, dict):
-                data = event_data.get("data", {})
-                logger.debug(
-                    "Processing dict event",
-                    extra={
-                        "plugin": self.name,
-                        "event_name": event_data.get("name"),
-                        "data_keys": list(data.keys())
-                    }
-                )
-            else:
-                logger.error(
-                    "Unexpected event data type",
-                    extra={
-                        "plugin": self.name,
-                        "type": type(event_data).__name__
-                    }
-                )
-                return
-
+            # Extract data from RecordingEvent
+            data = event_data.data
             recording_id = data.get("recording_id", "unknown")
             output_path = data.get("output_path") or data.get("notes_path")
 
-            logger.debug(
-                "Extracted event data",
-                extra={
-                    "plugin": self.name,
-                    "recording_id": recording_id,
-                    "output_path": output_path,
-                    "data_keys": list(data.keys()),
-                    "current_event": data.get("current_event", {}),
-                    "event_history": data.get("event_history", {})
-                }
-            )
-
             if not output_path:
-                logger.warning(
-                    "No output path in event data",
-                    extra={
-                        "plugin": self.name,
-                        "event_data": str(data)
-                    }
-                )
+                logger.warning("No output path in event data", 
+                             extra={"plugin": self.name, "event_data": str(data)})
                 return
 
             # Send notification
