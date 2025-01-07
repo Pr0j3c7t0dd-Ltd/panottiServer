@@ -136,7 +136,19 @@ class MeetingNotesPlugin(PluginBase):
         prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format.
 The transcript includes METADATA in JSON format that you should use for the meeting title and information section.
 
-Please create meeting notes with the following sections:
+START Transcript:
+
+{transcript_content}
+
+END Transcript
+
+START METADATA JSON:
+
+{metadata_section}
+
+END METADATA JSON
+
+Create meeting notes with the following sections:
 
 # Meeting Title
 [The meeting title - extracted from the METADATA JSON event.title field]
@@ -173,20 +185,6 @@ IMPORTANT:
 1. Do not use placeholders - extract and use the actual values from the METADATA JSON and the transcript.
 2. For attendees, use ONLY the email addresses or names from event.attendees in the METADATA JSON, not the speakers list
 3. Don't include any other information in the notes, just the meeting notes
-
-START METADATA JSON:
-
-{metadata_section}
-
-END METADATA JSON
-
----
-
-START Transcript:
-
-{transcript_content}
-
-END Transcript
 """
 
         logger.debug(
