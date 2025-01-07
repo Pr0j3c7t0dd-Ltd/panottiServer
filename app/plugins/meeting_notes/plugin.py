@@ -160,16 +160,6 @@ Keep each bullet point concise but informative]
 [List action items in the following format:
 - (OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED]
 
-For example:
-- (Todd) Create project timeline by next Friday
-- (Sarah) Review documentation
-- (Team) Schedule follow-up meeting for next week
-
-Make sure each action item includes:
-- The owner in parentheses at the start
-- A clear, specific description of the task
-- Any mentioned deadline or timeline]
-
 ## Decisions Made
 [List specific decisions or conclusions reached during the meeting]
 
