@@ -136,11 +136,20 @@ class MeetingNotesPlugin(PluginBase):
         prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format.
 The transcript includes metadata in JSON format that you should use for the meeting information section.
 
-Metadata JSON:
+START Metadata JSON:
+
 {metadata_section}
 
-Transcript:
+END Metadata JSON
+
+---
+
+START Transcript:
+
 {transcript_content}
+
+END Transcript
+---
 
 Please create meeting notes with the following sections:
 
@@ -148,10 +157,13 @@ Please create meeting notes with the following sections:
 [Extract the exact title from metadata JSON event.title field]
 
 ## Meeting Information
-[Extract and format from metadata JSON:
-- Date: Format event.started as a readable date/time 
-- Duration: Calculate from event.started to event.ended
-- Attendees: List ALL email addresses from event.attendees array in the metadata JSON (NOT from the speakers list)]
+[Extract and format from metadata JSON:]
+- Date: [Format event.started as a readable date/time in the format "January 1, 2025 at 10:00 AM"]
+- Duration: [Calculate from the last timestamp entry in the transcript in the format "1 hour and 30 minutes"]
+- Attendees: [a bulleted list of ALL email addresses from the metadata JSON event.attendees array (NOT from the speakers list) in the following format:
+  - email@example.com
+  - email2@example.com
+  - email3@example.com]
 
 ## Executive Summary
 [Provide a brief, high-level overview of the meeting's purpose and key outcomes in 2-3 sentences]
@@ -169,7 +181,7 @@ Keep each bullet point concise but informative]
 ## Action Items
 [List action items in the following format:
 - (OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED]
-Make sure to identify the owner from the attendees list in the metadata]
+Identify the owner from the context of the meeting transcript]
 
 ## Decisions Made
 [List specific decisions or conclusions reached during the meeting]
@@ -180,7 +192,8 @@ Make sure to identify the owner from the attendees list in the metadata]
 Please ensure the notes are clear, concise, and well-organized using markdown formatting.
 IMPORTANT: 
 1. Do not use placeholders - extract and use the actual values from the metadata JSON
-2. For attendees, use ONLY the email addresses from event.attendees in the metadata JSON, not the speakers list"""
+2. For attendees, use ONLY the email addresses from event.attendees in the metadata JSON, not the speakers list
+3. Don't include any other information in the notes, just the meeting notes"""
 
         # Call Ollama API
         try:
