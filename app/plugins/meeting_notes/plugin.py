@@ -110,39 +110,65 @@ class MeetingNotesPlugin(PluginBase):
         if not transcript_text:
             return "No transcript text found to generate notes from."
 
+        # Extract metadata section
+        metadata_section = ""
+        transcript_content = transcript_text
+        if "## Metadata" in transcript_text:
+            parts = transcript_text.split("## Metadata", 1)
+            if len(parts) > 1:
+                metadata_parts = parts[1].split("```", 2)
+                if len(metadata_parts) > 1:
+                    metadata_section = metadata_parts[1]
+                    # Remove metadata section from transcript content
+                    transcript_content = parts[0] + "".join(metadata_parts[2:])
+
         # Prepare prompt
-        prompt = f"""Please analyze the following transcript and create
-comprehensive meeting notes in markdown format. Please ensure the notes are
-clear and concise.
+        prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format.
+The transcript includes metadata in JSON format that you should use for the meeting information section.
 
----
+Metadata JSON:
+{metadata_section}
 
-{transcript_text}
+Transcript:
+{transcript_content}
 
-The meeting notes should include the following sections:
+Please create meeting notes with the following sections:
 
-# Event Title: [Create a descriptive title based on the content]
+# Event Title
+[Use the title from the metadata JSON]
 
 ## Meeting Information
-Date: [Extract from transcript timestamps]
-Duration: [Calculate from first and last timestamp]
-Participants: [Extract speaker names from transcript]
+[Extract from metadata JSON:
+- Date and time
+- Duration
+- Attendees]
 
 ## Executive Summary
-[Provide a brief, high-level overview of the meeting's purpose and key outcomes]
+[Provide a brief, high-level overview of the meeting's purpose and key outcomes in 2-3 sentences]
 
 ## Key Discussion Points
-[List the main topics discussed]
+[For each main topic discussed:
+1. Create a clear heading for the topic
+2. Under each topic, provide 3-5 bullet points that:
+   - Summarize key points made
+   - Highlight important details
+   - Note any concerns raised
+   - Mention specific examples or cases discussed
+Keep each bullet point concise but informative]
 
 ## Action Items
-[List any tasks, assignments, or follow-up items mentioned]
+[List specific tasks, assignments, or follow-up items mentioned, including:
+- Who is responsible
+- What needs to be done
+- Any mentioned deadlines]
 
 ## Decisions Made
-[List any decisions or conclusions reached]
+[List specific decisions or conclusions reached during the meeting]
 
 ## Next Steps
-[Outline any planned next steps or future actions]
-"""
+[Outline any planned next steps or future actions discussed]
+
+Please ensure the notes are clear, concise, and well-organized using markdown formatting."""
 
         # Call Ollama API
         try:
@@ -351,12 +377,10 @@ Participants: [Extract speaker names from transcript]
 
                 # Emit completion event with proper event structure
                 completion_event = Event(
-                    event="meeting_notes.completed",
-                    recording_id=recording_id,
-                    output_path=str(output_path),
-                    timestamp=datetime.utcnow().isoformat(),
-                    plugin_id=self.name,
+                    name="meeting_notes.completed",
                     data={
+                        "recording_id": recording_id,
+                        "output_path": str(output_path),
                         "current_event": {
                             "meeting_notes": {
                                 "status": "completed",
@@ -369,6 +393,8 @@ Participants: [Extract speaker names from transcript]
                             "recording": event_data.get("data", {}).get("current_event", {}).get("recording", {})
                         }
                     },
+                    correlation_id=str(uuid.uuid4()),
+                    source_plugin=self.name,
                     metadata=event_data.get("metadata", {})
                 )
 
