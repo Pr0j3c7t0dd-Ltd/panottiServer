@@ -1,9 +1,0 @@
-name: "example"
-version: "1.0.0"
-enabled: true
-dependencies: []
-config:
-  # Example configuration values
-  max_concurrent_tasks: 4
-  example_setting: "value"
-  debug_mode: false
