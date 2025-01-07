@@ -11,14 +11,20 @@
             "id": "5e4aefd4e6d2c38c",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "kanban",
               "state": {
-                "file": "product-requirements/audio-preprocessing-plugin-requirement.md",
-                "mode": "source",
-                "source": false
+                "file": "panottiServer Roadmap Board.md",
+                "kanbanViewState": {
+                  "kanban-plugin": "board",
+                  "list-collapse": [
+                    false,
+                    false,
+                    false
+                  ]
+                }
               },
-              "icon": "lucide-file",
-              "title": "audio-preprocessing-plugin-requirement"
+              "icon": "lucide-trello",
+              "title": "panottiServer Roadmap Board"
             }
           }
         ]
@@ -167,14 +173,14 @@
   },
   "active": "5e4aefd4e6d2c38c",
   "lastOpenFiles": [
+    "product-requirements/plugin-requirements-example-cdoe.md",
+    "panottiServer Roadmap Board.md",
+    "product-requirements/audio-preprocessing-plugin-requirement.md",
     "product-requirements/meeting-note-plugin-requirements.md",
     "product-requirements/desktop-notifier-plugin.md",
     "product-requirements/plugin-architecture-requirements.md",
-    "product-requirements/plugin-requirements-example-cdoe.md",
     "product-requirements/basic-product-requirements.md",
     "product-requirements/audio-transcription-plugin-requirements.md",
-    "product-requirements/audio-preprocessing-plugin-requirement.md",
-    "panottiServer Roadmap Board.md",
     "default-prompts/run-add-docs.md",
     "architecture/security_and_configuration.md",
     "architecture/utils.md",
