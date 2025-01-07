@@ -1,30 +1,30 @@
 """Desktop notifier plugin for sending system notifications."""
 
-import logging
 import os
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 import uuid
+from typing import Any
 
-from app.models.database import DatabaseManager
-from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
-from app.plugins.events.models import EventContext
+from app.plugins.events.bus import EventBus
+from app.plugins.events.models import Event
+from app.models.recording.events import RecordingEvent, EventContext
+from app.models.database import DatabaseManager
 from app.utils.logging_config import get_logger
 
-logger = get_logger("app.plugins.desktop_notifier.plugin")
+logger = get_logger(__name__)
 
-EventData = dict[str, Any] | RecordingEvent
+EventData = dict[str, Any] | RecordingEvent | Event
 
 
 class DesktopNotifierPlugin(PluginBase):
     """Plugin for sending desktop notifications when meeting notes are completed"""
 
-    def __init__(self, config: PluginConfig, event_bus: Any = None) -> None:
+    def __init__(self, config: PluginConfig, event_bus: EventBus | None = None) -> None:
         super().__init__(config, event_bus)
         self._executor: ThreadPoolExecutor | None = None
         self._processing_lock = threading.Lock()
@@ -152,13 +152,11 @@ class DesktopNotifierPlugin(PluginBase):
                         conn.commit()
 
                     # Emit completion event with proper event structure
-                    completion_event = {
-                        "event": "desktop_notification.completed",
-                        "recording_id": recording_id,
-                        "output_path": output_path,
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "plugin_id": self.name,
-                        "data": {
+                    completion_event = Event(
+                        name="desktop_notification.completed",
+                        data={
+                            "recording_id": recording_id,
+                            "output_path": output_path,
                             "current_event": {
                                 "desktop_notification": {
                                     "status": "completed",
@@ -175,8 +173,10 @@ class DesktopNotifierPlugin(PluginBase):
                                 "recording": event_data.get("data", {}).get("event_history", {}).get("recording", {})
                             }
                         },
-                        "metadata": event_data.get("metadata", {})
-                    }
+                        correlation_id=str(uuid.uuid4()),
+                        source_plugin=self.name,
+                        metadata=event_data.get("metadata", {})
+                    )
 
                     logger.debug(
                         "Publishing completion event",
@@ -232,29 +232,63 @@ class DesktopNotifierPlugin(PluginBase):
                 )
                 await self.event_bus.publish(event)
 
-    async def _send_notification(self, recording_id: str, output_path: str) -> None:
-        """Send notification"""
-        abs_path = os.path.abspath(output_path)
-        if not os.path.exists(abs_path):
-            raise FileNotFoundError(f"File not found: {abs_path}")
+    async def _send_notification(self, recording_id: str, notes_path: str) -> None:
+        """Send desktop notification"""
+        try:
+            title = "Meeting Notes Ready"
+            message = f"Meeting notes for recording {recording_id} are ready"
+            
+            # Use terminal-notifier on macOS
+            if os.uname().sysname == "Darwin":
+                subprocess.run([
+                    "terminal-notifier",
+                    "-title", title,
+                    "-message", message,
+                    "-open", f"file://{notes_path}"
+                ], check=True)
+            else:
+                # Fallback for other platforms
+                logger.warning(
+                    "Desktop notifications not implemented for this platform",
+                    extra={
+                        "plugin": self.name,
+                        "platform": os.uname().sysname
+                    }
+                )
+        except subprocess.CalledProcessError as e:
+            logger.error(
+                "Failed to send notification",
+                extra={
+                    "plugin": self.name,
+                    "error": str(e),
+                    "recording_id": recording_id
+                }
+            )
+            raise
 
-        # Send notification
-        subprocess.run(
-            [
-                "terminal-notifier",
-                "-title",
-                "Meeting Notes Ready",
-                "-message",
-                "Your meeting notes are ready to view.",
-                "-sound",
-                "default",
-            ],
-            check=False,
-        )
-
-    async def _open_notes_file(self, output_path: str) -> None:
-        """Open notes file"""
-        subprocess.run(["open", output_path], check=True)
+    async def _open_notes_file(self, notes_path: str) -> None:
+        """Open notes file with default application"""
+        try:
+            if os.uname().sysname == "Darwin":
+                subprocess.run(["open", notes_path], check=True)
+            else:
+                logger.warning(
+                    "Auto-open not implemented for this platform",
+                    extra={
+                        "plugin": self.name,
+                        "platform": os.uname().sysname
+                    }
+                )
+        except subprocess.CalledProcessError as e:
+            logger.error(
+                "Failed to open notes file",
+                extra={
+                    "plugin": self.name,
+                    "error": str(e),
+                    "notes_path": notes_path
+                }
+            )
+            raise
 
     async def _init_database(self) -> None:
         """Initialize database tables."""

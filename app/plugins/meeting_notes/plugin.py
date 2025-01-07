@@ -26,20 +26,29 @@ class MeetingNotesPlugin(PluginBase):
         """Initialize the plugin"""
         super().__init__(config, event_bus)
         self._req_id = str(uuid.uuid4())
-        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.model = "mistral"  # Default model
-        self.output_dir = Path("data/meeting_notes")  # Default output directory
 
+        # Default values
+        self.ollama_url = "http://localhost:11434/api/generate"
+        self.model = "llama3.1:latest"
+        self.output_dir = Path("data/meeting_notes")
+        self.num_ctx = 128000
+        self.max_concurrent_tasks = 4
+
+        # Override with config values if available
         if config and hasattr(config, "config"):
             config_dict = config.config
             if isinstance(config_dict, dict):
-                self.model = config_dict.get("model", self.model)
-                self.output_dir = Path(
-                    config_dict.get("output_dir", str(self.output_dir))
-                )
+                self.ollama_url = config_dict.get("ollama_url", self.ollama_url)
+                self.model = config_dict.get("model_name", self.model)
+                self.output_dir = Path(config_dict.get("output_directory", str(self.output_dir)))
+                self.num_ctx = config_dict.get("num_ctx", self.num_ctx)
+                self.max_concurrent_tasks = config_dict.get("max_concurrent_tasks", self.max_concurrent_tasks)
 
+        # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._executor: ThreadPoolExecutor | None = None
+        
+        # Initialize thread pool with configured max tasks
+        self._executor = ThreadPoolExecutor(max_workers=self.max_concurrent_tasks)
         self._processing_lock = threading.Lock()
 
     async def _initialize(self) -> None:
@@ -55,25 +64,18 @@ class MeetingNotesPlugin(PluginBase):
             return
 
         try:
-            max_workers = 4  # Default value
-
-            if hasattr(self, "config") and self.config and hasattr(self.config, "config"):
-                config_dict = self.config.config
-                if isinstance(config_dict, dict):
-                    max_workers = config_dict.get("max_concurrent_tasks", max_workers)
-
             logger.debug(
                 "Initializing meeting notes plugin",
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "max_workers": max_workers,
+                    "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
-                    "output_dir": str(self.output_dir)
+                    "output_dir": str(self.output_dir),
+                    "ollama_url": self.ollama_url,
+                    "num_ctx": self.num_ctx
                 }
             )
-
-            self._executor = ThreadPoolExecutor(max_workers=max_workers)
             
             # Subscribe to transcription completed event
             await self.event_bus.subscribe(
@@ -86,7 +88,7 @@ class MeetingNotesPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "max_workers": max_workers,
+                    "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
                     "event": "transcription.completed"
                 }
@@ -150,6 +152,7 @@ Participants: [Extract speaker names from transcript]
                     "model": self.model,
                     "prompt": prompt,
                     "stream": False,
+                    "num_ctx": self.num_ctx,
                 },
                 timeout=30,
             )
@@ -347,13 +350,13 @@ Participants: [Extract speaker names from transcript]
                 )
 
                 # Emit completion event with proper event structure
-                event_data = {
-                    "event": "meeting_notes.completed",
-                    "recording_id": recording_id,
-                    "output_path": str(output_path),
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "plugin_id": self.name,
-                    "data": {
+                completion_event = Event(
+                    event="meeting_notes.completed",
+                    recording_id=recording_id,
+                    output_path=str(output_path),
+                    timestamp=datetime.utcnow().isoformat(),
+                    plugin_id=self.name,
+                    data={
                         "current_event": {
                             "meeting_notes": {
                                 "status": "completed",
@@ -366,9 +369,17 @@ Participants: [Extract speaker names from transcript]
                             "recording": event_data.get("data", {}).get("current_event", {}).get("recording", {})
                         }
                     },
-                    "metadata": event_data.get("metadata", {})
-                }
-                await self.event_bus.publish(event_data)
+                    metadata=event_data.get("metadata", {})
+                )
+
+                logger.debug(
+                    "Publishing meeting notes completion event",
+                    extra={
+                        "plugin_name": self.name,
+                        "event": str(completion_event)
+                    }
+                )
+                await self.event_bus.publish(completion_event)
             else:
                 logger.error(
                     "Failed to generate meeting notes",
