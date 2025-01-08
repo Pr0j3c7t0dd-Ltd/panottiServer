@@ -24,23 +24,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 20s
-    entrypoint: ["/bin/bash"]
     command: >
-      -c "
-      set -ex &&
-      echo 'Container starting at $$(date)...' &&
-      echo 'Current directory:' &&
-      pwd &&
-      echo 'Directory contents:' &&
-      ls -la &&
-      echo 'Creating directories...' &&
+      sh -c "
       mkdir -p /app/data /app/logs &&
-      echo 'Starting initialization...' &&
       chmod +x /app/scripts/init-ollama.sh &&
-      echo 'Running init-ollama.sh...' &&
       /app/scripts/init-ollama.sh &&
-      echo 'Starting FastAPI server...' &&
-      exec poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+      poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
       "
 
   ollama:
