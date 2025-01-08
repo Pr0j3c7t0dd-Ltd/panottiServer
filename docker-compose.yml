@@ -10,32 +10,38 @@ services:
       - ./scripts:/app/scripts
     environment:
       - PYTHONUNBUFFERED=1
+      - WHISPER_MODEL_PATH=/app/models
     networks:
       - internal
       - external
     depends_on:
       ollama:
         condition: service_healthy
-    tty: true
-    stdin_open: true
-    entrypoint: ["/bin/sh", "-c"]
-    command: |
-      set -ex
-      echo "Container starting at $(date)..."
-      echo "Current directory:"
-      pwd
-      echo "Directory contents:"
-      ls -la
-      echo "Environment:"
-      env
-      echo "Creating directories..."
-      mkdir -p /app/data /app/logs
-      echo "Starting initialization..."
-      chmod +x /app/scripts/init-ollama.sh
-      echo "Running init-ollama.sh..."
-      bash -x /app/scripts/init-ollama.sh || { echo "Ollama initialization failed with code $?"; exit 1; }
-      echo "Starting FastAPI server..."
-      exec poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    entrypoint: ["/bin/bash"]
+    command: >
+      -c "
+      set -ex &&
+      echo 'Container starting at $$(date)...' &&
+      echo 'Current directory:' &&
+      pwd &&
+      echo 'Directory contents:' &&
+      ls -la &&
+      echo 'Creating directories...' &&
+      mkdir -p /app/data /app/logs &&
+      echo 'Starting initialization...' &&
+      chmod +x /app/scripts/init-ollama.sh &&
+      echo 'Running init-ollama.sh...' &&
+      /app/scripts/init-ollama.sh &&
+      echo 'Starting FastAPI server...' &&
+      exec poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
 
   ollama:
     image: ollama/ollama:latest
@@ -55,6 +61,7 @@ services:
       start_period: 20s
     entrypoint: []
     command: ollama serve
+    restart: unless-stopped
 
 networks:
   internal:
