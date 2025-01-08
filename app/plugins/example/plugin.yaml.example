@@ -1,6 +1,6 @@
 name: "example"
 version: "1.0.0"
-enabled: true
+enabled: false
 dependencies: []
 config:
   # Example configuration values

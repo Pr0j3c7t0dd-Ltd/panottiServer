@@ -43,6 +43,34 @@ app/
 
 ## Installation
 
+### Quick Setup (Recommended)
+
+The easiest way to set up the application is to use the provided setup script:
+
+1. Ensure Python 3.12 is installed on your system:
+```bash
+python --version  # Should show Python 3.12.x
+```
+
+2. Run the setup script:
+```bash
+./scripts/setup.py
+```
+
+The setup script will automatically:
+- Verify/install Rust (required for Pydantic V2)
+- Verify/install Poetry for dependency management
+- Set up the Python virtual environment
+- Install all dependencies
+- Configure environment files
+- Set up plugin configurations
+- Download required ML models
+- Generate SSL certificates
+
+### Manual Setup (Advanced)
+
+If you prefer to set up components manually, follow these steps:
+
 1. Install Rust (required for Pydantic V2's performance optimizations):
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
