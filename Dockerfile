@@ -30,8 +30,14 @@ COPY README.md ./
 # Install Python dependencies
 RUN poetry install --no-interaction --no-ansi
 
-# Install Whisper
-RUN pip install -U openai-whisper
+# Install Whisper and pre-download the model
+RUN pip install -U openai-whisper faster-whisper && \
+    python3 -c 'from faster_whisper import WhisperModel; WhisperModel("base.en", download_root="/app/models")'
+
+# Set environment variables for model path
+ENV WHISPER_MODEL_PATH="/app/models"
+ENV HF_HUB_OFFLINE=0
+ENV HF_HUB_ENABLE_HF_TRANSFER=1
 
 # Expose the port the app runs on
 EXPOSE 8000
