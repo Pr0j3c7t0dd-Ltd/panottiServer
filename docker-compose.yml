@@ -8,9 +8,11 @@ services:
       - ./logs:/app/logs
       - ./.env:/app/.env
       - ./scripts:/app/scripts
+      - whisper_models:/app/models/whisper
     environment:
       - PYTHONUNBUFFERED=1
-      - WHISPER_MODEL_PATH=/app/models
+      - WHISPER_MODEL_PATH=/app/models/whisper
+      - POETRY_VIRTUALENVS_CREATE=false
     networks:
       - internal
       - external
@@ -23,14 +25,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 20s
-    command: >
-      sh -c "
-      mkdir -p /app/data /app/logs &&
-      chmod +x /app/scripts/init-ollama.sh &&
-      /app/scripts/init-ollama.sh &&
-      poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
-      "
+      start_period: 40s
 
   ollama:
     image: ollama/ollama:latest
@@ -42,14 +37,24 @@ services:
       - internal
     environment:
       - GIN_MODE=release
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_COMPUTE=cpu
+      - GOAMD64=v3
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/version", "||", "exit", "1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
-    entrypoint: []
-    command: ollama serve
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
 networks:
@@ -59,4 +64,5 @@ networks:
     internal: false
 
 volumes:
-  ollama_data: 
+  ollama_data:
+  whisper_models: 
