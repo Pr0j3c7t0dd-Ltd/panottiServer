@@ -2,17 +2,21 @@ services:
   app:
     build: .
     ports:
-      - "54789:8000"
+      - "54789:8443"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./.env:/app/.env
       - ./scripts:/app/scripts
+      - ./ssl:/app/ssl
       - whisper_models:/app/models/whisper
     environment:
       - PYTHONUNBUFFERED=1
       - WHISPER_MODEL_PATH=/app/models/whisper
       - POETRY_VIRTUALENVS_CREATE=false
+      - DEBUG=1
+      - SSL_CERT_FILE=/app/ssl/cert.pem
+      - SSL_KEY_FILE=/app/ssl/key.pem
     networks:
       - internal
       - external
@@ -21,11 +25,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs", "||", "exit", "1"]
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:8443/docs"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
+      timeout: 30s
+      retries: 10
+      start_period: 120s
+    command: >
+      sh -c "
+      echo 'Waiting for Ollama to be healthy...' &&
+      until curl -s http://ollama:11434/api/version > /dev/null; do
+        echo 'Waiting for Ollama...' &&
+        sleep 5;
+      done &&
+      echo 'Ollama is ready!' &&
+      echo '=== Environment ===' &&
+      env | sort &&
+      echo '=== Directory Structure ===' &&
+      ls -laR /app &&
+      echo '=== Starting App ===' &&
+      /app/docker-entrypoint.sh
+      "
 
   ollama:
     image: ollama/ollama:latest
@@ -41,21 +60,15 @@ services:
       - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_COMPUTE=cpu
       - GOAMD64=v3
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 8G
-        reservations:
-          cpus: '2'
-          memory: 4G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version", "||", "exit", "1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/version || exit 0"]
+      interval: 60s
+      timeout: 60s
+      retries: 15
+      start_period: 180s
     restart: unless-stopped
+    entrypoint: ["ollama"]
+    command: ["serve"]
 
 networks:
   internal:

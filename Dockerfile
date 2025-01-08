@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     git \
     ffmpeg \
+    strace \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
@@ -20,8 +21,9 @@ RUN curl -sSL https://install.python-poetry.org | python3 - \
 
 # Set working directory and environment variables
 WORKDIR /app
-ENV WHISPER_MODEL_PATH="/app/models"
+ENV WHISPER_MODEL_PATH="/app/models/whisper"
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 # Copy only dependency files first
 COPY pyproject.toml poetry.lock ./
@@ -42,18 +44,26 @@ COPY README.md ./
 
 # Create and set up the entrypoint script
 RUN echo '#!/bin/bash' > /app/docker-entrypoint.sh && \
-    echo 'set -ex' >> /app/docker-entrypoint.sh && \
-    echo 'echo "Starting app initialization at $(date)..."' >> /app/docker-entrypoint.sh && \
-    echo 'mkdir -p /app/data /app/logs' >> /app/docker-entrypoint.sh && \
+    echo 'set -e' >> /app/docker-entrypoint.sh && \
+    echo 'mkdir -p /app/data /app/logs /app/models/whisper' >> /app/docker-entrypoint.sh && \
+    echo 'if [ ! -d "/app/models/whisper/models--Systran--faster-whisper-base.en" ]; then' >> /app/docker-entrypoint.sh && \
+    echo '  python3 -c "from huggingface_hub import snapshot_download; snapshot_download(\"Systran/faster-whisper-base.en\", local_dir=\"/app/models/whisper\", local_dir_use_symlinks=False, local_files_only=False)"' >> /app/docker-entrypoint.sh && \
+    echo 'fi' >> /app/docker-entrypoint.sh && \
     echo 'chmod +x /app/scripts/init-ollama.sh' >> /app/docker-entrypoint.sh && \
-    echo 'echo "Running Ollama initialization..."' >> /app/docker-entrypoint.sh && \
-    echo '/app/scripts/init-ollama.sh' >> /app/docker-entrypoint.sh && \
-    echo 'echo "Starting FastAPI server..."' >> /app/docker-entrypoint.sh && \
-    echo 'exec poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug' >> /app/docker-entrypoint.sh && \
+    echo 'echo "=== Running Ollama initialization..."' >> /app/docker-entrypoint.sh && \
+    echo 'for i in {1..30}; do' >> /app/docker-entrypoint.sh && \
+    echo '  if /app/scripts/init-ollama.sh; then' >> /app/docker-entrypoint.sh && \
+    echo '    break' >> /app/docker-entrypoint.sh && \
+    echo '  fi' >> /app/docker-entrypoint.sh && \
+    echo '  echo "Retrying Ollama initialization in 2 seconds..."' >> /app/docker-entrypoint.sh && \
+    echo '  sleep 2' >> /app/docker-entrypoint.sh && \
+    echo 'done' >> /app/docker-entrypoint.sh && \
+    echo 'cd /app' >> /app/docker-entrypoint.sh && \
+    echo 'exec poetry run uvicorn app.main:app --host 0.0.0.0 --port 8443 --ssl-keyfile ${SSL_KEY_FILE} --ssl-certfile ${SSL_CERT_FILE} --log-level debug' >> /app/docker-entrypoint.sh && \
     chmod +x /app/docker-entrypoint.sh
 
 # Expose the port the app runs on
-EXPOSE 8000
+EXPOSE 8443
 
 # Command to run the app
-ENTRYPOINT ["/app/docker-entrypoint.sh"] 
+ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"] 
