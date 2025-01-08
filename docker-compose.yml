@@ -16,15 +16,26 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+    tty: true
+    stdin_open: true
     entrypoint: ["/bin/sh", "-c"]
     command: |
-      set -x
+      set -ex
+      echo "Container starting at $(date)..."
+      echo "Current directory:"
+      pwd
+      echo "Directory contents:"
+      ls -la
+      echo "Environment:"
+      env
+      echo "Creating directories..."
       mkdir -p /app/data /app/logs
       echo "Starting initialization..."
       chmod +x /app/scripts/init-ollama.sh
-      /app/scripts/init-ollama.sh
+      echo "Running init-ollama.sh..."
+      bash -x /app/scripts/init-ollama.sh || { echo "Ollama initialization failed with code $?"; exit 1; }
       echo "Starting FastAPI server..."
-      poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+      exec poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   ollama:
     image: ollama/ollama:latest
