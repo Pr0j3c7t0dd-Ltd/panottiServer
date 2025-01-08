@@ -2,7 +2,7 @@
 
 ## Overview
 
-The plugin system in PanottiServer is designed for extensibility and modularity. It uses a combination of YAML configuration and Python implementation files to define and manage plugins.
+The plugin system in PanottiServer is designed for extensibility and modularity. It uses a combination of YAML configuration and Python implementation files to define and manage plugins. The system supports dynamic loading, event-driven communication, and robust error handling.
 
 ## Plugin Structure
 
@@ -10,9 +10,12 @@ Each plugin follows this structure:
 ```
 plugins/
 └── [plugin_name]/
-    ├── plugin.yaml         # Plugin configuration
+    ├── plugin.yaml         # Plugin configuration (from plugin.yaml.example)
+    ├── plugin.yaml.example # Example configuration template
     ├── plugin.py          # Plugin implementation
-    └── __init__.py        # Package initialization
+    ├── __init__.py        # Package initialization
+    ├── .gitignore         # Git ignore file (ignores plugin.yaml)
+    └── README.md          # Plugin documentation
 ```
 
 ## Plugin Configuration
@@ -20,60 +23,143 @@ plugins/
 Plugins are configured using `plugin.yaml` files:
 
 ```yaml
-name: plugin_name
-version: 1.0.0
-description: Plugin description
-enabled: true
-dependencies:
-  - other_plugin_name
+name: plugin_name          # Unique identifier for the plugin
+version: "1.0.0"          # Semantic versioning
+enabled: true             # Whether the plugin is active
+dependencies: []          # List of required plugins
+config:                   # Plugin-specific configuration
+    max_concurrent_tasks: 4  # Common configuration for concurrent processing
+    output_directory: "data/[plugin_name]"  # Plugin output location
+    # ... other plugin-specific settings
 ```
 
-## Plugin Manager
+## Core Components
 
-The `PluginManager` class (`app/plugins/manager.py`) handles:
-- Plugin discovery and loading
-- Configuration management
-- Event routing
-- Plugin lifecycle management
+### PluginBase Class
+- Abstract base class for all plugins
+- Provides lifecycle management (initialize, shutdown)
+- Handles event bus integration
+- Implements logging and error handling
+- Tracks initialization state
 
-### Key Features
+### PluginManager
+- Handles plugin discovery and loading
+- Manages plugin configurations
+- Validates dependencies
+- Provides plugin lifecycle management
+- Implements robust error handling and logging
 
-1. **Dynamic Discovery**
-   - Automatically finds plugins in the plugins directory
-   - Loads configurations from YAML files
-   - Validates plugin structure and dependencies
+### Event System Integration
+- Event-driven architecture using EventBus
+- Supports asynchronous event handling
+- Provides structured event context
+- Enables plugin-to-plugin communication
 
-2. **Event System Integration**
-   - Plugins can subscribe to and emit events
-   - Event bus handles communication between plugins
-   - Structured logging of plugin activities
+## Plugin Development Guide
+
+### Creating New Plugins
+
+1. Create plugin directory structure:
+   ```bash
+   mkdir -p app/plugins/[plugin_name]
+   ```
+
+2. Create required files:
+   - `plugin.yaml.example` with configuration template
+   - `plugin.py` implementing `PluginBase`
+   - `__init__.py` exposing the plugin class
+   - `.gitignore` to exclude `plugin.yaml`
+   - `README.md` with plugin documentation
+
+3. Implement the plugin class:
+   ```python
+   from app.plugins.base import PluginBase, PluginConfig
+   
+   class YourPlugin(PluginBase):
+       async def _initialize(self) -> None:
+           # Plugin-specific initialization
+           if self.event_bus:
+               await self.event_bus.subscribe("event.name", self._handle_event)
+   
+       async def _shutdown(self) -> None:
+           # Plugin-specific cleanup
+           pass
+   
+       async def _handle_event(self, event: dict) -> None:
+           # Event handling logic
+           pass
+   ```
+
+### Best Practices
+
+1. **Configuration Management**
+   - Use `plugin.yaml.example` as a template
+   - Document all configuration options
+   - Implement validation for config values
+   - Use type hints for configuration
+
+2. **Error Handling**
+   - Implement comprehensive error handling
+   - Use structured logging with context
+   - Gracefully handle initialization failures
+   - Properly clean up resources on shutdown
+
+3. **Event Handling**
+   - Use typed event models
+   - Implement proper error handling in event handlers
+   - Use async/await for event processing
+   - Handle event context properly
+
+4. **Resource Management**
+   - Use thread pools for CPU-intensive tasks
+   - Implement proper cleanup in shutdown
+   - Handle concurrent processing limits
+   - Use async IO for I/O-bound operations
+
+5. **Testing**
+   - Write unit tests for plugin functionality
+   - Test event handling
+   - Mock dependencies and external services
+   - Test configuration validation
+
+6. **Documentation**
+   - Maintain comprehensive README
+   - Document configuration options
+   - Include usage examples
+   - Document dependencies and requirements
+
+## Plugin Examples
+
+The codebase includes several reference implementations:
+
+1. **Example Plugin**
+   - Reference implementation demonstrating best practices
+   - Complete documentation and type hints
+   - Example event handling and configuration
+
+2. **Noise Reduction Plugin**
+   - Audio processing functionality
+   - Complex configuration options
+   - Resource management example
+
+3. **Meeting Notes Plugins**
+   - Both local and remote implementations
+   - Dependency management example
+   - Integration with external services
+
+## Security Considerations
+
+1. **Configuration Security**
+   - Sensitive configuration in `plugin.yaml`
+   - Example configurations in version control
+   - Proper gitignore setup
+
+2. **Resource Access**
+   - Controlled access to system resources
+   - Proper permission handling
+   - Secure external service integration
 
 3. **Error Handling**
-   - Graceful handling of plugin loading failures
-   - Detailed logging of plugin lifecycle events
-   - Configuration validation
-
-## Creating New Plugins
-
-1. Create a new directory under `app/plugins/`
-2. Add `plugin.yaml` with configuration
-3. Implement `plugin.py` extending `PluginBase`
-4. Register event handlers if needed
-
-## Best Practices
-
-1. **Plugin Design**
-   - Single responsibility principle
-   - Clear documentation
-   - Type hints
-   - Error handling
-
-2. **Configuration**
-   - Version control
-   - Dependency declaration
-   - Feature flags
-
-3. **Testing**
-   - Unit tests for plugin functionality
-   - Integration tests with event system
-   - Mock dependencies
+   - No sensitive data in error logs
+   - Proper exception handling
+   - Secure cleanup on failures
