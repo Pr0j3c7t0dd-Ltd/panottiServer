@@ -106,7 +106,7 @@ class DesktopNotifierPlugin(PluginBase):
             }
         )
 
-    async def handle_meeting_notes_completed(self, event_data: RecordingEvent) -> None:
+    async def handle_meeting_notes_completed(self, event_data: EventData) -> None:
         """Handle meeting notes completed event"""
         try:
             logger.debug(
@@ -118,15 +118,55 @@ class DesktopNotifierPlugin(PluginBase):
                 }
             )
 
-            # Extract data from RecordingEvent
-            data = event_data.data
-            recording_id = data.get("recording_id", "unknown")
-            output_path = data.get("output_path") or data.get("notes_path")
+            # Extract data based on event type
+            if isinstance(event_data, dict):
+                data = event_data
+            elif isinstance(event_data, (Event, RecordingEvent)):
+                data = event_data.data if hasattr(event_data, 'data') else {}
+            else:
+                logger.error(
+                    "Unsupported event type",
+                    extra={
+                        "plugin": self.name,
+                        "event_type": type(event_data).__name__
+                    }
+                )
+                return
+
+            # Extract recording ID and output path, with fallbacks
+            recording_id = (
+                data.get("recording_id")
+                or data.get("data", {}).get("recording_id")
+                or "unknown"
+            )
+            
+            output_path = (
+                data.get("output_path")
+                or data.get("notes_path")
+                or data.get("data", {}).get("output_path")
+                or data.get("data", {}).get("notes_path")
+                or data.get("current_event", {}).get("meeting_notes", {}).get("output_path")
+            )
 
             if not output_path:
-                logger.warning("No output path in event data", 
-                             extra={"plugin": self.name, "event_data": str(data)})
+                logger.warning(
+                    "No output path in event data", 
+                    extra={
+                        "plugin": self.name,
+                        "event_data": str(data),
+                        "recording_id": recording_id
+                    }
+                )
                 return
+
+            logger.info(
+                "Processing meeting notes completion",
+                extra={
+                    "plugin": self.name,
+                    "recording_id": recording_id,
+                    "output_path": output_path
+                }
+            )
 
             # Send notification
             await self._send_notification(recording_id, output_path)
@@ -134,71 +174,59 @@ class DesktopNotifierPlugin(PluginBase):
             # Auto-open if configured
             config_dict = self.config.config or {}
             auto_open = config_dict.get("auto_open_notes", False)
-            logger.debug(
-                "Auto-open setting",
-                extra={
-                    "plugin": self.name,
-                    "auto_open": auto_open,
-                    "config": str(config_dict)
-                }
-            )
-            
             if auto_open:
                 await self._open_notes_file(output_path)
 
             # Record notification in database
-            with self.db.get_connection() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO notifications 
-                    (recording_id, notification_type) 
-                    VALUES (?, ?)
-                    """,
-                    (recording_id, "meeting_notes_complete")
-                )
-                conn.commit()
+            if self.db:
+                with self.db.get_connection() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO notifications 
+                        (recording_id, notification_type) 
+                        VALUES (?, ?)
+                        """,
+                        (recording_id, "meeting_notes_complete")
+                    )
+                    conn.commit()
 
-            # Emit completion event with proper event structure
-            completion_event = RecordingEvent(
-                recording_timestamp=datetime.utcnow().isoformat(),
-                recording_id=recording_id,
-                event="desktop_notification.completed",
-                data={
-                    "recording_id": recording_id,
-                    "output_path": output_path,
-                    "current_event": {
-                        "desktop_notification": {
-                            "status": "completed",
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "notification_type": "terminal-notifier",
-                            "settings": {
-                                "auto_open_notes": auto_open
+            # Emit completion event
+            if self.event_bus:
+                completion_event = RecordingEvent(
+                    recording_timestamp=datetime.utcnow().isoformat(),
+                    recording_id=recording_id,
+                    event="desktop_notification.completed",
+                    data={
+                        "recording_id": recording_id,
+                        "output_path": output_path,
+                        "current_event": {
+                            "desktop_notification": {
+                                "status": "completed",
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "notification_type": "terminal-notifier",
+                                "settings": {
+                                    "auto_open_notes": auto_open
+                                }
                             }
                         }
                     },
-                    "event_history": {
-                        "meeting_notes_local": data.get("current_event", {}).get("meeting_notes", {}),
-                        "transcription_local": data.get("event_history", {}).get("transcription", {}),
-                        "recording": data.get("event_history", {}).get("recording", {})
-                    }
-                },
-                context=EventContext(
-                    correlation_id=str(uuid.uuid4()),
-                    timestamp=datetime.utcnow().isoformat(),
-                    source_plugin=self.name
+                    context=EventContext(
+                        correlation_id=str(uuid.uuid4()),
+                        timestamp=datetime.utcnow().isoformat(),
+                        source_plugin=self.name
+                    )
                 )
-            )
 
-            logger.debug(
-                "Publishing completion event",
-                extra={
-                    "plugin": self.name,
-                    "event_name": completion_event.event,
-                    "recording_id": recording_id,
-                    "event_data": str(completion_event.data)
-                }
-            )
-            await self.event_bus.publish(completion_event)
+                logger.debug(
+                    "Publishing completion event",
+                    extra={
+                        "plugin": self.name,
+                        "event_name": completion_event.event,
+                        "recording_id": recording_id,
+                        "output_path": output_path
+                    }
+                )
+                await self.event_bus.publish(completion_event)
 
         except Exception as e:
             error_msg = f"Failed to handle meeting notes completion: {str(e)}"
@@ -213,24 +241,20 @@ class DesktopNotifierPlugin(PluginBase):
             )
             
             if self.event_bus and "recording_id" in locals():
-                # Emit error event with proper event structure
+                # Emit error event
                 error_event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
                     event="desktop_notification.error",
                     data={
                         "recording_id": recording_id,
+                        "error": str(e),
                         "current_event": {
                             "desktop_notification": {
                                 "status": "error",
                                 "timestamp": datetime.utcnow().isoformat(),
                                 "error": str(e)
                             }
-                        },
-                        "event_history": {
-                            "meeting_notes_local": data.get("current_event", {}).get("meeting_notes", {}) if "data" in locals() else {},
-                            "transcription_local": data.get("event_history", {}).get("transcription", {}) if "data" in locals() else {},
-                            "recording": data.get("event_history", {}).get("recording", {}) if "data" in locals() else {}
                         }
                     },
                     context=EventContext(
