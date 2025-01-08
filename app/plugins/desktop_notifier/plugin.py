@@ -47,9 +47,13 @@ class DesktopNotifierPlugin(PluginBase):
             # Initialize database
             self.db = await DatabaseManager.get_instance()
 
-            # Subscribe to meeting notes completed event only
+            # Subscribe to meeting notes completed events
             await self.event_bus.subscribe(
-                "meeting_notes.completed",
+                "meeting_notes_local.completed",
+                self.handle_meeting_notes_completed
+            )
+            await self.event_bus.subscribe(
+                "meeting_notes_remote.completed",
                 self.handle_meeting_notes_completed
             )
 
@@ -57,7 +61,10 @@ class DesktopNotifierPlugin(PluginBase):
                 "Desktop notifier plugin initialized",
                 extra={
                     "plugin": self.name,
-                    "subscribed_events": ["meeting_notes.completed"],
+                    "subscribed_events": [
+                        "meeting_notes_local.completed",
+                        "meeting_notes_remote.completed"
+                    ],
                     "handler": "handle_meeting_notes_completed"
                 }
             )
@@ -80,7 +87,11 @@ class DesktopNotifierPlugin(PluginBase):
 
         # Unsubscribe from events
         await self.event_bus.unsubscribe(
-            "meeting_notes.completed",
+            "meeting_notes_local.completed",
+            self.handle_meeting_notes_completed
+        )
+        await self.event_bus.unsubscribe(
+            "meeting_notes_remote.completed",
             self.handle_meeting_notes_completed
         )
 
@@ -166,8 +177,8 @@ class DesktopNotifierPlugin(PluginBase):
                         }
                     },
                     "event_history": {
-                        "meeting_notes": data.get("current_event", {}).get("meeting_notes", {}),
-                        "transcription": data.get("event_history", {}).get("transcription", {}),
+                        "meeting_notes_local": data.get("current_event", {}).get("meeting_notes", {}),
+                        "transcription_local": data.get("event_history", {}).get("transcription", {}),
                         "recording": data.get("event_history", {}).get("recording", {})
                     }
                 },
@@ -217,8 +228,8 @@ class DesktopNotifierPlugin(PluginBase):
                             }
                         },
                         "event_history": {
-                            "meeting_notes": data.get("current_event", {}).get("meeting_notes", {}) if "data" in locals() else {},
-                            "transcription": data.get("event_history", {}).get("transcription", {}) if "data" in locals() else {},
+                            "meeting_notes_local": data.get("current_event", {}).get("meeting_notes", {}) if "data" in locals() else {},
+                            "transcription_local": data.get("event_history", {}).get("transcription", {}) if "data" in locals() else {},
                             "recording": data.get("event_history", {}).get("recording", {}) if "data" in locals() else {}
                         }
                     },
