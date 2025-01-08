@@ -45,14 +45,23 @@ app/
 
 ### Quick Setup (Recommended)
 
-The easiest way to set up the application is to use the provided setup script:
+The easiest way to set up the application is to use the provided setup script. 
 
-1. Ensure Python 3.12 is installed on your system:
+#### Prerequisites
+
+1. **macOS Users**: You need Homebrew installed. If you don't have it, install it with:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+2. Ensure Python 3.12 is installed on your system:
 ```bash
 python --version  # Should show Python 3.12.x
 ```
 
-2. Run the setup script:
+#### Running the Setup
+
+1. Run the setup script:
 ```bash
 ./scripts/setup.py
 ```
@@ -60,6 +69,10 @@ python --version  # Should show Python 3.12.x
 The setup script will automatically:
 - Verify/install Rust (required for Pydantic V2)
 - Verify/install Poetry for dependency management
+- Install system dependencies via Homebrew (macOS):
+  - openai-whisper (for audio transcription)
+  - terminal-notifier (for desktop notifications)
+  - ollama (for local LLM processing)
 - Set up the Python virtual environment
 - Install all dependencies
 - Configure environment files

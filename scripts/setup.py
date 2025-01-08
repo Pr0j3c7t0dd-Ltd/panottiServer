@@ -20,6 +20,47 @@ def check_python_version():
         sys.exit(1)
 
 
+def check_brew_installation():
+    """Check if Homebrew is installed on macOS"""
+    if platform.system() != 'Darwin':
+        print("Not on macOS, skipping Homebrew checks")
+        return False
+    
+    try:
+        subprocess.run(['brew', '--version'], check=True, capture_output=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("Homebrew is not installed. Installing Homebrew...")
+        subprocess.run('/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"', shell=True, check=True)
+        return True
+
+
+def install_system_dependencies():
+    """Install required system dependencies"""
+    if not check_brew_installation():
+        return
+    
+    print("Installing system dependencies...")
+    brew_packages = [
+        'openai-whisper',      # Required for audio transcription
+        'terminal-notifier',   # Required for desktop notifications
+        'ollama',             # Required for local LLM processing
+    ]
+    
+    for package in brew_packages:
+        try:
+            # Check if package is already installed
+            result = subprocess.run(['brew', 'list', package], capture_output=True)
+            if result.returncode == 0:
+                print(f"{package} is already installed")
+            else:
+                print(f"Installing {package}...")
+                subprocess.run(['brew', 'install', package], check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error installing {package}: {e}")
+            sys.exit(1)
+
+
 def check_rust_installation():
     """Check if Rust is installed"""
     try:
@@ -99,6 +140,7 @@ def main():
         
         # Check requirements
         check_python_version()
+        install_system_dependencies()  # Install brew packages first
         check_rust_installation()
         check_poetry_installation()
         
