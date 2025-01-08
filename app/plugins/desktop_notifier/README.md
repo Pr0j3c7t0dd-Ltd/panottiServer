@@ -1,5 +1,7 @@
 # Desktop Notifier Plugin
 
+> ⚠️ **Note**: This plugin is not compatible with Docker deployments as it requires macOS-specific `terminal-notifier` for desktop notifications. If you're running the server in Docker, this plugin should be disabled in your configuration.
+
 This plugin provides desktop notifications when meeting notes are completed. It listens for the 'meeting_notes.completed' event and sends notifications using terminal-notifier.
 
 ## Requirements
