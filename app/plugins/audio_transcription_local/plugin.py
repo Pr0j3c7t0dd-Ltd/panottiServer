@@ -36,7 +36,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         self._processing_lock = threading.Lock()
         self._db_initialized = False
         self._model = None
-        self._output_dir = Path(os.getenv("TRANSCRIPTS_DIR", "data/transcripts"))
+        self._output_dir = Path(os.getenv("TRANSCRIPTS_DIR", "data/transcripts_local"))
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._shutdown_event = asyncio.Event()
 

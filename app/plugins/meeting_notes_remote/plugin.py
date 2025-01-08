@@ -91,7 +91,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "plugin_name": self.name,
                     "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
-                    "event": "transcription_local.completed"
+                    "event": "transcription_local.completed",
                     "output_dir": str(self.output_dir)
                 }
             )
