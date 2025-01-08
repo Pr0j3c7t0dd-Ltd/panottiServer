@@ -670,12 +670,12 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 "silence_threshold": silence_threshold
             }
         )
-            
+
         # Run transcription in thread pool
         loop = asyncio.get_running_loop()
-        segments, info = await loop.run_in_executor(
-            self._executor,
-            lambda: self._model.transcribe(
+        
+        def run_transcription():
+            return self._model.transcribe(
                 audio_path,
                 condition_on_previous_text=False,  # Don't condition on previous text for accurate timestamps
                 word_timestamps=True,  # Get accurate word-level timestamps
@@ -686,58 +686,78 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 ),
                 beam_size=5  # Increase beam size for better word-level timestamps
             )
-        )
-
-        # Write transcript to file
-        transcript_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(transcript_file, "w") as f:
-            # Add markdown header
-            f.write("# Audio Transcript\n\n")
-            if speaker_label:
-                f.write(f"Speaker: {speaker_label}\n\n")
-
-            # Add metadata if available from event data
-            if hasattr(self, '_current_event_metadata'):
-                metadata = {
-                    "event": {
-                        "title": self._current_event_metadata.get("eventTitle"),
-                        "provider": self._current_event_metadata.get("eventProvider"),
-                        "providerId": self._current_event_metadata.get("eventProviderId"),
-                        "started": self._current_event_metadata.get("recordingStarted"),
-                        "ended": self._current_event_metadata.get("recordingEnded"),
-                        "attendees": self._current_event_metadata.get("eventAttendees", [])
-                    },
-                    "speakers": [self._current_event_metadata.get("microphoneLabel", "Microphone"), 
-                               self._current_event_metadata.get("systemLabel", "System")],
-                    "transcriptionCompleted": datetime.utcnow().isoformat()
-                }
-                f.write("## Metadata\n\n```json\n")
-                f.write(json.dumps(metadata, indent=2))
-                f.write("\n```\n\n")
-
-            f.write("## Segments\n\n")
             
-            # Write segments with adjusted timestamps
-            for segment in segments:
-                # Break up long segments into smaller chunks based on words
-                if hasattr(segment, "words") and segment.words:
-                    # Group words into chunks of ~5 seconds
-                    chunk_words = []
-                    chunk_start = segment.words[0].start
-                    current_text = []
-                    
-                    for word in segment.words:
-                        # Check if this word is a repeat of the last few words
-                        last_n_words = ' '.join(current_text[-3:]) if len(current_text) >= 3 else ''
-                        current_word = word.word.strip()
+        segments, info = await loop.run_in_executor(self._executor, run_transcription)
+
+        # Write transcript to file in thread pool
+        def write_transcript():
+            transcript_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(transcript_file, "w") as f:
+                # Add markdown header
+                f.write("# Audio Transcript\n\n")
+                if speaker_label:
+                    f.write(f"Speaker: {speaker_label}\n\n")
+
+                # Add metadata if available from event data
+                if hasattr(self, '_current_event_metadata'):
+                    metadata = {
+                        "event": {
+                            "title": self._current_event_metadata.get("eventTitle"),
+                            "provider": self._current_event_metadata.get("eventProvider"),
+                            "providerId": self._current_event_metadata.get("eventProviderId"),
+                            "started": self._current_event_metadata.get("recordingStarted"),
+                            "ended": self._current_event_metadata.get("recordingEnded"),
+                            "attendees": self._current_event_metadata.get("eventAttendees", [])
+                        },
+                        "speakers": [self._current_event_metadata.get("microphoneLabel", "Microphone"), 
+                                   self._current_event_metadata.get("systemLabel", "System")],
+                        "transcriptionCompleted": datetime.utcnow().isoformat()
+                    }
+                    f.write("## Metadata\n\n```json\n")
+                    f.write(json.dumps(metadata, indent=2))
+                    f.write("\n```\n\n")
+
+                f.write("## Segments\n\n")
+                
+                # Write segments with adjusted timestamps
+                for segment in segments:
+                    # Break up long segments into smaller chunks based on words
+                    if hasattr(segment, "words") and segment.words:
+                        # Group words into chunks of ~5 seconds
+                        chunk_words = []
+                        chunk_start = segment.words[0].start
+                        current_text = []
                         
-                        # Skip if this word would create a repetition
-                        if last_n_words and current_word in last_n_words:
-                            continue
+                        for word in segment.words:
+                            # Check if this word is a repeat of the last few words
+                            last_n_words = ' '.join(current_text[-3:]) if len(current_text) >= 3 else ''
+                            current_word = word.word.strip()
                             
-                        if word.start - chunk_start > 5.0 and current_text:
-                            # Write current chunk
-                            chunk_end = word.start
+                            # Skip if this word would create a repetition
+                            if last_n_words and current_word in last_n_words:
+                                continue
+                                
+                            if word.start - chunk_start > 5.0 and current_text:
+                                # Write current chunk
+                                chunk_end = word.start
+                                start_minutes = int(chunk_start // 60)
+                                start_seconds = chunk_start % 60
+                                end_minutes = int(chunk_end // 60)
+                                end_seconds = chunk_end % 60
+                                
+                                timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
+                                speaker = f"{speaker_label}: " if speaker_label else ""
+                                f.write(f"{timestamp} {speaker}{' '.join(current_text).strip()}\n")
+                                
+                                # Start new chunk
+                                chunk_start = word.start
+                                current_text = []
+                            
+                            current_text.append(word.word)
+
+                        # Write final chunk if any words remain
+                        if current_text:
+                            chunk_end = segment.words[-1].end
                             start_minutes = int(chunk_start // 60)
                             start_seconds = chunk_start % 60
                             end_minutes = int(chunk_end // 60)
@@ -746,34 +766,18 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                             timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
                             speaker = f"{speaker_label}: " if speaker_label else ""
                             f.write(f"{timestamp} {speaker}{' '.join(current_text).strip()}\n")
-                            
-                            # Start new chunk
-                            chunk_start = word.start
-                            current_text = []
-                        
-                        current_text.append(word.word)
-
-                    # Write final chunk if any words remain
-                    if current_text:
-                        chunk_end = segment.words[-1].end
-                        start_minutes = int(chunk_start // 60)
-                        start_seconds = chunk_start % 60
-                        end_minutes = int(chunk_end // 60)
-                        end_seconds = chunk_end % 60
+                    else:
+                        # Fallback for segments without word-level info
+                        start_minutes = int(segment.start // 60)
+                        start_seconds = segment.start % 60
+                        end_minutes = int(segment.end // 60)
+                        end_seconds = segment.end % 60
                         
                         timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
                         speaker = f"{speaker_label}: " if speaker_label else ""
-                        f.write(f"{timestamp} {speaker}{' '.join(current_text).strip()}\n")
-                else:
-                    # Fallback for segments without word-level info
-                    start_minutes = int(segment.start // 60)
-                    start_seconds = segment.start % 60
-                    end_minutes = int(segment.end // 60)
-                    end_seconds = segment.end % 60
-                    
-                    timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
-                    speaker = f"{speaker_label}: " if speaker_label else ""
-                    f.write(f"{timestamp} {speaker}{segment.text.strip()}\n")
+                        f.write(f"{timestamp} {speaker}{segment.text.strip()}\n")
+
+        await loop.run_in_executor(self._executor, write_transcript)
 
         return transcript_file
 

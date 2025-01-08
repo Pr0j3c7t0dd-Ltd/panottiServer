@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 import asyncio
+import aiohttp
 
 import requests
 
@@ -291,10 +292,9 @@ IMPORTANT:
             }
         )
 
-        # Call Ollama API in thread pool
-        def _call_ollama() -> str:
-            try:
-                response = requests.post(
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
                     self.ollama_url,
                     json={
                         "model": self.model,
@@ -302,26 +302,23 @@ IMPORTANT:
                         "stream": False,
                         "num_ctx": self.num_ctx,
                     },
-                    timeout=30,
-                )
-                response.raise_for_status()
-                return cast(str, response.json().get("response", ""))
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    return cast(str, result.get("response", ""))
 
-            except Exception as e:
-                logger.error(
-                    "Failed to generate meeting notes: %s",
-                    str(e),
-                    extra={
-                        "plugin_name": self.name,
-                        "error": str(e),
-                        "transcript_length": len(transcript_text)
-                    },
-                    exc_info=True
-                )
-                return f"Error generating meeting notes: {e}"
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._executor, _call_ollama)
+        except Exception as e:
+            logger.error(
+                "Failed to generate meeting notes",
+                extra={
+                    "plugin_name": self.name,
+                    "error": str(e),
+                    "transcript_length": len(transcript_text)
+                },
+                exc_info=True
+            )
+            return f"Error generating meeting notes: {e}"
 
     async def _process_transcript(
         self, recording_id: str, transcript_text: str, original_event: Event
