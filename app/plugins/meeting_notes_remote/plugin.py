@@ -10,7 +10,7 @@ import requests
 
 from app.plugins.base import PluginBase
 from app.plugins.events.bus import EventBus
-from app.plugins.events.models import Event
+from app.plugins.events.models import Event, EventContext, EventPriority
 from app.utils.logging_config import get_logger
 from app.models.recording.events import RecordingEvent, EventContext
 
@@ -137,36 +137,67 @@ class MeetingNotesRemotePlugin(PluginBase):
             if not output_path:
                 return
 
-            # Emit completion event
-            completion_event = RecordingEvent(
-                recording_timestamp=datetime.utcnow().isoformat(),
-                recording_id=recording_id,
-                event="meeting_notes_remote.completed",
-                data={
-                    "recording_id": recording_id,
+            logger.info(
+                "Meeting notes generated successfully",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
                     "output_path": str(output_path),
-                    "notes_path": str(output_path),
-                    "status": "completed",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "recording_id": recording_id
+                }
+            )
+
+            # Emit completion event
+            completion_event = {
+                "event": "meeting_notes_remote.completed",
+                "recording_id": recording_id,
+                "output_path": str(output_path),
+                "notes_path": str(output_path),
+                "status": "completed",
+                "timestamp": datetime.utcnow().isoformat(),
+                "plugin_id": self.name,
+                "data": {
                     "current_event": {
                         "meeting_notes": {
                             "status": "completed",
                             "timestamp": datetime.utcnow().isoformat(),
                             "output_path": str(output_path)
                         }
-                    },
-                    "event_history": {}
-                },
-                context=EventContext(
-                    correlation_id=str(uuid.uuid4()),
-                    timestamp=datetime.utcnow().isoformat(),
-                    source_plugin=self.name
-                )
+                    }
+                }
+            }
+
+            logger.debug(
+                "Publishing completion event",
+                extra={
+                    "plugin": self.name,
+                    "event_name": completion_event["event"],
+                    "recording_id": recording_id,
+                    "output_path": str(output_path)
+                }
             )
             await self.event_bus.publish(completion_event)
 
+            # Add verification log after publishing
+            logger.info(
+                "Meeting notes completion event published",
+                extra={
+                    "plugin_name": self.name,
+                    "event_name": completion_event["event"],
+                    "recording_id": recording_id,
+                    "output_path": str(output_path)
+                }
+            )
+
         except Exception as e:
-            logger.error("Error processing transcription event", extra={"plugin_name": self.name, "error": str(e)})
+            logger.error(
+                "Error processing transcription event",
+                extra={
+                    "plugin_name": self.name,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
             raise
 
     def _generate_meeting_notes_from_text(self, transcript_text: str) -> str:
