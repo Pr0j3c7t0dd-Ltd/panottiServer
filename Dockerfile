@@ -32,12 +32,14 @@ RUN poetry install --no-interaction --no-ansi
 
 # Install Whisper and pre-download the model
 RUN pip install -U openai-whisper faster-whisper && \
-    python3 -c 'from faster_whisper import WhisperModel; WhisperModel("base.en", download_root="/app/models")'
+    mkdir -p /app/models && \
+    python3 -c 'from huggingface_hub import snapshot_download; snapshot_download("Systran/faster-whisper-base.en", local_dir="/app/models", local_dir_use_symlinks=False)'
 
 # Set environment variables for model path
 ENV WHISPER_MODEL_PATH="/app/models"
 ENV HF_HUB_OFFLINE=0
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
+ENV TRANSFORMERS_OFFLINE=0
 
 # Expose the port the app runs on
 EXPOSE 8000

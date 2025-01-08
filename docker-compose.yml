@@ -5,11 +5,26 @@ services:
       - "54789:8000"
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
       - ./.env:/app/.env
+      - ./scripts:/app/scripts
     environment:
       - PYTHONUNBUFFERED=1
+    networks:
+      - internal
+      - external
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      set -x
+      mkdir -p /app/data /app/logs
+      echo "Starting initialization..."
+      chmod +x /app/scripts/init-ollama.sh
+      /app/scripts/init-ollama.sh
+      echo "Starting FastAPI server..."
+      poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   ollama:
     image: ollama/ollama:latest
@@ -17,6 +32,24 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    networks:
+      - internal
+    environment:
+      - GIN_MODE=release
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    entrypoint: []
+    command: ollama serve
+
+networks:
+  internal:
+    internal: true
+  external:
+    internal: false
 
 volumes:
   ollama_data: 
