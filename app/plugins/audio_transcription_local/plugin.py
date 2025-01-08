@@ -671,19 +671,23 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             }
         )
             
-        # Transcribe the audio with accurate timestamps
-        segments, info = self._model.transcribe(
-            audio_path,
-            condition_on_previous_text=False,  # Don't condition on previous text for accurate timestamps
-            word_timestamps=True,  # Get accurate word-level timestamps
-            vad_filter=True,  # Use voice activity detection
-            vad_parameters=dict(
-                min_silence_duration_ms=500,  # Minimum silence duration to split segments
-                speech_pad_ms=100  # Padding around speech segments
-            ),
-            beam_size=5  # Increase beam size for better word-level timestamps
+        # Run transcription in thread pool
+        loop = asyncio.get_running_loop()
+        segments, info = await loop.run_in_executor(
+            self._executor,
+            lambda: self._model.transcribe(
+                audio_path,
+                condition_on_previous_text=False,  # Don't condition on previous text for accurate timestamps
+                word_timestamps=True,  # Get accurate word-level timestamps
+                vad_filter=True,  # Use voice activity detection
+                vad_parameters=dict(
+                    min_silence_duration_ms=500,  # Minimum silence duration to split segments
+                    speech_pad_ms=100  # Padding around speech segments
+                ),
+                beam_size=5  # Increase beam size for better word-level timestamps
+            )
         )
-        
+
         # Write transcript to file
         transcript_file.parent.mkdir(parents=True, exist_ok=True)
         with open(transcript_file, "w") as f:
@@ -710,7 +714,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 f.write("## Metadata\n\n```json\n")
                 f.write(json.dumps(metadata, indent=2))
                 f.write("\n```\n\n")
-            
+
             f.write("## Segments\n\n")
             
             # Write segments with adjusted timestamps
@@ -748,7 +752,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                             current_text = []
                         
                         current_text.append(word.word)
-                    
+
                     # Write final chunk if any words remain
                     if current_text:
                         chunk_end = segment.words[-1].end
@@ -770,7 +774,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
                     speaker = f"{speaker_label}: " if speaker_label else ""
                     f.write(f"{timestamp} {speaker}{segment.text.strip()}\n")
-        
+
         return transcript_file
 
     def _init_model(self) -> None:

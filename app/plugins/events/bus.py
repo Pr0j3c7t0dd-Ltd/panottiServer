@@ -156,27 +156,68 @@ class EventBus:
                     }
                 )
             
-            await handler(event)
+            # Create a task for the handler and don't wait for it
+            handler_task = asyncio.create_task(handler(event))
+            self._pending_tasks.add(handler_task)
             
-            logger.debug(
-                "Event handler execution completed",
-                extra={
-                    "req_id": self._req_id,
-                    "component": "event_bus",
-                    "handler": handler.__name__,
-                    "handler_module": handler.__module__,
-                    "handler_qualname": handler.__qualname__,
-                    "handler_id": id(handler),
-                    "event_type": type(event).__name__,
-                    "event_data": str(event),
-                    "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
-                    "event_name": self._get_event_name(event),
-                    "execution_status": "success"
-                }
-            )
+            def handler_done_callback(task: asyncio.Task) -> None:
+                try:
+                    self._pending_tasks.discard(task)
+                    exc = task.exception()
+                    if exc:
+                        logger.error(
+                            f"Error in event handler {handler.__name__}",
+                            extra={
+                                "req_id": self._req_id,
+                                "component": "event_bus",
+                                "error": str(exc),
+                                "error_type": type(exc).__name__,
+                                "handler": handler.__name__,
+                                "handler_module": handler.__module__,
+                                "handler_qualname": handler.__qualname__,
+                                "handler_id": id(handler),
+                                "event_type": type(event).__name__,
+                                "event_data": str(event),
+                                "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
+                                "event_name": self._get_event_name(event),
+                                "stack_trace": traceback.format_exc()
+                            },
+                            exc_info=True
+                        )
+                    else:
+                        logger.debug(
+                            "Event handler execution completed",
+                            extra={
+                                "req_id": self._req_id,
+                                "component": "event_bus",
+                                "handler": handler.__name__,
+                                "handler_module": handler.__module__,
+                                "handler_qualname": handler.__qualname__,
+                                "handler_id": id(handler),
+                                "event_type": type(event).__name__,
+                                "event_data": str(event),
+                                "event_id": getattr(event, "event_id", None) or getattr(event, "id", None),
+                                "event_name": self._get_event_name(event),
+                                "execution_status": "success"
+                            }
+                        )
+                except Exception as e:
+                    logger.error(
+                        "Error in handler callback",
+                        extra={
+                            "req_id": self._req_id,
+                            "component": "event_bus",
+                            "error": str(e),
+                            "handler": handler.__name__,
+                            "event_id": getattr(event, "event_id", None) or getattr(event, "id", None)
+                        }
+                    )
+            
+            handler_task.add_done_callback(handler_done_callback)
+            
         except Exception as e:
             logger.error(
-                f"Error in event handler {handler.__name__}",
+                f"Error setting up event handler {handler.__name__}",
                 extra={
                     "req_id": self._req_id,
                     "component": "event_bus",
@@ -444,7 +485,7 @@ class EventBus:
         event: dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest,
     ) -> None:
         """Publish an event to all subscribers.
-        
+
         Args:
             event: Event data to publish
         """
@@ -513,12 +554,10 @@ class EventBus:
             )
             return
 
-        # Create tasks for each handler
-        tasks = []
+        # Create tasks for each handler but don't wait for them
         for handler in handlers:
             task = asyncio.create_task(self._handle_task(handler, event))
             task.add_done_callback(self._cleanup_task)
-            tasks.append(task)
             self._pending_tasks.add(task)
             
             logger.debug(
@@ -535,34 +574,15 @@ class EventBus:
                 }
             )
 
-        # Wait for all handlers to complete
-        try:
-            await asyncio.gather(*tasks)
-            logger.debug(
-                "All handler tasks completed",
-                extra={
-                    "req_id": self._req_id,
-                    "component": "event_bus",
-                    "event_name": event_name,
-                    "task_count": len(tasks),
-                    "pending_tasks": len(self._pending_tasks)
-                }
-            )
-        except Exception as e:
-            logger.error(
-                "Error gathering handler tasks",
-                extra={
-                    "req_id": self._req_id,
-                    "component": "event_bus",
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "event_name": event_name,
-                    "task_count": len(tasks),
-                    "pending_tasks": len(self._pending_tasks),
-                    "stack_trace": traceback.format_exc()
-                },
-                exc_info=True
-            )
+        logger.debug(
+            "All handler tasks created",
+            extra={
+                "req_id": self._req_id,
+                "component": "event_bus",
+                "event_name": event_name,
+                "pending_tasks": len(self._pending_tasks)
+            }
+        )
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the event bus by canceling pending tasks."""

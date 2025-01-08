@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Annotated, Callable
+import weakref
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Header, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
@@ -55,6 +56,9 @@ event_bus = None
 # API key security
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+
+# Track background tasks
+background_tasks = weakref.WeakSet()
 
 
 async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
@@ -121,6 +125,20 @@ async def shutdown() -> None:
     logger.info("Starting application shutdown")
     
     try:
+        # Cancel all background tasks
+        tasks = list(background_tasks)
+        if tasks:
+            logger.info(f"Cancelling {len(tasks)} background tasks")
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            
+            # Wait for tasks to complete with timeout
+            try:
+                await asyncio.wait(tasks, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Some tasks did not complete within timeout")
+        
         # First stop accepting new requests
         logger.info("Stopping event bus to prevent new events")
         if event_bus:
@@ -287,95 +305,36 @@ async def validation_exception_handler(
 
 @app.post("/api/recording-started")
 async def recording_started(
-    background_tasks: BackgroundTasks,
+    background_tasks_fastapi: BackgroundTasks,
     request: RecordingStartRequest,
     x_api_key: str = Depends(get_api_key)
 ) -> dict[str, Any]:
     """Handle recording started event.
 
     Args:
-        background_tasks: FastAPI background tasks
+        background_tasks_fastapi: FastAPI background tasks
         request: Recording start request model
         x_api_key: API key for authentication
 
     Returns:
         Response with recording ID and status
-
-    Raises:
-        HTTPException: If recording_id is missing
     """
     logger.info(
         "Processing recording started event",
         extra={"recording_id": request.recording_id},
     )
 
-    # Insert or update recordings table
-    db = await DatabaseManager.get_instance()
-    await db.execute(
-        """
-        INSERT INTO recordings (recording_id, status)
-        VALUES (?, ?)
-        ON CONFLICT(recording_id) DO UPDATE SET
-            status = 'active',
-            updated_at = CURRENT_TIMESTAMP
-        """,
-        (request.recording_id, "active"),
-    )
-
-    # Insert into recording_events table
-    await db.execute(
-        """
-        INSERT INTO recording_events (
-            recording_id, event_type, event_timestamp,
-            system_audio_path, microphone_audio_path, metadata
-        ) VALUES (?, ?, datetime('now'), ?, ?, ?)
-        """,
-        (
-            request.recording_id,
-            "recording.started",
-            request.system_audio_path,
-            request.microphone_audio_path,
-            json.dumps(request.metadata or {}),
-        ),
-    )
-
-    # Commit the transaction
-    await db.commit()
-
     # Create event
     event = request.to_event()
     
-    # Process event in background
-    async def process_event(event: RecordingEvent):
-        try:
-            # Publish event
-            logger.debug(
-                "Publishing event to event bus",
-                extra={
-                    "recording_id": event.recording_id,
-                    "event_type": "RecordingEvent",
-                }
-            )
-            await event_bus.publish(event)
-        except Exception as e:
-            logger.error(
-                "Error publishing recording start event",
-                extra={
-                    "recording_id": event.recording_id,
-                    "error": str(e),
-                    "traceback": traceback.format_exc()
-                }
-            )
-
-    # Add event processing to background tasks
-    background_tasks.add_task(process_event, event)
-
+    # Return success immediately and process everything else in background
+    background_tasks_fastapi.add_task(process_event, event)
     return {"status": "success", "recording_id": request.recording_id}
 
 
 @app.post("/api/recording-ended")
 async def recording_ended(
-    background_tasks: BackgroundTasks,
+    background_tasks_fastapi: BackgroundTasks,
     request: Request,
     recording_end: RecordingEndRequest,
     x_api_key: str = Depends(get_api_key),
@@ -404,59 +363,98 @@ async def recording_ended(
         }
     )
 
-    # Process event in background
-    async def process_event(event: RecordingEvent):
-        try:
-            # Check for duplicates
-            if await event.is_duplicate():
-                logger.info(
-                    "Skipping duplicate recording end event",
+    # Return success immediately and process everything else in background
+    task = asyncio.create_task(process_event(event))
+    background_tasks.add(task)
+    task.add_done_callback(lambda t: background_tasks.discard(t))
+    
+    return {"status": "success", "event_id": event_id}
+
+
+async def process_event(event: RecordingEvent) -> None:
+    """Process recording event in background.
+    
+    Args:
+        event: Recording event to process
+    """
+    try:
+        # Create a new database connection for background processing
+        db = await DatabaseManager.get_instance()
+        
+        # Check for duplicates
+        if await event.is_duplicate():
+            logger.info(
+                "Skipping duplicate recording end event",
+                extra={
+                    "recording_id": event.recording_id,
+                    "event_id": event.event_id,
+                }
+            )
+            return
+
+        # Create tasks for parallel execution
+        save_task = asyncio.create_task(event.save())
+        publish_task = asyncio.create_task(event_bus.publish(event))
+        
+        # Track tasks for cleanup
+        background_tasks.add(save_task)
+        background_tasks.add(publish_task)
+        
+        # Add callbacks for logging and cleanup
+        def task_done_callback(task: asyncio.Task) -> None:
+            try:
+                background_tasks.discard(task)
+                exc = task.exception()
+                if exc:
+                    logger.error(
+                        "Task failed",
+                        extra={
+                            "recording_id": event.recording_id,
+                            "event_id": event.event_id,
+                            "error": str(exc),
+                            "traceback": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+                        }
+                    )
+                else:
+                    logger.debug(
+                        "Task completed successfully",
+                        extra={
+                            "recording_id": event.recording_id,
+                            "event_id": event.event_id,
+                        }
+                    )
+            except asyncio.CancelledError:
+                logger.debug(
+                    "Task was cancelled",
                     extra={
                         "recording_id": event.recording_id,
-                        "event_id": event_id,
+                        "event_id": event.event_id,
                     }
                 )
-                return
+            except Exception as e:
+                logger.error(
+                    "Error in task callback",
+                    extra={
+                        "recording_id": event.recording_id,
+                        "event_id": event.event_id,
+                        "error": str(e),
+                        "traceback": traceback.format_exc()
+                    }
+                )
 
-            # Insert event record and update recording status
-            logger.debug(
-                "Inserting event record and updating status",
-                extra={
-                    "recording_id": event.recording_id,
-                    "event_id": event_id,
-                    "system_audio_path": event.system_audio_path,
-                    "microphone_audio_path": event.microphone_audio_path,
-                    "metadata": event.metadata,
-                }
-            )
-            await event.save()  # This already handles both event record and recording status update
-
-            # Publish event
-            logger.debug(
-                "Publishing event to event bus",
-                extra={
-                    "recording_id": event.recording_id,
-                    "event_id": event_id,
-                    "event_type": "RecordingEvent",
-                }
-            )
-            await event_bus.publish(event)
-        except Exception as e:
-            logger.error(
-                "Error processing recording end event",
-                extra={
-                    "recording_id": event.recording_id,
-                    "event_id": event_id,
-                    "error": str(e),
-                    "traceback": traceback.format_exc()
-                }
-            )
-
-    # Add event processing to background tasks
-    background_tasks.add_task(process_event, event)
-
-    # Return success immediately
-    return {"status": "success", "event_id": event_id}
+        save_task.add_done_callback(task_done_callback)
+        publish_task.add_done_callback(task_done_callback)
+        
+    except Exception as e:
+        logger.error(
+            "Error processing recording end event",
+            extra={
+                "recording_id": event.recording_id,
+                "event_id": event.event_id,
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+        )
 
 
 if __name__ == "__main__":

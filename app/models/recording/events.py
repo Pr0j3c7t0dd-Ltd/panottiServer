@@ -5,6 +5,8 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Any, Literal, TypeVar
+import asyncio
+import traceback
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
@@ -153,55 +155,114 @@ class RecordingEvent(BaseModel):
         """Save the event to the database."""
         db = await DatabaseManager.get_instance()
 
-        # Save to recording_events table
-        await db.execute(
-            """
-            INSERT INTO recording_events (
-                recording_id,
-                event_type,
-                event_timestamp,
-                system_audio_path,
-                microphone_audio_path,
-                metadata
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                self.recording_id,
-                self.event,
-                self.recording_timestamp,
-                self.system_audio_path,
-                self.microphone_audio_path,
-                json.dumps(self.metadata) if self.metadata else None,
-            ),
-        )
+        # Create tasks for database operations
+        tasks = []
 
-        # For recording.ended events, update the recordings table
-        if self.event == "recording.ended":
-            await db.execute(
+        # Task for recording_events table
+        insert_task = asyncio.create_task(
+            db.execute(
                 """
-                INSERT INTO recordings (
+                INSERT INTO recording_events (
                     recording_id,
-                    status,
+                    event_type,
+                    event_timestamp,
                     system_audio_path,
                     microphone_audio_path,
-                    created_at,
-                    updated_at
-                ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT(recording_id) DO UPDATE SET
-                    status = 'completed',
-                    system_audio_path = excluded.system_audio_path,
-                    microphone_audio_path = excluded.microphone_audio_path,
-                    updated_at = CURRENT_TIMESTAMP
+                    metadata
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self.recording_id,
-                    "completed",
+                    self.event,
+                    self.recording_timestamp,
                     self.system_audio_path,
                     self.microphone_audio_path,
+                    json.dumps(self.metadata) if self.metadata else None,
                 ),
             )
+        )
+        tasks.append(insert_task)
 
-        await db.commit()
+        # For recording.ended events, add task for updating recordings table
+        if self.event == "recording.ended":
+            update_task = asyncio.create_task(
+                db.execute(
+                    """
+                    INSERT INTO recordings (
+                        recording_id,
+                        status,
+                        system_audio_path,
+                        microphone_audio_path,
+                        created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT(recording_id) DO UPDATE SET
+                        status = 'completed',
+                        system_audio_path = excluded.system_audio_path,
+                        microphone_audio_path = excluded.microphone_audio_path,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        self.recording_id,
+                        "completed",
+                        self.system_audio_path,
+                        self.microphone_audio_path,
+                    ),
+                )
+            )
+            tasks.append(update_task)
+
+        # Create commit task
+        commit_task = asyncio.create_task(db.commit())
+        tasks.append(commit_task)
+
+        # Add error handling callbacks
+        def task_done_callback(task: asyncio.Task) -> None:
+            try:
+                exc = task.exception()
+                if exc:
+                    logger.error(
+                        "Database operation failed",
+                        extra={
+                            "recording_id": self.recording_id,
+                            "event_id": self.event_id,
+                            "error": str(exc),
+                            "traceback": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+                        }
+                    )
+                else:
+                    logger.debug(
+                        "Database operation completed",
+                        extra={
+                            "recording_id": self.recording_id,
+                            "event_id": self.event_id
+                        }
+                    )
+            except asyncio.CancelledError:
+                logger.debug(
+                    "Database operation cancelled",
+                    extra={
+                        "recording_id": self.recording_id,
+                        "event_id": self.event_id
+                    }
+                )
+            except Exception as e:
+                logger.error(
+                    "Error in database operation callback",
+                    extra={
+                        "recording_id": self.recording_id,
+                        "event_id": self.event_id,
+                        "error": str(e),
+                        "traceback": traceback.format_exc()
+                    }
+                )
+
+        # Add callbacks to all tasks
+        for task in tasks:
+            task.add_done_callback(task_done_callback)
+            
+        # Return immediately, don't wait for tasks
+        return
 
     @classmethod
     async def get_by_recording_id(cls, recording_id: str) -> list["RecordingEvent"]:

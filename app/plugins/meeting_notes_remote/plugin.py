@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
+import asyncio
 
 import requests
 
@@ -200,7 +201,7 @@ class MeetingNotesRemotePlugin(PluginBase):
             )
             raise
 
-    def _generate_meeting_notes_from_text(self, transcript_text: str) -> str:
+    async def _generate_meeting_notes_from_text(self, transcript_text: str) -> str:
         """Generate meeting notes using Ollama LLM"""
         if not transcript_text:
             return "No transcript text found to generate notes from."
@@ -290,33 +291,37 @@ IMPORTANT:
             }
         )
 
-        # Call Ollama API
-        try:
-            response = requests.post(
-                self.ollama_url,
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "num_ctx": self.num_ctx,
-                },
-                timeout=30,
-            )
-            response.raise_for_status()
-            return cast(str, response.json().get("response", ""))
+        # Call Ollama API in thread pool
+        def _call_ollama() -> str:
+            try:
+                response = requests.post(
+                    self.ollama_url,
+                    json={
+                        "model": self.model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "num_ctx": self.num_ctx,
+                    },
+                    timeout=30,
+                )
+                response.raise_for_status()
+                return cast(str, response.json().get("response", ""))
 
-        except Exception as e:
-            logger.error(
-                "Failed to generate meeting notes: %s",
-                str(e),
-                extra={
-                    "plugin_name": self.name,
-                    "error": str(e),
-                    "transcript_length": len(transcript_text)
-                },
-                exc_info=True
-            )
-            return f"Error generating meeting notes: {e}"
+            except Exception as e:
+                logger.error(
+                    "Failed to generate meeting notes: %s",
+                    str(e),
+                    extra={
+                        "plugin_name": self.name,
+                        "error": str(e),
+                        "transcript_length": len(transcript_text)
+                    },
+                    exc_info=True
+                )
+                return f"Error generating meeting notes: {e}"
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._executor, _call_ollama)
 
     async def _process_transcript(
         self, recording_id: str, transcript_text: str, original_event: Event
@@ -324,7 +329,7 @@ IMPORTANT:
         """Process transcript and generate meeting notes"""
         try:
             # Generate meeting notes synchronously since the API call is blocking
-            meeting_notes = self._generate_meeting_notes_from_text(transcript_text)
+            meeting_notes = await self._generate_meeting_notes_from_text(transcript_text)
 
             # Save to file
             output_file = self.output_dir / f"{recording_id}_notes.md"
@@ -415,7 +420,7 @@ IMPORTANT:
                 )
                 await self.event_bus.publish(event)
 
-    def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
+    async def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
         """Extract transcript path from event."""
         # Handle RecordingEvent type
         if isinstance(event, RecordingEvent):
@@ -431,12 +436,16 @@ IMPORTANT:
         
         return None
 
-    def _read_transcript(self, transcript_path: str | Path) -> str:
+    async def _read_transcript(self, transcript_path: str | Path) -> str:
         """Read transcript file contents"""
         try:
             # Convert string path to Path object if needed
             path = Path(transcript_path) if isinstance(transcript_path, str) else transcript_path
-            return path.read_text()
+            
+            # Run file read in thread pool
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(self._executor, path.read_text)
+            
         except Exception as e:
             logger.error(
                 "Failed to read transcript",
@@ -453,7 +462,7 @@ IMPORTANT:
     async def _generate_notes_with_llm(self, transcript: str, event_id: str) -> str | None:
         """Generate notes using LLM from transcript text."""
         try:
-            return self._generate_meeting_notes_from_text(transcript)
+            return await self._generate_meeting_notes_from_text(transcript)
         except Exception as e:
             logger.error(
                 "Failed to generate notes with LLM: %s",
@@ -508,7 +517,7 @@ IMPORTANT:
             )
 
             # Read transcript
-            transcript = self._read_transcript(transcript_path)
+            transcript = await self._read_transcript(transcript_path)
             if not transcript:
                 logger.error(
                     "Failed to read transcript",
@@ -533,9 +542,10 @@ IMPORTANT:
                 )
                 return None
 
-            # Save notes to file
+            # Save notes to file in thread pool
             output_path = self._get_output_path(transcript_path)
-            output_path.write_text(notes)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(self._executor, output_path.write_text, notes)
 
             logger.debug(
                 "Meeting notes saved to file",
