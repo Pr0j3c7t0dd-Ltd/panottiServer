@@ -13,7 +13,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV POETRY_HOME="/opt/poetry"
+ENV PATH="$POETRY_HOME/bin:$PATH"
+RUN curl -sSL https://install.python-poetry.org | python3 - \
+    && poetry config virtualenvs.create false
 
 # Set working directory
 WORKDIR /app
@@ -25,8 +28,7 @@ COPY scripts ./scripts
 COPY README.md ./
 
 # Install Python dependencies
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi
+RUN poetry install --no-interaction --no-ansi
 
 # Install Whisper
 RUN pip install -U openai-whisper
