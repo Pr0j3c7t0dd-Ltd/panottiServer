@@ -80,7 +80,7 @@ class MeetingNotesRemotePlugin(PluginBase):
             
             # Subscribe to transcript ready event
             await self.event_bus.subscribe(
-                "transcription_remote.completed",
+                "transcription.completed",
                 self.handle_transcription_completed
             )
             
@@ -91,7 +91,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "plugin_name": self.name,
                     "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
-                    "event": "transcription_remote.completed",
+                    "event": "transcription.completed",
                     "output_dir": str(self.output_dir)
                 }
             )

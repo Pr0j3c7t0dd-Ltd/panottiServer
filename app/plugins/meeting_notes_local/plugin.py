@@ -79,7 +79,7 @@ class MeetingNotesLocalPlugin(PluginBase):
             
             # Subscribe to transcription completed event
             await self.event_bus.subscribe(
-                "transcription_local.completed",
+                "transcription.completed",
                 self.handle_transcription_completed
             )
             
@@ -90,7 +90,7 @@ class MeetingNotesLocalPlugin(PluginBase):
                     "plugin_name": self.name,
                     "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
-                    "event": "transcription_local.completed"
+                    "event": "transcription.completed"
                 }
             )
 
