@@ -1,4 +1,4 @@
-"""Audio transcription plugin for converting audio to text."""
+"""Audio transcription plugin for converting audio to text locally."""
 
 import json
 import logging
@@ -22,13 +22,13 @@ from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.models import EventContext
 from app.utils.logging_config import get_logger
 
-logger = get_logger("app.plugins.audio_transcription.plugin")
+logger = get_logger("app.plugins.audio_transcription_local.plugin")
 
 EventData = dict[str, Any] | RecordingEvent
 
 
-class AudioTranscriptionPlugin(PluginBase):
-    """Plugin for transcribing audio files using Whisper"""
+class AudioTranscriptionLocalPlugin(PluginBase):
+    """Plugin for transcribing audio files using Whisper locally"""
 
     def __init__(self, config: Any, event_bus: Any | None = None) -> None:
         super().__init__(config, event_bus)
@@ -338,7 +338,7 @@ class AudioTranscriptionPlugin(PluginBase):
 
             # Create enriched event data
             enriched_event = {
-                "event": "transcription.completed",
+                "event": "transcription_local.completed",
                 "recording_id": recording_id,
                 "output_path": str(merged_transcript),
                 "input_paths": {
@@ -404,8 +404,9 @@ class AudioTranscriptionPlugin(PluginBase):
         error: str | None = None,
         original_event: dict | None = None,
     ) -> None:
-        """Emit transcription event with enriched data chain"""
+        """Emit transcription event"""
         if not self.event_bus:
+            logger.warning("No event bus available to emit transcription event")
             return
 
         # Structure new event data with nested history
@@ -432,7 +433,7 @@ class AudioTranscriptionPlugin(PluginBase):
         event = RecordingEvent(
             recording_timestamp=datetime.utcnow().isoformat(),
             recording_id=recording_id,
-            event="transcription.completed",
+            event="transcription_local.completed",
             data=event_data,
             context=original_event.get("context") if original_event else None
         )
@@ -443,7 +444,7 @@ class AudioTranscriptionPlugin(PluginBase):
         log_data = {
             "plugin": self.name,
             "recording_id": recording_id,
-            "event": "transcription.completed",
+            "event": "transcription_local.completed",
             "status": status
         }
         if output_file:

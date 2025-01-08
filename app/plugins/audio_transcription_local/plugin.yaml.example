@@ -1,4 +1,4 @@
-name: "audio_transcription"
+name: "audio_transcription_local"
 version: "1.0.0"
 enabled: true
 dependencies: ["noise_reduction"]
