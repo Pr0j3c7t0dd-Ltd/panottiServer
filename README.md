@@ -10,6 +10,9 @@ A FastAPI-based server for handling recording events with a plugin-based archite
 - Dynamic plugin discovery and management
 - Comprehensive test suite
 - Swagger/OpenAPI documentation
+- Audio transcription with OpenAI Whisper (offline mode)
+- Automated meeting notes generation with local or remote Ollama LLM
+- Desktop notifications for important events
 
 ## Architecture
 
@@ -22,7 +25,10 @@ app/
 ├── plugins/                  # Plugin system
 │   ├── base.py              # Base plugin classes
 │   ├── manager.py           # Plugin lifecycle
-│   └── [plugin_name]/       # Plugin directories
+│   ├── audio_transcription/ # Audio transcription plugin
+│   ├── meeting_notes_local/ # Local meeting notes plugin
+│   ├── meeting_notes_remote/# Remote meeting notes plugin
+│   └── desktop_notifier/    # Desktop notifications plugin
 ├── utils/                   # Utilities
 └── tests/                   # Test suite
 ```
@@ -32,6 +38,8 @@ app/
 - Python 3.12
 - Rust (for FastAPI's Pydantic V2)
 - Poetry (dependency management)
+- Ollama (for meeting notes generation)
+- OpenAI Whisper (for audio transcription)
 
 ## Installation
 
@@ -41,18 +49,28 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env  # Add Rust to your current shell session
 ```
 
-2. Clone the repository:
+2. Install Ollama (required for meeting notes generation):
+```bash
+curl https://ollama.ai/install.sh | sh
+```
+
+3. Install OpenAI Whisper (required for audio transcription):
+```bash
+brew install openai-whisper
+```
+
+4. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/panottiServer.git
 cd panottiServer
 ```
 
-3. Install Poetry (if not already installed):
+5. Install Poetry (if not already installed):
 ```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-4. Set up Python 3.12 using pyenv:
+6. Set up Python 3.12 using pyenv:
 ```bash
 # Install pyenv
 brew install pyenv
@@ -64,7 +82,7 @@ pyenv install 3.12
 pyenv local 3.12
 ```
 
-5. Install dependencies using Poetry:
+7. Install dependencies using Poetry:
 ```bash
 # Install dependencies
 poetry install
@@ -73,13 +91,13 @@ poetry install
 poetry shell
 ```
 
-6. Create a `.env` file based on `.env.example`:
+8. Create a `.env` file based on `.env.example`:
 ```bash
 cp .env.example .env
 ```
 Then edit `.env` with your actual configuration values.
 
-7. Set up HTTPS (optional):
+9. Set up HTTPS (optional):
 ```bash
 # Create SSL directory
 mkdir -p ssl
@@ -206,6 +224,36 @@ class YourPlugin(PluginBase):
         # Cleanup code
         pass
 ```
+
+### Available Plugins
+
+#### Audio Transcription
+- Transcribes WAV audio files with timestamps
+- Uses OpenAI's Whisper model through `faster-whisper` library
+- Supports concurrent processing
+- Merges multiple transcripts based on timestamps
+
+#### Meeting Notes (Local)
+- Generates meeting notes from transcripts using local Ollama LLM
+- Listens for transcription completion events
+- Produces structured markdown notes with:
+  - Meeting title and information
+  - Executive summary
+  - Key discussion points
+  - Action items
+  - Decisions made
+  - Next steps
+
+#### Meeting Notes (Remote)
+- Same features as local meeting notes plugin
+- Connects to remote Ollama instance
+- Configurable model and parameters
+- Supports larger context windows
+
+#### Desktop Notifier
+- Provides desktop notifications for important events
+- Customizable notification settings
+- Cross-platform support
 
 ## Development
 
