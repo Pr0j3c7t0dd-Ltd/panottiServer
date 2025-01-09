@@ -73,7 +73,7 @@ async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
     Raises:
         HTTPException: If API key is invalid
     """
-    if api_key_header == os.getenv("API_KEY"):
+    if api_key_header.lower() == os.getenv("API_KEY", "").lower():
         return api_key_header
     raise HTTPException(
         status_code=HTTP_UNAUTHORIZED,

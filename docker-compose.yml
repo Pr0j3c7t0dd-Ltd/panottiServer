@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - "54789:8443"
+      - "127.0.0.1:54789:8443"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -10,6 +10,8 @@ services:
       - ./scripts:/app/scripts
       - ./ssl:/app/ssl
       - whisper_models:/app/models/whisper
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
       - WHISPER_MODEL_PATH=/app/models/whisper
@@ -17,6 +19,7 @@ services:
       - DEBUG=1
       - SSL_CERT_FILE=/app/ssl/cert.pem
       - SSL_KEY_FILE=/app/ssl/key.pem
+      - UVICORN_HOST=0.0.0.0
     networks:
       - internal
       - external
@@ -25,7 +28,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-k", "-f", "https://localhost:8443/docs"]
+      test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:8443/docs"]
       interval: 30s
       timeout: 30s
       retries: 10
