@@ -11,6 +11,9 @@ services:
       - ./ssl:/app/ssl
       - ./app/plugins:/app/app/plugins
       - whisper_models:/app/models/whisper
+      - ./app:/app/app
+      - ${RECORDINGS_DIR}:${RECORDINGS_DIR}
+      - ./recordings:/app/recordings
     env_file:
       - .env
     environment:

@@ -80,6 +80,11 @@ class NoiseReductionPlugin(PluginBase):
         self._req_id = str(uuid.uuid4())
         self._db: DatabaseManager | None = None
 
+        # Get recordings directory from environment variable, with fallback
+        self._recordings_dir = os.getenv('RECORDINGS_DIR', '/app/recordings')
+        # Ensure the path exists
+        os.makedirs(self._recordings_dir, exist_ok=True)
+
     async def _initialize(self) -> None:
         """Initialize the plugin."""
         try:
@@ -651,57 +656,30 @@ class NoiseReductionPlugin(PluginBase):
             raise
 
     def _translate_path_to_container(self, local_path: str | None) -> str | None:
-        """Translate a local path to its corresponding container path if running in Docker."""
+        """Translate a local path to its corresponding container path."""
         if not local_path:
             return None
             
-        # Check if we're running in Docker by looking for /.dockerenv
-        is_docker = os.path.exists('/.dockerenv')
-        
-        if not is_docker:
-            # If running locally, use the original path
-            return local_path
-            
-        # If in Docker, map to container path
-        # Extract the directory containing the recordings
-        recordings_dir = os.path.dirname(local_path)
+        # Get the file name from the path
         file_name = os.path.basename(local_path)
         
-        # Log the path translation details
+        # Construct path using configured recordings directory
+        container_path = os.path.join(self._recordings_dir, file_name)
+        
+        # Log the path translation
         logger.debug(
-            "Path translation details",
+            "Path translation",
             extra={
                 "req_id": self._req_id,
                 "plugin_name": self.name,
-                "local_path": local_path,
-                "recordings_dir": recordings_dir,
-                "file_name": file_name,
-                "is_docker": is_docker
+                "original_path": local_path,
+                "container_path": container_path,
+                "recordings_dir": self._recordings_dir,
+                "file_exists": os.path.exists(container_path)
             }
         )
         
-        # Check if the file exists in the container's recordings directory
-        container_path = os.path.join("/app/recordings", file_name)
-        if not os.path.exists(container_path):
-            # Try the original path first
-            if os.path.exists(local_path):
-                return local_path
-                
-            # Log detailed path information
-            logger.warning(
-                "Audio file not found in container",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "local_path": local_path,
-                    "container_path": container_path,
-                    "container_dir_exists": os.path.exists("/app/recordings"),
-                    "container_dir_contents": os.listdir("/app/recordings") if os.path.exists("/app/recordings") else [],
-                    "is_docker": is_docker
-                }
-            )
-        
-        return container_path
+        return container_path if os.path.exists(container_path) else None
 
     async def _process_audio_files(self, recording_id: str, system_audio_path: str | None, microphone_audio_path: str | None, event_metadata: dict | None = None) -> None:
         """Process the audio files for noise reduction."""
