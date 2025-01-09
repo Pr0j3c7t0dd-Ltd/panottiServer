@@ -343,7 +343,7 @@ IMPORTANT:
                         "stream": False,
                         "num_ctx": self.num_ctx,
                     },
-                    timeout=aiohttp.ClientTimeout(total=30)
+                    timeout=aiohttp.ClientTimeout(total=600)
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()
