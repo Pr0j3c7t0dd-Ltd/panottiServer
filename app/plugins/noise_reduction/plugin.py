@@ -650,14 +650,62 @@ class NoiseReductionPlugin(PluginBase):
             logger.error("Failed to process recording", extra={...}, exc_info=True)
             raise
 
+    def _translate_path_to_container(self, local_path: str | None) -> str | None:
+        """Translate a local path to its corresponding container path if running in Docker."""
+        if not local_path:
+            return None
+            
+        # Check if we're running in Docker by looking for /.dockerenv
+        is_docker = os.path.exists('/.dockerenv')
+        
+        if not is_docker:
+            # If running locally, use the original path
+            return local_path
+            
+        # If in Docker, map to container path
+        file_name = os.path.basename(local_path)
+        container_path = os.path.join("/app/recordings", file_name)
+        
+        logger.debug(
+            "Translated path to container path",
+            extra={
+                "req_id": self._req_id,
+                "plugin_name": self.name,
+                "local_path": local_path,
+                "container_path": container_path,
+                "is_docker": is_docker
+            }
+        )
+        
+        return container_path
+
     async def _process_audio_files(self, recording_id: str, system_audio_path: str | None, microphone_audio_path: str | None, event_metadata: dict | None = None) -> None:
-        """
-        Decide which approach to use:
-          1) time_domain_subtraction => simple time-domain approach
-          2) freq_domain_bleed_removal => advanced frequency-domain approach
-          3) else => fallback to original spectral noise reduction
-        """
+        """Process the audio files for noise reduction."""
         try:
+            # Translate paths if needed
+            system_audio_path = self._translate_path_to_container(system_audio_path)
+            microphone_audio_path = self._translate_path_to_container(microphone_audio_path)
+
+            # Check if files exist
+            system_exists = system_audio_path and os.path.exists(system_audio_path)
+            mic_exists = microphone_audio_path and os.path.exists(microphone_audio_path)
+
+            if not system_exists and not mic_exists:
+                logger.warning(
+                    "Missing or invalid audio files, skipping noise reduction",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "system_exists": system_exists,
+                        "mic_exists": mic_exists,
+                        "system_path": system_audio_path,
+                        "mic_path": microphone_audio_path,
+                        "is_docker": os.path.exists('/.dockerenv')
+                    }
+                )
+                return
+
             logger.info(
                 "Starting audio processing for both system and microphone",
                 extra={
@@ -671,9 +719,7 @@ class NoiseReductionPlugin(PluginBase):
                 }
             )
 
-            if system_audio_path and microphone_audio_path \
-               and os.path.exists(system_audio_path) \
-               and os.path.exists(microphone_audio_path):
+            if system_audio_path and microphone_audio_path:
                 loop = asyncio.get_running_loop()
 
                 if self._freq_domain_bleed_removal:
@@ -787,7 +833,7 @@ class NoiseReductionPlugin(PluginBase):
 
         except Exception as e:
             logger.error(
-                "Error processing audio files",
+                "Failed to process audio files",
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
@@ -796,28 +842,7 @@ class NoiseReductionPlugin(PluginBase):
                 },
                 exc_info=True
             )
-            if self._db:
-                try:
-                    await self._db.execute(
-                        """
-                        UPDATE plugin_tasks 
-                        SET status = 'failed', updated_at = CURRENT_TIMESTAMP,
-                            error_message = ?
-                        WHERE recording_id = ? AND plugin_name = ?
-                        """,
-                        (str(e), recording_id, self.name)
-                    )
-                except Exception as db_error:
-                    logger.error(
-                        "Failed to update task status",
-                        extra={
-                            "req_id": self._req_id,
-                            "plugin_name": self.name,
-                            "recording_id": recording_id,
-                            "error": str(db_error)
-                        },
-                        exc_info=True
-                    )
+            raise
 
     async def _shutdown(self) -> None:
         """Shutdown plugin."""

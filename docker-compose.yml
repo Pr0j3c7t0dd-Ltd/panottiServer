@@ -9,6 +9,7 @@ services:
       - ./.env:/app/.env
       - ./scripts:/app/scripts
       - ./ssl:/app/ssl
+      - ./app/plugins:/app/app/plugins
       - whisper_models:/app/models/whisper
     env_file:
       - .env
