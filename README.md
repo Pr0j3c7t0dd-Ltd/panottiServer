@@ -40,6 +40,12 @@ app/
 - Poetry (dependency management)
 - Ollama (for meeting notes generation)
 - OpenAI Whisper (for audio transcription)
+- Minimum 8GB RAM available for Docker operations (model downloads and runtime)
+- Docker with memory allocation:
+  - Minimum: 12GB reserved, 24GB limit for running llama3.1:latest
+  - Recommended: 16GB reserved, 32GB limit for better performance
+
+Note: The memory requirements are primarily driven by the LLM model size and operations. The application uses Docker resource limits to manage memory allocation and prevent system instability.
 
 ## Installation
 
@@ -478,15 +484,21 @@ This implementation uses FastAPI with Pydantic V2, which requires Rust for its h
 
 For optimal meeting notes generation, this application requires a large language model. We recommend:
 
-- **Recommended**: `llama3.3:70b` - Best quality notes, requires significant GPU resources (minimum 80GB VRAM)
-- **Alternative**: `llama3.1:latest` - Acceptable quality, lower resource requirements (minimum 24GB VRAM)
+- **Default**: `llama3.1:latest` - Good balance of quality and resource usage (minimum 24GB RAM)
+- **Optional**: `llama3.3:70b` - Better quality notes but requires significant resources (minimum 80GB RAM)
 
-Note: Using smaller models may result in reduced quality of meeting notes and summaries. The model choice significantly impacts the quality of:
+Note: The model choice impacts the quality of:
 - Meeting summaries
 - Action item extraction
 - Key point identification
 
 Configure your preferred model in the meeting notes `plugin.yaml` file:
-```bash
-model_name: "llama3.3:70b"  # or llama3.1:latest
+```yaml
+model_name: "llama3.1:latest"  # or llama3.3:70b
 ```
+
+Important memory considerations:
+- Initial model download requires at least 8GB of available system memory
+- Runtime memory usage varies based on the model and context length
+- Docker memory limits should be set according to your chosen model
+- System should have enough free memory to handle both model operations and other processes
