@@ -1,1 +1,1 @@
-"""Test package for panottiServer.""" 
+"""Test package for panottiServer."""
