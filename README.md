@@ -151,6 +151,58 @@ cd ..
 
 Note: When using self-signed certificates in development, your browser will show a security warning. This is normal. For production, use certificates from a trusted certificate authority.
 
+### Docker Deployment
+
+The application can be run using Docker and Docker Compose for easier deployment and consistent environments.
+
+#### Prerequisites
+
+1. Install Docker:
+```bash
+# macOS (using Homebrew)
+brew install docker docker-compose
+
+# Linux
+curl -fsSL https://get.docker.com | sh
+```
+
+2. Start Docker service (if not already running)
+
+#### Running with Docker Compose
+
+1. Build and start the containers:
+```bash
+docker-compose up --build
+```
+
+2. To run in detached mode (background):
+```bash
+docker-compose up -d
+```
+
+3. To stop the containers:
+```bash
+docker-compose down
+```
+
+#### Running with Docker directly
+
+1. Build the Docker image:
+```bash
+docker build -t panotti-server .
+```
+
+2. Run the container:
+```bash
+docker run -p 8001:8001 \
+  --env-file .env \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  panotti-server
+```
+
+The server will be accessible at `http://localhost:8001`
+
 ## Usage
 
 ### Starting the Server
