@@ -1,6 +1,8 @@
 services:
   app:
     build: .
+    ports:
+      - "${API_PORT}:${API_PORT}"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -27,7 +29,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:8443/docs"]
+      test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:${API_PORT}/docs"]
       interval: 30s
       timeout: 30s
       retries: 10
