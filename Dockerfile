@@ -59,11 +59,11 @@ RUN echo '#!/bin/bash' > /app/docker-entrypoint.sh && \
     echo '  sleep 2' >> /app/docker-entrypoint.sh && \
     echo 'done' >> /app/docker-entrypoint.sh && \
     echo 'cd /app' >> /app/docker-entrypoint.sh && \
-    echo 'exec poetry run uvicorn app.main:app --host ${UVICORN_HOST:-0.0.0.0} --port 8443 --ssl-keyfile ${SSL_KEY_FILE} --ssl-certfile ${SSL_CERT_FILE} --log-level debug --proxy-headers' >> /app/docker-entrypoint.sh && \
+    echo 'exec poetry run uvicorn app.main:app --host ${UVICORN_HOST:-0.0.0.0} --port ${API_PORT} --ssl-keyfile ${SSL_KEY_FILE} --ssl-certfile ${SSL_CERT_FILE} --log-level debug --proxy-headers' >> /app/docker-entrypoint.sh && \
     chmod +x /app/docker-entrypoint.sh
 
 # Expose the port the app runs on
-EXPOSE 8443
+EXPOSE ${API_PORT}
 
 # Command to run the app
 ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"] 

@@ -24,6 +24,7 @@ services:
       - SSL_CERT_FILE=/app/ssl/cert.pem
       - SSL_KEY_FILE=/app/ssl/key.pem
       - UVICORN_HOST=0.0.0.0
+      - API_PORT=${API_PORT}
     depends_on:
       ollama:
         condition: service_healthy
