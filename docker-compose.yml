@@ -1,8 +1,6 @@
 services:
   app:
     build: .
-    ports:
-      - "127.0.0.1:54789:8443"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -24,9 +22,6 @@ services:
       - SSL_CERT_FILE=/app/ssl/cert.pem
       - SSL_KEY_FILE=/app/ssl/key.pem
       - UVICORN_HOST=0.0.0.0
-    networks:
-      - internal
-      - external
     depends_on:
       ollama:
         condition: service_healthy
@@ -45,6 +40,9 @@ services:
         sleep 5;
       done &&
       echo 'Ollama is ready!' &&
+      echo 'Pulling llama3.1:latest model...' &&
+      curl -X POST http://ollama:11434/api/pull -d '{\"name\":\"llama3.1:latest\"}' &&
+      echo 'Model pulled successfully!' &&
       echo '=== Environment ===' &&
       env | sort &&
       echo '=== Directory Structure ===' &&
@@ -59,14 +57,15 @@ services:
       - "11435:11434"
     volumes:
       - ollama_data:/root/.ollama
-    networks:
-      - internal
     environment:
       - GIN_MODE=release
       - OLLAMA_ORIGINS=*
       - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_COMPUTE=cpu
       - GOAMD64=v3
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/version || exit 0"]
       interval: 60s
@@ -76,12 +75,6 @@ services:
     restart: unless-stopped
     entrypoint: ["ollama"]
     command: ["serve"]
-
-networks:
-  internal:
-    internal: true
-  external:
-    internal: false
 
 volumes:
   ollama_data:
