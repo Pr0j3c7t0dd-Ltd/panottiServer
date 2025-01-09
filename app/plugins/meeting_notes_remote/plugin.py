@@ -30,8 +30,11 @@ class MeetingNotesRemotePlugin(PluginBase):
         super().__init__(config, event_bus)
         self._req_id = str(uuid.uuid4())
 
+        # Check if we're running in Docker first
+        is_docker = os.path.exists('/.dockerenv')
+        
         # Default values
-        self.ollama_url = "http://localhost:11434/api/generate"
+        self.ollama_url = "http://ollama:11434/api/generate" if is_docker else "http://localhost:11434/api/generate"
         self.model = "llama3.1:latest"
         self.output_dir = Path("data/meeting_notes_remote")
         self.num_ctx = 128000
@@ -41,7 +44,9 @@ class MeetingNotesRemotePlugin(PluginBase):
         if config and hasattr(config, "config"):
             config_dict = config.config
             if isinstance(config_dict, dict):
-                self.ollama_url = config_dict.get("ollama_url", self.ollama_url)
+                # Don't override ollama_url if we're in Docker
+                if not is_docker:
+                    self.ollama_url = config_dict.get("ollama_url", self.ollama_url)
                 self.model = config_dict.get("model_name", self.model)
                 self.output_dir = Path(config_dict.get("output_directory", str(self.output_dir)))
                 self.num_ctx = config_dict.get("num_ctx", self.num_ctx)
@@ -53,11 +58,6 @@ class MeetingNotesRemotePlugin(PluginBase):
         # Initialize thread pool with configured max tasks
         self._executor = ThreadPoolExecutor(max_workers=self.max_concurrent_tasks)
         self._processing_lock = threading.Lock()
-
-        # Check if we're running in Docker
-        is_docker = os.path.exists('/.dockerenv')
-        # Use Docker service URL if in Docker, otherwise use config URL
-        self.ollama_url = "http://ollama:11434/api/generate" if is_docker else config_dict.get("ollama_url", "http://localhost:11434/api/generate")
         
         logger.info(
             "Initializing meeting notes plugin",
