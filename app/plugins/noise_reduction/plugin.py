@@ -663,19 +663,43 @@ class NoiseReductionPlugin(PluginBase):
             return local_path
             
         # If in Docker, map to container path
+        # Extract the directory containing the recordings
+        recordings_dir = os.path.dirname(local_path)
         file_name = os.path.basename(local_path)
-        container_path = os.path.join("/app/recordings", file_name)
         
+        # Log the path translation details
         logger.debug(
-            "Translated path to container path",
+            "Path translation details",
             extra={
                 "req_id": self._req_id,
                 "plugin_name": self.name,
                 "local_path": local_path,
-                "container_path": container_path,
+                "recordings_dir": recordings_dir,
+                "file_name": file_name,
                 "is_docker": is_docker
             }
         )
+        
+        # Check if the file exists in the container's recordings directory
+        container_path = os.path.join("/app/recordings", file_name)
+        if not os.path.exists(container_path):
+            # Try the original path first
+            if os.path.exists(local_path):
+                return local_path
+                
+            # Log detailed path information
+            logger.warning(
+                "Audio file not found in container",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "local_path": local_path,
+                    "container_path": container_path,
+                    "container_dir_exists": os.path.exists("/app/recordings"),
+                    "container_dir_contents": os.listdir("/app/recordings") if os.path.exists("/app/recordings") else [],
+                    "is_docker": is_docker
+                }
+            )
         
         return container_path
 
