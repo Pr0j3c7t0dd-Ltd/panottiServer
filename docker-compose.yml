@@ -43,9 +43,6 @@ services:
         sleep 5;
       done &&
       echo 'Ollama is ready!' &&
-      echo 'Pulling llama3.1:latest model...' &&
-      curl -X POST http://ollama:11434/api/pull -d '{\"name\":\"llama3.1:latest\"}' &&
-      echo 'Model pulled successfully!' &&
       echo '=== Environment ===' &&
       env | sort &&
       echo '=== Directory Structure ===' &&
@@ -65,7 +62,16 @@ services:
       - OLLAMA_ORIGINS=*
       - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_COMPUTE=cpu
+      - OLLAMA_MODELS=/root/.ollama/models
+      - OLLAMA_CTX_SIZE=8192
+      - OLLAMA_TIMEOUT=120
       - GOAMD64=v3
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          memory: 8G
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -76,8 +82,12 @@ services:
       retries: 15
       start_period: 180s
     restart: unless-stopped
-    entrypoint: ["ollama"]
-    command: ["serve"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "ollama serve &
+      sleep 10 &&
+      ollama pull llama3.1:latest &&
+      wait"
 
 volumes:
   ollama_data:
