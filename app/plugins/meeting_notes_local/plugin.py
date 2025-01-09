@@ -128,6 +128,18 @@ class MeetingNotesLocalPlugin(PluginBase):
         if not transcript_text:
             return "No transcript text found to generate notes from."
 
+        # Log LLM request details
+        logger.info(
+            "Preparing LLM request",
+            extra={
+                "plugin_name": self.name,
+                "model": self.model,
+                "ollama_url": self.ollama_url,
+                "num_ctx": self.num_ctx,
+                "transcript_length": len(transcript_text)
+            }
+        )
+
         # Extract metadata section
         metadata_section = ""
         transcript_content = transcript_text
@@ -214,7 +226,21 @@ IMPORTANT:
         )
 
         try:
+            # Log request parameters
+            logger.debug(
+                "Sending request to Ollama",
+                extra={
+                    "plugin_name": self.name,
+                    "model": self.model,
+                    "ollama_url": self.ollama_url,
+                    "prompt_length": len(prompt),
+                    "num_ctx": self.num_ctx,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+
             async with aiohttp.ClientSession() as session:
+                start_time = datetime.utcnow()
                 async with session.post(
                     self.ollama_url,
                     json={
@@ -227,15 +253,46 @@ IMPORTANT:
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()
+                    end_time = datetime.utcnow()
+                    duration = (end_time - start_time).total_seconds()
+
+                    # Log response details
+                    logger.info(
+                        "Received response from Ollama",
+                        extra={
+                            "plugin_name": self.name,
+                            "status_code": response.status,
+                            "duration_seconds": duration,
+                            "response_length": len(result.get("response", "")),
+                            "model": self.model,
+                            "timestamp": end_time.isoformat()
+                        }
+                    )
+
                     return cast(str, result.get("response", ""))
 
+        except aiohttp.ClientError as e:
+            logger.error(
+                "Network error while calling Ollama",
+                extra={
+                    "plugin_name": self.name,
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "model": self.model,
+                    "ollama_url": self.ollama_url
+                },
+                exc_info=True
+            )
+            return f"Error calling Ollama API: {e}"
         except Exception as e:
             logger.error(
                 "Failed to generate meeting notes",
                 extra={
                     "plugin_name": self.name,
+                    "error_type": type(e).__name__,
                     "error": str(e),
-                    "transcript_length": len(transcript_text)
+                    "transcript_length": len(transcript_text),
+                    "model": self.model
                 },
                 exc_info=True
             )
