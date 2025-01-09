@@ -53,6 +53,21 @@ class MeetingNotesLocalPlugin(PluginBase):
         self._executor = ThreadPoolExecutor(max_workers=self.max_concurrent_tasks)
         self._processing_lock = threading.Lock()
 
+        # Check if we're running in Docker
+        is_docker = os.path.exists('/.dockerenv')
+        # Use Docker service URL if in Docker, otherwise use config URL
+        self.ollama_url = "http://ollama:11434/api/generate" if is_docker else config_dict.get("ollama_url", "http://localhost:11434/api/generate")
+        
+        logger.info(
+            "Initializing meeting notes plugin",
+            extra={
+                "plugin_name": self.name,
+                "output_directory": str(self.output_dir),
+                "ollama_url": self.ollama_url,
+                "is_docker": is_docker
+            }
+        )
+
     async def _initialize(self) -> None:
         """Initialize plugin"""
         if not self.event_bus:
