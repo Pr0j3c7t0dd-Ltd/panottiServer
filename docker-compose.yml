@@ -25,7 +25,7 @@ services:
       - SSL_KEY_FILE=/app/ssl/key.pem
       - UVICORN_HOST=0.0.0.0
       - API_PORT=${API_PORT}
-      - OLLAMA_MODEL=llama3.1-16k
+      - OLLAMA_MODEL=llama3.1:latest
       - OLLAMA_TIMEOUT=600
     depends_on:
       ollama:
@@ -75,10 +75,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 16G
+          memory: 24G
           cpus: '8'
         reservations:
-          memory: 8G
+          memory: 12G
           cpus: '4'
     dns:
       - 8.8.8.8
