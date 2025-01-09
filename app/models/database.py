@@ -254,9 +254,15 @@ class DatabaseManager:
             sqlite3.Connection: SQLite database connection object
         """
         if not hasattr(self._local, "connection"):
-            connection = sqlite3.connect(self.db_path, check_same_thread=False)
+            connection = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False,
+                timeout=30.0,  # 30 second timeout
+                isolation_level='IMMEDIATE'  # Immediate transaction mode
+            )
             # Enable foreign keys
             connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 30000")  # 30 second busy timeout
             # Row factory for dictionary-like access
             connection.row_factory = sqlite3.Row
             self._local.connection = connection
