@@ -102,7 +102,9 @@ def test_recording_ended_endpoint(test_client: TestClient) -> None:
     )
     
     assert response.status_code == 200
-    assert response.json() == {"status": "success", "recording_id": recording_id}
+    response_data = response.json()
+    assert response_data["status"] == "success"
+    assert response_data["event_id"] == f"{recording_id}_ended_{timestamp}"
 
 def test_validation_error_handling(test_client: TestClient) -> None:
     """Test validation error handling."""
