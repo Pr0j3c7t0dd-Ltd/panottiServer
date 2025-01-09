@@ -3,7 +3,7 @@
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Literal, TypeVar
 import asyncio
 import traceback
@@ -26,8 +26,11 @@ ISO_FORMATS = [
 ]
 
 
-def parse_timestamp(timestamp_str: str) -> datetime:
+def parse_timestamp(timestamp_str: str | None) -> datetime:
     """Parse timestamp string into datetime object."""
+    if timestamp_str is None:
+        return datetime.now(UTC)
+
     # Try compact format first (YYYYMMDDHHMMSS)
     if len(timestamp_str) == COMPACT_TIMESTAMP_LENGTH and timestamp_str.isdigit():
         try:
@@ -96,6 +99,15 @@ class RecordingEvent(BaseModel):
     )
     output_file: str | None = None  # For plugin completion events
     status: str | None = None  # For plugin completion events
+
+    @classmethod
+    def from_timestamp(cls, timestamp: str) -> str:
+        """Convert timestamp to standardized format."""
+        try:
+            dt = parse_timestamp(timestamp)
+            return dt.isoformat()
+        except ValueError as e:
+            raise ValueError(f"Invalid timestamp format: {e}")
 
     @field_validator("data")
     @classmethod

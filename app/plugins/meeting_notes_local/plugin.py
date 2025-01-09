@@ -64,6 +64,7 @@ class MeetingNotesLocalPlugin(PluginBase):
                 "plugin_name": self.name,
                 "output_directory": str(self.output_dir),
                 "ollama_url": self.ollama_url,
+                "num_ctx": self.num_ctx,
                 "is_docker": is_docker
             }
         )
@@ -247,7 +248,9 @@ IMPORTANT:
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
-                        "num_ctx": self.num_ctx,
+                        "options": {
+                            "num_ctx": self.num_ctx
+                        }
                     },
                     timeout=aiohttp.ClientTimeout(total=600)
                 ) as response:

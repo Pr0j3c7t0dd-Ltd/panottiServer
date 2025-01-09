@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # HTTP Status Codes
 HTTP_BAD_REQUEST = 400
 HTTP_UNAUTHORIZED = 403
+HTTP_UNPROCESSABLE_ENTITY = 422
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -295,7 +296,7 @@ async def validation_exception_handler(
         }
     )
     return JSONResponse(
-        status_code=HTTP_BAD_REQUEST,
+        status_code=HTTP_UNPROCESSABLE_ENTITY,
         content={
             "detail": exc.errors(),
             "body": exc.body,

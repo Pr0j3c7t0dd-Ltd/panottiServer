@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LOCK_STATE_FILE="$HOME/.dir_locks"
+LOCK_STATE_FILE=".dir_locks"
 
 usage() {
     echo "Usage:"

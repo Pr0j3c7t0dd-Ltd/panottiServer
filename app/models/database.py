@@ -446,6 +446,13 @@ class DatabaseManager:
             )
             return {row["recording_id"]: row["timestamp"] for row in cursor.fetchall()}
 
+    @classmethod
+    async def cleanup(cls) -> None:
+        """Clean up database resources."""
+        if cls._instance is not None:
+            await cls._instance.close()
+            cls._instance = None
+
 
 @contextmanager
 def get_db() -> Generator[Connection, None, None]:

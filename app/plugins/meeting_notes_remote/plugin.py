@@ -341,7 +341,9 @@ IMPORTANT:
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
-                        "num_ctx": self.num_ctx,
+                        "options": {
+                            "num_ctx": self.num_ctx
+                        }
                     },
                     timeout=aiohttp.ClientTimeout(total=600)
                 ) as response:
@@ -373,7 +375,8 @@ IMPORTANT:
                     "error_type": type(e).__name__,
                     "error": str(e),
                     "model": self.model,
-                    "ollama_url": self.ollama_url
+                    "ollama_url": self.ollama_url,
+                    "num_ctx": self.num_ctx
                 },
                 exc_info=True
             )
