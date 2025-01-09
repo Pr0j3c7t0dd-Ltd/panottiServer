@@ -9,6 +9,8 @@ data/
 /models/**
 !/app/models/
 
+.dir_locks
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
