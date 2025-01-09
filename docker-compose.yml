@@ -54,7 +54,9 @@ services:
       "
 
   ollama:
-    image: ollama/ollama:latest
+    build: 
+      context: ./docker/ollama
+      dockerfile: Dockerfile
     ports:
       - "11435:11434"
     volumes:
@@ -88,24 +90,6 @@ services:
       retries: 15
       start_period: 180s
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "ollama serve &
-      sleep 10 &&
-      curl -X POST http://localhost:11434/api/pull -d '{\"name\":\"llama3.1:latest\",\"insecure\":true}' &&
-      curl -X POST http://localhost:11434/api/create -d '{
-        \"name\":\"llama3.1-16k\",
-        \"model\":\"llama3.1:latest\",
-        \"context_length\":16384,
-        \"num_ctx\":16384,
-        \"num_batch\":2048,
-        \"num_thread\":8,
-        \"repeat_last_n\":512,
-        \"temperature\":0.7,
-        \"top_k\":40,
-        \"top_p\":0.9
-      }' &&
-      wait"
 
 volumes:
   ollama_data:
