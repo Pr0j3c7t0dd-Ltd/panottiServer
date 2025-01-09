@@ -191,6 +191,30 @@ docker-compose up -d
 docker-compose down
 ```
 
+#### Updating Docker Containers
+
+When you need to update the containers with new changes:
+
+1. Stop the running containers:
+```bash
+docker compose down
+```
+
+2. Rebuild the containers without using cache:
+```bash
+docker compose build --no-cache app
+```
+
+3. Start the containers again:
+```bash
+docker compose up -d
+```
+
+All in one command:
+```
+docker compose down && docker compose build --no-cache app && docker compose up -d
+```
+
 #### Running with Docker directly
 
 1. Build the Docker image:

@@ -49,15 +49,6 @@ RUN echo '#!/bin/bash' > /app/docker-entrypoint.sh && \
     echo 'if [ ! -d "/app/models/whisper/models--Systran--faster-whisper-base.en" ]; then' >> /app/docker-entrypoint.sh && \
     echo '  python3 -c "from huggingface_hub import snapshot_download; snapshot_download(\"Systran/faster-whisper-base.en\", local_dir=\"/app/models/whisper\", local_dir_use_symlinks=False, local_files_only=False)"' >> /app/docker-entrypoint.sh && \
     echo 'fi' >> /app/docker-entrypoint.sh && \
-    echo 'chmod +x /app/scripts/init-ollama.sh' >> /app/docker-entrypoint.sh && \
-    echo 'echo "=== Running Ollama initialization..."' >> /app/docker-entrypoint.sh && \
-    echo 'for i in {1..30}; do' >> /app/docker-entrypoint.sh && \
-    echo '  if /app/scripts/init-ollama.sh; then' >> /app/docker-entrypoint.sh && \
-    echo '    break' >> /app/docker-entrypoint.sh && \
-    echo '  fi' >> /app/docker-entrypoint.sh && \
-    echo '  echo "Retrying Ollama initialization in 2 seconds..."' >> /app/docker-entrypoint.sh && \
-    echo '  sleep 2' >> /app/docker-entrypoint.sh && \
-    echo 'done' >> /app/docker-entrypoint.sh && \
     echo 'cd /app' >> /app/docker-entrypoint.sh && \
     echo 'exec poetry run uvicorn app.main:app --host ${UVICORN_HOST:-0.0.0.0} --port ${API_PORT} --ssl-keyfile ${SSL_KEY_FILE} --ssl-certfile ${SSL_CERT_FILE} --log-level debug --proxy-headers' >> /app/docker-entrypoint.sh && \
     chmod +x /app/docker-entrypoint.sh
@@ -65,5 +56,5 @@ RUN echo '#!/bin/bash' > /app/docker-entrypoint.sh && \
 # Expose the port the app runs on
 EXPOSE ${API_PORT}
 
-# Command to run the app
+# Set the entrypoint
 ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"] 
