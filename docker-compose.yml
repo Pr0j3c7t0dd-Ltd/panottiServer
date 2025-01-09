@@ -67,7 +67,7 @@ services:
       - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_COMPUTE=cpu
       - OLLAMA_MODELS=/root/.ollama/models
-      - OLLAMA_CTX_SIZE=16384
+      - OLLAMA_CTX_SIZE=131072
       - OLLAMA_TIMEOUT=600
       - OLLAMA_GPU_LAYERS=0
       - OLLAMA_THREADS=8
