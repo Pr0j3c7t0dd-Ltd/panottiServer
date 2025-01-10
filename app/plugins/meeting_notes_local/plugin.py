@@ -250,7 +250,9 @@ IMPORTANT:
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
-                        "num_ctx": self.num_ctx
+                        "options": {
+                            "num_ctx": self.num_ctx
+                        }
                     },
                     timeout=aiohttp.ClientTimeout(total=self.timeout)
                 ) as response:
