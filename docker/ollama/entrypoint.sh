@@ -12,8 +12,8 @@ done
 echo "Ollama is ready!"
 
 # Pull the model
-echo "Pulling llama3.1 model..."
-curl -X POST http://localhost:11434/api/pull -d '{"name":"llama3.1:latest","insecure":true}'
+echo "Pulling llama3.1:latest model..."
+ollama pull llama3.1:latest
 
 # Keep the container running
 wait 

@@ -38,6 +38,7 @@ class MeetingNotesLocalPlugin(PluginBase):
         self.output_dir = Path("data/meeting_notes_local")
         self.num_ctx = 128000
         self.max_concurrent_tasks = 4
+        self.timeout = 300  # Default timeout of 5 minutes
 
         # Override with config values if available
         if config and hasattr(config, "config"):
@@ -50,6 +51,7 @@ class MeetingNotesLocalPlugin(PluginBase):
                 self.output_dir = Path(config_dict.get("output_directory", str(self.output_dir)))
                 self.num_ctx = config_dict.get("num_ctx", self.num_ctx)
                 self.max_concurrent_tasks = config_dict.get("max_concurrent_tasks", self.max_concurrent_tasks)
+                self.timeout = config_dict.get("timeout", self.timeout)
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -248,11 +250,9 @@ IMPORTANT:
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
-                        "options": {
-                            "num_ctx": self.num_ctx
-                        }
+                        "num_ctx": self.num_ctx
                     },
-                    timeout=aiohttp.ClientTimeout(total=600)
+                    timeout=aiohttp.ClientTimeout(total=self.timeout)
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()

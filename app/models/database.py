@@ -257,12 +257,14 @@ class DatabaseManager:
             connection = sqlite3.connect(
                 self.db_path,
                 check_same_thread=False,
-                timeout=30.0,  # 30 second timeout
+                timeout=60.0,  # Increased timeout for busy waiting
                 isolation_level='IMMEDIATE'  # Immediate transaction mode
             )
-            # Enable foreign keys
+            # Enable foreign keys and set pragmas for better concurrency
             connection.execute("PRAGMA foreign_keys = ON")
-            connection.execute("PRAGMA busy_timeout = 30000")  # 30 second busy timeout
+            connection.execute("PRAGMA busy_timeout = 60000")  # 60 second busy timeout
+            connection.execute("PRAGMA journal_mode = WAL")  # Write-Ahead Logging for better concurrency
+            connection.execute("PRAGMA synchronous = NORMAL")  # Slightly faster while still safe
             # Row factory for dictionary-like access
             connection.row_factory = sqlite3.Row
             self._local.connection = connection

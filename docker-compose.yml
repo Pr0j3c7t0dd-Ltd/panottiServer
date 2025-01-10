@@ -61,6 +61,7 @@ services:
       - "11435:11434"
     volumes:
       - ollama_data:/root/.ollama
+      - /dev/shm:/dev/shm
     environment:
       - GIN_MODE=release
       - OLLAMA_ORIGINS=*
@@ -72,14 +73,19 @@ services:
       - OLLAMA_GPU_LAYERS=0
       - OLLAMA_THREADS=8
       - GOAMD64=v3
+    ipc: host
     deploy:
       resources:
         limits:
-          memory: 24G
+          memory: 70G
           cpus: '8'
         reservations:
-          memory: 12G
+          memory: 32G
           cpus: '4'
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    shm_size: '16gb'
     dns:
       - 8.8.8.8
       - 8.8.4.4
