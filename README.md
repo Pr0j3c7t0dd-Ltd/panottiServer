@@ -526,3 +526,21 @@ Important memory considerations:
 - Runtime memory usage varies based on the model and context length
 - Docker memory limits should be set according to your chosen model
 - System should have enough free memory to handle both model operations and other processes
+
+## Package Version Management
+
+### Upgrading All Packages
+
+To upgrade all Python packages to their latest versions:
+
+```bash
+pip install --upgrade $(pip freeze | sed 's/==.*//g')
+```
+
+After upgrading, update your requirements.txt:
+
+```bash
+pip freeze > requirements.txt
+```
+
+Note: Be sure to test your application thoroughly after upgrading packages as new versions may introduce breaking changes.
