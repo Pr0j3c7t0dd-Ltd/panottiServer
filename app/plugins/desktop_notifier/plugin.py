@@ -194,7 +194,8 @@ class DesktopNotifierPlugin(PluginBase):
             # Emit completion event
             if self.event_bus:
                 completion_event = Event(
-                    event="meeting_notes.completed",
+                    name="desktop_notification.completed",
+                    event="desktop_notification.completed",
                     recording_id=recording_id,
                     data={
                         "recording_id": recording_id,
@@ -240,7 +241,7 @@ class DesktopNotifierPlugin(PluginBase):
                 error_event = RecordingEvent(
                     recording_timestamp=datetime.utcnow().isoformat(),
                     recording_id=recording_id,
-                    event="desktop_notification.error",
+                    event="meeting_notes.error",
                     data={
                         "recording_id": recording_id,
                         "error": str(e),

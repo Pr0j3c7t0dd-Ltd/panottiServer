@@ -30,11 +30,12 @@ The plugin configuration supports the following options:
 ## Events
 
 ### Subscribed Events
-- `meeting_notes.completed` - Triggered when meeting notes generation is complete
+- `meeting_notes_local.completed` - Triggered when local meeting notes generation is complete
+- `meeting_notes_remote.completed` - Triggered when remote meeting notes generation is complete
 
 ### Published Events
 - `desktop_notification.completed` - Emitted after notification is shown
-  - Payload includes all information from the original meeting_notes.completed event
+  - Payload includes all information from the original meeting notes completed event
 
 ## Usage
 

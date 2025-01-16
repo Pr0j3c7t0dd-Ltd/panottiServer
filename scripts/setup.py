@@ -49,6 +49,8 @@ def install_system_dependencies():
         "openai-whisper",  # Required for audio transcription
         "terminal-notifier",  # Required for desktop notifications
         "ollama",  # Required for local LLM processing
+        "ffmpeg",  # Required for audio processing
+        "pyenv",  # Recommended for Python version management
     ]
 
     for package in brew_packages:
@@ -165,6 +167,29 @@ def create_ssl_directory():
         print("Created SSL certificates")
 
 
+def check_docker_installation():
+    """Check if Docker is installed and configured correctly"""
+    try:
+        # Check Docker installation
+        subprocess.run(["docker", "--version"], check=True, capture_output=True)
+        print("Docker is installed")
+        
+        # Check Docker memory allocation
+        if platform.system() == "Darwin":  # macOS
+            result = subprocess.run(
+                ["docker", "info"], check=True, capture_output=True, text=True
+            )
+            for line in result.stdout.split("\n"):
+                if "Total Memory:" in line:
+                    memory_gb = float(line.split(":")[1].strip().replace("GiB", ""))
+                    if memory_gb < 12:
+                        print("Warning: Docker memory allocation is less than recommended 12GB")
+                        print("Please allocate at least 12GB (recommended 16GB) in Docker Desktop settings")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("Docker is not installed. Please install Docker Desktop from https://www.docker.com/products/docker-desktop")
+        sys.exit(1)
+
+
 def main():
     """Main setup function"""
     try:
@@ -175,6 +200,7 @@ def main():
         install_system_dependencies()  # Install brew packages first
         check_rust_installation()
         check_poetry_installation()
+        # check_docker_installation()  # Add Docker check, enable if you are using Docker
 
         # Setup steps
         setup_virtual_environment()
@@ -183,18 +209,17 @@ def main():
         download_whisper_model()
         create_ssl_directory()
 
-        print("\nSetup completed successfully!")
+        print("\nSetup completed successfully! 🚀")
         print("\nTo start the server, run one of the following commands:")
         print("1. Using Python directly:")
         print("   poetry run python run_server.py")
-        print("\n2. Using the shell script:")
+        print("\n2. Using the shell script (recommended):")
         print("   ./start_server.sh")
         print("\nThe server will be available at:")
-        print("- HTTP:  http://localhost:8001")
-        print("- HTTPS: https://localhost:8001")
+        print("- HTTPS: https://localhost:54789")
         print("\nAPI documentation will be available at:")
-        print("- Swagger UI: http://localhost:8001/docs")
-        print("- ReDoc:     http://localhost:8001/redoc")
+        print("- Swagger UI: https://localhost:54789/docs")
+        print("- ReDoc:     https://localhost:54789/redoc")
 
     except Exception as e:
         print(f"Error during setup: {e}")
