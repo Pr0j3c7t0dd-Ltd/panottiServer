@@ -1,10 +1,14 @@
 # Meeting Notes Remote Plugin
 
-This plugin generates meeting notes from transcripts using the Ollama LLM API. It listens for transcription completion events and automatically generates structured meeting notes.
+This plugin generates meeting notes from transcripts using various LLM providers (OpenAI, Anthropic, or Google). It listens for transcription completion events and automatically generates structured meeting notes.
 
 ## Features
 
 - Automatic meeting notes generation from transcripts
+- Support for multiple LLM providers:
+  - OpenAI (GPT-4)
+  - Anthropic (Claude 3 Sonnet)
+  - Google (Gemini 1.5 Pro)
 - Structured output with sections for:
   - Meeting title and information
   - Executive summary
@@ -13,7 +17,7 @@ This plugin generates meeting notes from transcripts using the Ollama LLM API. I
   - Decisions made
   - Next steps
 - Event-driven architecture
-- Configurable LLM model and parameters
+- Configurable provider and model parameters
 
 ## Configuration
 
@@ -26,16 +30,31 @@ enabled: true
 dependencies: ["audio_transcription"]
 config:
   output_directory: "data/meeting_notes_remote"  # Directory for storing generated notes
-  ollama_url: "http://localhost:11434/api/generate"  # Ollama API endpoint
-  model_name: "llama3.1:latest"  # LLM model to use
-  num_ctx: 131072  # Context window size
+  provider: "openai"  # Supported values: openai, anthropic, google
   max_concurrent_tasks: 4  # Maximum concurrent note generation tasks
+  timeout: 600  # Request timeout in seconds
+  openai:
+    api_key: "your-openai-api-key"
+    model: "gpt-4"
+  anthropic:
+    api_key: "your-anthropic-api-key"
+    model: "claude-3-sonnet-20240229"
+  google:
+    api_key: "your-google-api-key"
+    model: "gemini-1.5-pro"
 ```
 
 ## Dependencies
 
-- Ollama LLM server running locally or remotely
+- One of the following API keys:
+  - OpenAI API key
+  - Anthropic API key
+  - Google API key
 - Audio transcription plugin
+- Python packages (installed via requirements.txt):
+  - openai>=1.12.0
+  - anthropic>=0.18.1
+  - google-generativeai>=0.3.2
 
 ## Usage
 

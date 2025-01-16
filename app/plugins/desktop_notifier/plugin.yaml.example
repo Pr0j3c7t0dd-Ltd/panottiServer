@@ -1,6 +1,6 @@
 name: "desktop_notifier"
 version: "1.0.0"
-enabled: false
+enabled: true
 dependencies: ["meeting_notes_local", "meeting_notes_remote"]
 config:
   auto_open_notes: true

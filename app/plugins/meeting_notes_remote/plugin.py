@@ -4,11 +4,12 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, Literal
 import asyncio
 import aiohttp
-
-import requests
+from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
+import google.generativeai as genai
 
 from app.plugins.base import PluginBase
 from app.plugins.events.bus import EventBus
@@ -17,42 +18,47 @@ from app.utils.logging_config import get_logger
 from app.models.recording.events import RecordingEvent, EventContext
 
 EventData = dict[str, Any] | RecordingEvent
+ProviderType = Literal["openai", "anthropic", "google"]
 
 logger = get_logger(__name__)
 
 
 class MeetingNotesRemotePlugin(PluginBase):
-    """Plugin for generating meeting notes from transcripts using Ollama LLM.
-    Listens for transcript_ready events and generates structured meeting notes."""
+    """Plugin for generating meeting notes from transcripts using various LLM providers."""
 
     def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin"""
         super().__init__(config, event_bus)
         self._req_id = str(uuid.uuid4())
-
-        # Check if we're running in Docker first
-        is_docker = os.path.exists('/.dockerenv')
         
         # Default values
-        self.ollama_url = "http://ollama:11434/api/generate" if is_docker else "http://localhost:11434/api/generate"
-        self.model = "llama3.1:latest"
         self.output_dir = Path("data/meeting_notes_remote")
-        self.num_ctx = 128000
         self.max_concurrent_tasks = 4
-        self.timeout = 300  # Default timeout of 5 minutes
+        self.timeout = 600
+        self.provider: ProviderType = "openai"
 
         # Override with config values if available
         if config and hasattr(config, "config"):
             config_dict = config.config
             if isinstance(config_dict, dict):
-                # Don't override ollama_url if we're in Docker
-                if not is_docker:
-                    self.ollama_url = config_dict.get("ollama_url", self.ollama_url)
-                self.model = config_dict.get("model_name", self.model)
                 self.output_dir = Path(config_dict.get("output_directory", str(self.output_dir)))
-                self.num_ctx = config_dict.get("num_ctx", self.num_ctx)
                 self.max_concurrent_tasks = config_dict.get("max_concurrent_tasks", self.max_concurrent_tasks)
                 self.timeout = config_dict.get("timeout", self.timeout)
+                self.provider = config_dict.get("provider", self.provider)
+                
+                # Initialize provider-specific clients
+                if self.provider == "openai":
+                    self.client = AsyncOpenAI(api_key=config_dict["openai"]["api_key"])
+                    self.model = config_dict["openai"]["model"]
+                elif self.provider == "anthropic":
+                    self.client = AsyncAnthropic(api_key=config_dict["anthropic"]["api_key"])
+                    self.model = config_dict["anthropic"]["model"]
+                elif self.provider == "google":
+                    genai.configure(api_key=config_dict["google"]["api_key"])
+                    self.model = config_dict["google"]["model"]
+                    self.client = genai.GenerativeModel(self.model)
+                else:
+                    raise ValueError(f"Unsupported provider: {self.provider}")
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -66,8 +72,8 @@ class MeetingNotesRemotePlugin(PluginBase):
             extra={
                 "plugin_name": self.name,
                 "output_directory": str(self.output_dir),
-                "ollama_url": self.ollama_url,
-                "is_docker": is_docker
+                "provider": self.provider,
+                "model": self.model
             }
         )
 
@@ -92,8 +98,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
                     "output_dir": str(self.output_dir),
-                    "ollama_url": self.ollama_url,
-                    "num_ctx": self.num_ctx
+                    "provider": self.provider,
+                    "model": self.model
                 }
             )
             
@@ -230,7 +236,8 @@ class MeetingNotesRemotePlugin(PluginBase):
             extra={
                 "plugin_name": self.name,
                 "model": self.model,
-                "ollama_url": self.ollama_url,
+                "provider": self.provider,
+                "model": self.model,
                 "num_ctx": self.num_ctx,
                 "transcript_length": len(transcript_text)
             }
@@ -324,65 +331,58 @@ IMPORTANT:
         try:
             # Log request parameters
             logger.debug(
-                "Sending request to Ollama",
+                "Sending request to LLM provider",
                 extra={
-                    "plugin_name": self.name,
+                    "req_id": self._req_id,
+                    "provider": self.provider,
                     "model": self.model,
-                    "ollama_url": self.ollama_url,
                     "prompt_length": len(prompt),
                     "num_ctx": self.num_ctx,
                     "timestamp": datetime.utcnow().isoformat()
                 }
             )
 
-            async with aiohttp.ClientSession() as session:
-                start_time = datetime.utcnow()
-                async with session.post(
-                    self.ollama_url,
-                    json={
-                        "model": self.model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {
-                            "num_ctx": self.num_ctx
-                        }
-                    },
-                    timeout=aiohttp.ClientTimeout(total=self.timeout)
-                ) as response:
-                    response.raise_for_status()
-                    result = await response.json()
-                    end_time = datetime.utcnow()
-                    duration = (end_time - start_time).total_seconds()
-
-                    # Log response details
-                    logger.info(
-                        "Received response from Ollama",
-                        extra={
-                            "plugin_name": self.name,
-                            "status_code": response.status,
-                            "duration_seconds": duration,
-                            "response_length": len(result.get("response", "")),
-                            "model": self.model,
-                            "timestamp": end_time.isoformat()
-                        }
+            try:
+                if self.provider == "openai":
+                    response = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.3
                     )
+                    return response.choices[0].message.content
 
-                    return cast(str, result.get("response", ""))
+                elif self.provider == "anthropic":
+                    response = await self.client.messages.create(
+                        model=self.model,
+                        system=prompt,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3
+                    )
+                    return response.content[0].text
 
-        except aiohttp.ClientError as e:
-            logger.error(
-                "Network error while calling Ollama",
-                extra={
-                    "plugin_name": self.name,
-                    "error_type": type(e).__name__,
-                    "error": str(e),
-                    "model": self.model,
-                    "ollama_url": self.ollama_url,
-                    "num_ctx": self.num_ctx
-                },
-                exc_info=True
-            )
-            return f"Error calling Ollama API: {e}"
+                elif self.provider == "google":
+                    response = await self.client.generate_content_async(
+                        prompt,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.3
+                        )
+                    )
+                    return response.text
+
+            except Exception as e:
+                logger.error(
+                    f"Error calling {self.provider} API",
+                    extra={
+                        "req_id": self._req_id,
+                        "error": str(e)
+                    },
+                    exc_info=True
+                )
+                return None
+
         except Exception as e:
             logger.error(
                 "Failed to generate meeting notes",
@@ -534,18 +534,75 @@ IMPORTANT:
             raise
 
     async def _generate_notes_with_llm(self, transcript: str, event_id: str) -> str | None:
-        """Generate notes using LLM from transcript text."""
+        """Generate meeting notes using the configured LLM provider"""
         try:
-            return await self._generate_meeting_notes_from_text(transcript)
+            system_prompt = """You are a professional meeting notes taker. Your task is to analyze the meeting transcript and create clear, concise, and well-structured meeting notes. Focus on:
+1. Key discussion points
+2. Action items and decisions
+3. Important deadlines or dates mentioned
+4. Main participants and their contributions
+5. Follow-up tasks
+
+Format the notes with clear headings and bullet points. Be concise but comprehensive."""
+
+            user_prompt = f"Please analyze this meeting transcript and create professional meeting notes:\n\n{transcript}"
+
+            logger.info(
+                "Sending request to LLM provider",
+                extra={
+                    "req_id": event_id,
+                    "provider": self.provider,
+                    "model": self.model
+                }
+            )
+
+            try:
+                if self.provider == "openai":
+                    response = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        temperature=0.3
+                    )
+                    return response.choices[0].message.content
+
+                elif self.provider == "anthropic":
+                    response = await self.client.messages.create(
+                        model=self.model,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_prompt}],
+                        temperature=0.3
+                    )
+                    return response.content[0].text
+
+                elif self.provider == "google":
+                    response = await self.client.generate_content_async(
+                        f"{system_prompt}\n\n{user_prompt}",
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.3
+                        )
+                    )
+                    return response.text
+
+            except Exception as e:
+                logger.error(
+                    f"Error calling {self.provider} API",
+                    extra={
+                        "req_id": event_id,
+                        "error": str(e)
+                    },
+                    exc_info=True
+                )
+                return None
+
         except Exception as e:
             logger.error(
-                "Failed to generate notes with LLM: %s",
-                str(e),
+                "Error generating meeting notes",
                 extra={
-                    "plugin_name": self.name,
-                    "error": str(e),
-                    "event_id": event_id,
-                    "transcript_length": len(transcript)
+                    "req_id": event_id,
+                    "error": str(e)
                 },
                 exc_info=True
             )

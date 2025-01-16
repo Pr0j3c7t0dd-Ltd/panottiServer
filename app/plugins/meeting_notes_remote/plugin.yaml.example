@@ -1,11 +1,18 @@
 name: "meeting_notes_remote"
 version: "1.0.0"
-enabled: true
+enabled: false
 dependencies: ["audio_transcription"]
 config:
   output_directory: "data/meeting_notes_remote"
-  ollama_url: "http://localhost:11434/api/generate"
-  model_name: "llama3.1:latest"
-  num_ctx: 131072
+  provider: "openai"  # Supported values: openai, anthropic, google
   max_concurrent_tasks: 4
-  timeout: 300
+  timeout: 600
+  openai:
+    api_key: "your-openai-api-key"
+    model: "gpt-4o"
+  anthropic:
+    api_key: "your-anthropic-api-key"
+    model: "claude-3-5-sonnet-latest"
+  google:
+    api_key: "your-google-api-key"
+    model: "gemini-1.5-flash"
