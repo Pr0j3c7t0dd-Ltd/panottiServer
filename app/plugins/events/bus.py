@@ -269,11 +269,14 @@ class EventBus:
         event_name = None
         try:
             if isinstance(event, dict):
-                event_name = event.get("event")
+                # Try both 'event' and 'name' fields for dict events
+                event_name = event.get("event") or event.get("name")
             elif isinstance(event, (RecordingEvent, RecordingStartRequest, RecordingEndRequest)):
                 event_name = event.event
             elif hasattr(event, "event"):
                 event_name = event.event
+            elif hasattr(event, "name"):
+                event_name = event.name
 
             logger.debug(
                 "Getting event name",
@@ -285,7 +288,8 @@ class EventBus:
                     "event_data": str(event),
                     "is_dict": isinstance(event, dict),
                     "is_recording_event": isinstance(event, RecordingEvent),
-                    "has_event_attr": hasattr(event, "event")
+                    "has_event_attr": hasattr(event, "event"),
+                    "has_name_attr": hasattr(event, "name")
                 }
             )
             return event_name

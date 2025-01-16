@@ -268,30 +268,39 @@ class MeetingNotesRemotePlugin(PluginBase):
         )
 
         # Prepare prompt with explicit metadata handling
-        prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format.
-The transcript includes METADATA in JSON format that you should use for the meeting title and information section.
+        prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format. The transcript includes METADATA in JSON format that you should use for the meeting title and information section.
+
+Please ensure the notes are clear, concise, and well-organized using markdown formatting.
+
+IMPORTANT: 
+1. Do not use placeholders - extract and use the actual values from the METADATA JSON and the transcript.
+2. For attendees, use ONLY the email addresses or names from event.attendees in the METADATA JSON, not the speakers list.
+3. Don't include any other information in the notes, just the meeting notes.
 
 START Transcript:
-
 {transcript_content}
-
 END Transcript
 
 START METADATA JSON:
-
 {metadata_section}
-
 END METADATA JSON
+
+VALIDATION REQUIREMENTS:
+1. Every section marked with ## is REQUIRED
+2. All formatting must match the examples exactly
+3. Do not add any sections not specified in this prompt
+4. Do not add any explanatory text or notes
+5. Use ONLY information from the provided transcript and metadata
+6. Ensure every action item has an owner in parentheses
 
 Create meeting notes with the following sections:
 
-# Meeting Title
-[The meeting title - extracted from the METADATA JSON event.title field]
+# [Meeting Title (Use the exact meeting title from the METADATA JSON event.title field)]
 
 ## Meeting Information
-- Date: [Format the METADATA JSON event.started as a readable date/time. Example format: "January 1, 2025 at 10:00 AM"]
-- Duration: [The final timestamp entry in the transcript in an hours and minutes format]
-- Attendees: [a bulleted list of ALL email addresses from the METADATA JSON event.attendees array (NOT from the speakers list)]
+- Date: [Format EXACTLY as: "January 1, 2025 at 10:00 AM"]
+- Duration: [Format EXACTLY as: "X hours Y minutes"]
+- Attendees: [List ONLY the email addresses from event.attendees in the METADATA JSON, one per line with a hyphen]
 
 ## Executive Summary
 [Provide a brief, high-level overview of the meeting's purpose and key outcomes in 2-3 sentences]
@@ -307,19 +316,13 @@ Create meeting notes with the following sections:
 Keep each bullet point concise but informative]
 
 ## Action Items
-[Bulleted list of action items with owner and deadline (if known) in the format of '(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED'. Identify the owner from the context of the meeting transcript]
+[Bulleted list of action items with owner and deadline in the format of `(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED`. Identify the owner from the context of the meeting transcript]
 
 ## Decisions Made
 [List specific decisions or conclusions reached during the meeting]
 
 ## Next Steps
 [Outline any planned next steps or future actions discussed]
-
-Please ensure the notes are clear, concise, and well-organized using markdown formatting.
-IMPORTANT: 
-1. Do not use placeholders - extract and use the actual values from the METADATA JSON and the transcript.
-2. For attendees, use ONLY the email addresses or names from event.attendees in the METADATA JSON, not the speakers list
-3. Don't include any other information in the notes, just the meeting notes
 """
 
         logger.debug(
@@ -361,7 +364,7 @@ IMPORTANT:
                         model=self.model,
                         system=self.SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": prompt}],
-                        temperature=0
+                        max_tokens=4096  # Maximum allowed response length
                     )
                     return response.content[0].text
 
@@ -575,7 +578,8 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                         model=self.model,
                         system=self.SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": user_prompt}],
-                        temperature=0.3
+                        temperature=0.3,
+                        max_tokens=4000
                     )
                     return response.content[0].text
 

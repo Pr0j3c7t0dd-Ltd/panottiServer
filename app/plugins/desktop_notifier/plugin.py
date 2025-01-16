@@ -217,7 +217,7 @@ class DesktopNotifierPlugin(PluginBase):
                     "Publishing completion event",
                     extra={
                         "plugin": self.name,
-                        "event_name": completion_event.event,
+                        "event_name": completion_event.name,
                         "recording_id": recording_id,
                         "output_path": output_path
                     }
