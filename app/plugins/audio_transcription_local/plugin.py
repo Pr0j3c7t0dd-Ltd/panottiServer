@@ -21,6 +21,7 @@ from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.models import EventContext
 from app.utils.logging_config import get_logger
+from .transcript_cleaner import TranscriptCleaner
 
 logger = get_logger("app.plugins.audio_transcription_local.plugin")
 
@@ -39,6 +40,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         self._output_dir = Path(os.getenv("TRANSCRIPTS_DIR", "data/transcripts_local"))
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._shutdown_event = asyncio.Event()
+        self._transcript_cleaner = TranscriptCleaner()
 
     async def _initialize(self) -> None:
         """Initialize plugin."""
@@ -570,71 +572,96 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         original_event: dict,
     ) -> None:
         """Merge multiple transcript files ordered by timestamp"""
-        # Update output path to .md
-        output_path = str(Path(output_path).with_suffix(".md"))
-        
-        # Create output directory if it doesn't exist
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-        # Read all transcripts and parse timestamps
-        segments = []
-        for transcript_file, label in zip(transcript_files, labels, strict=False):
-            with open(transcript_file) as tf:
-                for line in tf:
-                    if line.strip() and "[" in line and "]" in line:
-                        try:
-                            # Parse timestamp and text
-                            time_part = line[line.find("[")+1:line.find("]")]
-                            start_time = float(time_part.split("->")[0].strip().split(":")[0]) * 60 + \
-                                       float(time_part.split("->")[0].strip().split(":")[1])
-                            text = line[line.find("]")+1:].strip()
-                            segments.append((start_time, label, text))
-                        except (ValueError, IndexError) as e:
-                            logger.warning(
-                                f"Failed to parse line in transcript: {line}",
-                                extra={
-                                    "plugin": self.name,
-                                    "error": str(e),
-                                    "line": line
-                                }
-                            )
-
-        # Sort segments by timestamp
-        segments.sort(key=lambda x: x[0])
-
-        # Write merged transcript to file
-        with open(output_path, "w") as f:
-            # Add metadata header
-            f.write("# Merged Transcript\n\n")
-            f.write("## Metadata\n\n")
+        try:
+            # Update output path to .md
+            output_path = str(Path(output_path).with_suffix(".md"))
             
-            # Create metadata object
-            metadata = {
-                "event": {
-                    "title": original_event.get("eventTitle"),
-                    "provider": original_event.get("eventProvider"),
-                    "providerId": original_event.get("eventProviderId"),
-                    "started": original_event.get("recordingStarted"),
-                    "ended": original_event.get("recordingEnded"),
-                    "attendees": original_event.get("eventAttendees", [])
+            # Create output directory if it doesn't exist
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            # Read all transcripts and parse timestamps
+            segments = []
+            for transcript_file, label in zip(transcript_files, labels, strict=False):
+                with open(transcript_file) as tf:
+                    for line in tf:
+                        if line.strip() and "[" in line and "]" in line:
+                            try:
+                                # Parse timestamp and text
+                                time_part = line[line.find("[")+1:line.find("]")]
+                                start_time = float(time_part.split("->")[0].strip().split(":")[0]) * 60 + \
+                                           float(time_part.split("->")[0].strip().split(":")[1])
+                                text = line[line.find("]")+1:].strip()
+                                segments.append((start_time, label, text))
+                            except (ValueError, IndexError) as e:
+                                logger.warning(
+                                    f"Failed to parse line in transcript: {line}",
+                                    extra={
+                                        "plugin": self.name,
+                                        "error": str(e),
+                                        "line": line
+                                    }
+                                )
+
+            # Sort segments by timestamp
+            segments.sort(key=lambda x: x[0])
+
+            # Write merged transcript to file
+            with open(output_path, "w") as f:
+                # Add metadata header
+                f.write("# Merged Transcript\n\n")
+                f.write("## Metadata\n\n")
+                
+                # Create metadata object
+                metadata = {
+                    "event": {
+                        "title": original_event.get("eventTitle"),
+                        "provider": original_event.get("eventProvider"),
+                        "providerId": original_event.get("eventProviderId"),
+                        "started": original_event.get("recordingStarted"),
+                        "ended": original_event.get("recordingEnded"),
+                        "attendees": original_event.get("eventAttendees", [])
+                    },
+                    "speakers": labels,
+                    "transcriptionCompleted": datetime.utcnow().isoformat()
+                }
+                
+                # Write metadata as JSON in markdown code block
+                f.write("```json\n")
+                f.write(json.dumps(metadata, indent=2))
+                f.write("\n```\n\n")
+
+                # Write chronologically ordered segments
+                f.write("## Transcript\n\n")
+                for start_time, label, text in segments:
+                    minutes = int(start_time // 60)
+                    seconds = start_time % 60
+                    # Remove doubled label from text if it exists
+                    text = text.replace(f"{label}: ", "").strip()
+                    # Clean up text if enabled
+                    if self.config.get("clean_up_transcript", False):
+                        text = self._transcript_cleaner.clean_transcript(text)
+                    f.write(f"[{minutes:02d}:{seconds:05.2f}] {label}: {text}\n")
+
+            logger.info(
+                "Successfully merged transcripts",
+                extra={
+                    "plugin": self.name,
+                    "output_path": output_path,
+                }
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to merge transcripts",
+                extra={
+                    "plugin": self.name,
+                    "error": str(e),
+                    "transcript_files": transcript_files,
+                    "output_path": output_path,
                 },
-                "speakers": labels,
-                "transcriptionCompleted": datetime.utcnow().isoformat()
-            }
-            
-            # Write metadata as JSON in markdown code block
-            f.write("```json\n")
-            f.write(json.dumps(metadata, indent=2))
-            f.write("\n```\n\n")
-
-            # Write chronologically ordered segments
-            f.write("## Transcript\n\n")
-            for start_time, label, text in segments:
-                minutes = int(start_time // 60)
-                seconds = start_time % 60
-                # Remove doubled label from text if it exists
-                text = text.replace(f"{label}: ", "").strip()
-                f.write(f"[{minutes:02d}:{seconds:05.2f}] {label}: {text}\n")
+                exc_info=True
+            )
+            raise
 
     async def _process_audio(self, audio_path: str, speaker_label: str | None = None) -> Path:
         """Process audio file and return transcript path"""

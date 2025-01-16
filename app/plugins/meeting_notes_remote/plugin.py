@@ -26,6 +26,8 @@ logger = get_logger(__name__)
 class MeetingNotesRemotePlugin(PluginBase):
     """Plugin for generating meeting notes from transcripts using various LLM providers."""
 
+    SYSTEM_PROMPT = "You are an expert meeting note taker who is attentive and detail oriented.  If you do a good job you will get a large bonus, so try very hard to get all the details correct.  Do not add any details that are not in the transcription, only create accurate meeting notes"
+
     def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin"""
         super().__init__(config, event_bus)
@@ -305,7 +307,7 @@ Create meeting notes with the following sections:
 Keep each bullet point concise but informative]
 
 ## Action Items
-[Bulleted list of action items in the format of '(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED'. Identify the owner from the context of the meeting transcript]
+[Bulleted list of action items with owner and deadline (if known) in the format of '(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED'. Identify the owner from the context of the meeting transcript]
 
 ## Decisions Made
 [List specific decisions or conclusions reached during the meeting]
@@ -347,27 +349,27 @@ IMPORTANT:
                     response = await self.client.chat.completions.create(
                         model=self.model,
                         messages=[
-                            {"role": "system", "content": prompt},
+                            {"role": "system", "content": self.SYSTEM_PROMPT},
                             {"role": "user", "content": prompt}
                         ],
-                        temperature=0.3
+                        temperature=0
                     )
                     return response.choices[0].message.content
 
                 elif self.provider == "anthropic":
                     response = await self.client.messages.create(
                         model=self.model,
-                        system=prompt,
+                        system=self.SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": prompt}],
-                        temperature=0.3
+                        temperature=0
                     )
                     return response.content[0].text
 
                 elif self.provider == "google":
                     response = await self.client.generate_content_async(
-                        prompt,
+                        f"{self.SYSTEM_PROMPT}\n\n{prompt}",
                         generation_config=genai.types.GenerationConfig(
-                            temperature=0.3
+                            temperature=0
                         )
                     )
                     return response.text
@@ -561,7 +563,7 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                     response = await self.client.chat.completions.create(
                         model=self.model,
                         messages=[
-                            {"role": "system", "content": system_prompt},
+                            {"role": "system", "content": self.SYSTEM_PROMPT},
                             {"role": "user", "content": user_prompt}
                         ],
                         temperature=0.3
@@ -571,7 +573,7 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                 elif self.provider == "anthropic":
                     response = await self.client.messages.create(
                         model=self.model,
-                        system=system_prompt,
+                        system=self.SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": user_prompt}],
                         temperature=0.3
                     )
@@ -579,7 +581,7 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
 
                 elif self.provider == "google":
                     response = await self.client.generate_content_async(
-                        f"{system_prompt}\n\n{user_prompt}",
+                        f"{self.SYSTEM_PROMPT}\n\n{user_prompt}",
                         generation_config=genai.types.GenerationConfig(
                             temperature=0.3
                         )
@@ -619,7 +621,8 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                 "output_dir": str(self.output_dir)
             }
         )
-        output_path = self.output_dir / f"{transcript_path.stem}_notes.md"
+        stem = transcript_path.stem.replace('_merged', '')
+        output_path = self.output_dir / f"{stem}_meeting_notes.md"
         logger.debug(
             "Generated output path",
             extra={

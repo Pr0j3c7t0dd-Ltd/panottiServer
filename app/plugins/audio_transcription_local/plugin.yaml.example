@@ -6,3 +6,4 @@ config:
   output_directory: "data/transcripts_local"
   model_name: "base.en"
   max_concurrent_tasks: 4
+  clean_up_transcript: true

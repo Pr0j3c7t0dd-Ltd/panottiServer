@@ -46,6 +46,7 @@ class DesktopNotifierPlugin(PluginBase):
 
             # Initialize database
             self.db = await DatabaseManager.get_instance()
+            await self._init_database()
 
             # Subscribe to meeting notes completed events
             await self.event_bus.subscribe(
@@ -192,10 +193,9 @@ class DesktopNotifierPlugin(PluginBase):
 
             # Emit completion event
             if self.event_bus:
-                completion_event = RecordingEvent(
-                    recording_timestamp=datetime.utcnow().isoformat(),
+                completion_event = Event(
+                    event="meeting_notes.completed",
                     recording_id=recording_id,
-                    event="desktop_notification.completed",
                     data={
                         "recording_id": recording_id,
                         "output_path": output_path,
@@ -209,12 +209,7 @@ class DesktopNotifierPlugin(PluginBase):
                                 }
                             }
                         }
-                    },
-                    context=EventContext(
-                        correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.utcnow().isoformat(),
-                        source_plugin=self.name
-                    )
+                    }
                 )
 
                 logger.debug(

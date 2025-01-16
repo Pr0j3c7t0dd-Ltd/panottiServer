@@ -205,7 +205,7 @@ Create meeting notes with the following sections:
 Keep each bullet point concise but informative]
 
 ## Action Items
-[Bulleted list of action items in the format of '(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED'. Identify the owner from the context of the meeting transcript]
+[Bulleted list of action items with owner and deadline (if known) in the format of '(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED'. Identify the owner from the context of the meeting transcript]
 
 ## Decisions Made
 [List specific decisions or conclusions reached during the meeting]
@@ -603,7 +603,8 @@ IMPORTANT:
                 "output_dir": str(self.output_dir)
             }
         )
-        output_path = self.output_dir / f"{transcript_path.stem}_notes.md"
+        stem = transcript_path.stem.replace('_merged', '')
+        output_path = self.output_dir / f"{stem}_meeting_notes.md"
         logger.debug(
             "Generated output path",
             extra={
