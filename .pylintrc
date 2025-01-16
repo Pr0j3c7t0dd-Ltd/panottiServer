@@ -1,0 +1,84 @@
+[MASTER]
+# Paths to ignore (add more if needed)
+ignore=CVS,.git,__pycache__,build,dist
+
+# Paths to ignore using regex patterns
+ignore-patterns=^.*_test\.py$
+
+# Allow loading of arbitrary C extensions
+extension-pkg-allow-list=numpy,pandas
+
+# Add paths to source roots (for resolving imports)
+init-hook='import sys; sys.path.extend(["./src", "./tests"])'
+
+# Minimum Python version to support (modern default)
+py-version=3.9
+
+[MESSAGES CONTROL]
+# Disable some common warnings that may not be necessary
+disable=
+    missing-docstring,           # Don't enforce docstrings for every function/class
+    too-few-public-methods,      # Useful for small classes like data models
+    invalid-name,                # Allow flexible naming conventions
+    duplicate-code,              # Avoid strict checks for duplication
+    too-many-arguments,          # Allow more arguments before warning
+
+# Enable helpful checks
+enable=
+    unused-argument,             # Warn about unused function arguments
+    import-error,                # Detect import errors
+    redefined-outer-name         # Warn if outer variable names are redefined
+
+[REPORTS]
+# Disable the full report, only show messages
+reports=no
+
+# Activate score display
+score=yes
+
+[FORMAT]
+# Maximum allowed line length
+max-line-length=100
+
+# Indentation settings
+indent-string='    '
+indent-after-paren=4
+
+# Allow longer lines for URLs
+ignore-long-lines=^\s*(# )?<?https?://\S+>?$
+
+[DESIGN]
+# Adjust design constraints for modern codebases
+max-args=7                   # Allow up to 7 arguments for functions
+max-attributes=10            # Allow more attributes in classes
+max-public-methods=25        # Allow larger classes
+max-returns=10               # Allow more return statements in functions
+
+[VARIABLES]
+# Regex for variables expected to be unused
+dummy-variables-rgx=^_.*|dummy
+
+[IMPORTS]
+# Ignore import levels (e.g., relative imports)
+allow-any-import-level=yes
+
+[LOGGING]
+# Use modern logging format style
+logging-format-style=modern
+
+[SIMILARITIES]
+# Ignore code duplication in comments and docstrings
+ignore-comments=yes
+ignore-docstrings=yes
+
+[TYPECHECK]
+# Allow type inference where possible
+ignore-none=yes
+ignore-on-opaque-inference=yes
+
+# Ignore missing member warnings for common libraries
+generated-members=numpy.*,pandas.*
+
+[MISCELLANEOUS]
+# Allow common TODO markers in the code
+notes=TODO,XXX,FIXME
