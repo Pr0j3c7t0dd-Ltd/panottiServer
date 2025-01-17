@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     git \
     ffmpeg \
     strace \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
@@ -29,8 +30,7 @@ ENV PYTHONPATH=/app
 COPY pyproject.toml poetry.lock ./
 
 # Install Python dependencies
-RUN poetry install --no-interaction --no-ansi && \
-    pip install -r requirements.txt
+RUN poetry install --no-interaction --no-ansi
 
 # Install Whisper and pre-download the model
 RUN pip install -U openai-whisper faster-whisper && \
