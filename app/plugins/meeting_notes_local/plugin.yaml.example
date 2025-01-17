@@ -8,4 +8,4 @@ config:
   model_name: "llama3.1:latest"
   num_ctx: 131072
   max_concurrent_tasks: 4
-  timeout: 300
+  timeout: 900
