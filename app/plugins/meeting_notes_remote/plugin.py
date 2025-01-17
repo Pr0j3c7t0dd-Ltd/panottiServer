@@ -50,12 +50,19 @@ class MeetingNotesRemotePlugin(PluginBase):
                 
                 # Initialize provider-specific clients
                 if self.provider == "openai":
-                    self.client = AsyncOpenAI(api_key=config_dict["openai"]["api_key"])
+                    self.client = AsyncOpenAI(
+                        api_key=config_dict["openai"]["api_key"],
+                        http_client=aiohttp.ClientSession(
+                            connector=aiohttp.TCPConnector(verify_ssl=False)
+                        )
+                    )
                     self.model = config_dict["openai"]["model"]
                 elif self.provider == "anthropic":
+                    # Anthropic SDK doesn't support custom http client configuration
                     self.client = AsyncAnthropic(api_key=config_dict["anthropic"]["api_key"])
                     self.model = config_dict["anthropic"]["model"]
                 elif self.provider == "google":
+                    # Standard configuration for Google GenerativeAI
                     genai.configure(api_key=config_dict["google"]["api_key"])
                     self.model = config_dict["google"]["model"]
                     self.client = genai.GenerativeModel(self.model)
