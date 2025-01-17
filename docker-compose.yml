@@ -12,6 +12,11 @@ services:
       - ./app/plugins:/app/app/plugins
       - whisper_models:/app/models/whisper
       - ./app:/app/app
+      - ./app/plugins/meeting_notes_remote/plugin.yaml:/app/app/plugins/meeting_notes_remote/plugin.yaml
+      - ./app/plugins/meeting_notes_local/plugin.yaml:/app/app/plugins/meeting_notes_local/plugin.yaml
+      - ./app/plugins/desktop_notifier/plugin.yaml:/app/app/plugins/desktop_notifier/plugin.yaml
+      - ./app/plugins/audio_transcription_local/plugin.yaml:/app/app/plugins/audio_transcription_local/plugin.yaml
+      - ./app/plugins/noise_reduction/plugin.yaml:/app/app/plugins/noise_reduction/plugin.yaml
       - ${RECORDINGS_DIR}:${RECORDINGS_DIR}
       - ./recordings:/app/recordings
     env_file:
