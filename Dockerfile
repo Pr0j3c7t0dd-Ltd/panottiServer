@@ -29,7 +29,8 @@ ENV PYTHONPATH=/app
 COPY pyproject.toml poetry.lock ./
 
 # Install Python dependencies
-RUN poetry install --no-interaction --no-ansi
+RUN poetry install --no-interaction --no-ansi && \
+    pip install -r requirements.txt
 
 # Install Whisper and pre-download the model
 RUN pip install -U openai-whisper faster-whisper && \
@@ -41,6 +42,9 @@ RUN pip install -U openai-whisper faster-whisper && \
 COPY app ./app
 COPY scripts ./scripts
 COPY README.md ./
+
+# Install plugin dependencies
+RUN find /app/app/plugins -name "requirements.txt" -exec pip install -r {} \;
 
 # Create and set up the entrypoint script
 RUN echo '#!/bin/bash' > /app/docker-entrypoint.sh && \
