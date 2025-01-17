@@ -4,6 +4,10 @@ enabled: true
 dependencies: ["audio_transcription"]
 config:
   output_directory: "data/meeting_notes_local"
+  # Ollama URL configuration:
+  # - For local Ollama (default): "http://localhost:11434/api/generate"
+  # - For Docker on macOS/Windows using host Ollama: "http://host.docker.internal:11434/api/generate"
+  # - For Docker on Linux using host Ollama: "http://172.17.0.1:11434/api/generate"
   ollama_url: "http://localhost:11434/api/generate"
   model_name: "llama3.1:latest"
   num_ctx: 131072

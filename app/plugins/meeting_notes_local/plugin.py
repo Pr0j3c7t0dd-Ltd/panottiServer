@@ -28,12 +28,9 @@ class MeetingNotesLocalPlugin(PluginBase):
         """Initialize the plugin"""
         super().__init__(config, event_bus)
         self._req_id = str(uuid.uuid4())
-
-        # Check if we're running in Docker first
-        is_docker = os.path.exists('/.dockerenv')
         
         # Default values
-        self.ollama_url = "http://ollama:11434/api/generate" if is_docker else "http://localhost:11434/api/generate"
+        self.ollama_url = "http://localhost:11434/api/generate"
         self.model = "llama3.1:latest"
         self.output_dir = Path("data/meeting_notes_local")
         self.num_ctx = 128000
@@ -44,9 +41,7 @@ class MeetingNotesLocalPlugin(PluginBase):
         if config and hasattr(config, "config"):
             config_dict = config.config
             if isinstance(config_dict, dict):
-                # Don't override ollama_url if we're in Docker
-                if not is_docker:
-                    self.ollama_url = config_dict.get("ollama_url", self.ollama_url)
+                self.ollama_url = config_dict.get("ollama_url", self.ollama_url)
                 self.model = config_dict.get("model_name", self.model)
                 self.output_dir = Path(config_dict.get("output_directory", str(self.output_dir)))
                 self.num_ctx = config_dict.get("num_ctx", self.num_ctx)
@@ -66,8 +61,7 @@ class MeetingNotesLocalPlugin(PluginBase):
                 "plugin_name": self.name,
                 "output_directory": str(self.output_dir),
                 "ollama_url": self.ollama_url,
-                "num_ctx": self.num_ctx,
-                "is_docker": is_docker
+                "num_ctx": self.num_ctx
             }
         )
 
