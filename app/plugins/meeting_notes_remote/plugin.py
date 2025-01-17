@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast, Literal
 import asyncio
-import aiohttp
+import httpx
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 import google.generativeai as genai
@@ -52,9 +52,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                 if self.provider == "openai":
                     self.client = AsyncOpenAI(
                         api_key=config_dict["openai"]["api_key"],
-                        http_client=aiohttp.ClientSession(
-                            connector=aiohttp.TCPConnector(verify_ssl=False)
-                        )
+                        http_client=httpx.AsyncClient(verify=False)
                     )
                     self.model = config_dict["openai"]["model"]
                 elif self.provider == "anthropic":
