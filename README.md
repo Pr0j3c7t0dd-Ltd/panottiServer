@@ -235,6 +235,29 @@ The server will be accessible at `http://localhost:8001`
 
 ## Usage
 
+### Directory Synchronization
+
+The application includes a directory synchronization feature that can monitor and automatically copy files from source directories to destination directories. The primary use case is to automatically copy generated meeting notes from the application's output directories (`data/meeting_notes_remote` or `data/meeting_notes_local`) to other locations on your system for backup or further processing.
+
+#### Configuration
+
+1. In your `.env` file, enable directory sync:
+```bash
+DIRECTORY_SYNC_ENABLED=true
+```
+
+2. Configure directory pairs to monitor using the `DIRECTORY_SYNC_PAIRS` environment variable. For example, to sync meeting notes:
+```bash
+DIRECTORY_SYNC_PAIRS='[{"source": "data/meeting_notes_remote", "destination": "/path/to/your/notes/backup"}, {"source": "data/meeting_notes_local", "destination": "/path/to/your/local/notes"}]'
+```
+
+Notes:
+- Paths can be absolute or relative to the application root
+- Multiple directory pairs can be monitored simultaneously
+- The feature can be disabled by setting `DIRECTORY_SYNC_ENABLED=false`
+- Source directories are monitored recursively
+- Files are copied with their metadata preserved
+
 ### Starting the Server
 
 There are two recommended ways to start the server:

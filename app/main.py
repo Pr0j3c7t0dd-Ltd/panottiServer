@@ -10,6 +10,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Annotated, Callable
 import weakref
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Header, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
@@ -24,6 +25,7 @@ from app.plugins.manager import PluginManager
 from app.utils.logging_config import setup_logging
 from app.models.recording.events import RecordingEvent, RecordingEndRequest, RecordingStartRequest
 from app.plugins.events.models import EventContext
+from app.utils.directory_sync import DirectorySync, MonitorStatus
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ app.add_middleware(
 event_store = EventStore()
 plugin_manager = None
 event_bus = None
+directory_sync = None  # Add directory sync component
 
 # API key security
 API_KEY_NAME = "X-API-Key"
@@ -85,7 +88,7 @@ async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
 @app.on_event("startup")
 async def startup() -> None:
     """Initialize application state."""
-    global event_bus, plugin_manager
+    global event_bus, plugin_manager, directory_sync
     
     # Setup logging first
     setup_logging()
@@ -100,6 +103,12 @@ async def startup() -> None:
     # Get database instance and test connection
     db = await DatabaseManager.get_instance()
     await db.execute("SELECT 1")
+
+    # Initialize directory sync
+    logger.info("Initializing directory sync")
+    app_root = Path(__file__).parent.parent
+    directory_sync = DirectorySync(app_root)
+    directory_sync.start_monitoring()
 
     # Initialize event bus
     logger.info("Initializing event bus")
@@ -121,7 +130,7 @@ async def startup() -> None:
 @app.on_event("shutdown")
 async def shutdown() -> None:
     """Clean up application components."""
-    global event_bus, plugin_manager
+    global event_bus, plugin_manager, directory_sync
     
     logger.info("Starting application shutdown")
     
@@ -139,6 +148,12 @@ async def shutdown() -> None:
                 await asyncio.wait(tasks, timeout=5.0)
             except asyncio.TimeoutError:
                 logger.warning("Some tasks did not complete within timeout")
+        
+        # Stop directory sync
+        if directory_sync:
+            logger.info("Stopping directory sync")
+            directory_sync.stop_monitoring()
+            directory_sync = None
         
         # First stop accepting new requests
         logger.info("Stopping event bus to prevent new events")
