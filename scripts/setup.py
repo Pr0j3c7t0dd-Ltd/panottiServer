@@ -48,7 +48,6 @@ def install_system_dependencies():
     brew_packages = [
         "openai-whisper",  # Required for audio transcription
         "terminal-notifier",  # Required for desktop notifications
-        "ollama",  # Required for local LLM processing
         "ffmpeg",  # Required for audio processing
         "pyenv",  # Recommended for Python version management
     ]
@@ -211,10 +210,10 @@ def main():
 
         print("\nSetup completed successfully! 🚀")
         print("\nTo start the server, run one of the following commands:")
-        print("1. Using Python directly:")
-        print("   poetry run python run_server.py")
-        print("\n2. Using the shell script (recommended):")
+        print("1. Using the shell script (recommended):")
         print("   ./start_server.sh")
+        print("\n2. Using Python directly:")
+        print("   poetry run python run_server.py")
         print("\nThe server will be available at:")
         print("- HTTPS: https://localhost:54789")
         print("\nAPI documentation will be available at:")

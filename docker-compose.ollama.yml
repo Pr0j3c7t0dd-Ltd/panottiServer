@@ -1,0 +1,71 @@
+services:
+  app-with-ollama:
+    extends:
+      file: docker-compose.yml
+      service: app
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: true
+    command: >
+      sh -c "
+      echo 'Waiting for Docker Ollama to be healthy...' &&
+      until curl -s http://ollama:11434/api/version > /dev/null; do
+        echo 'Waiting for Ollama...' &&
+        sleep 5;
+      done &&
+      echo 'Docker Ollama is ready!' &&
+      echo '=== Environment ===' &&
+      env | sort &&
+      echo '=== Directory Structure ===' &&
+      ls -laR /app &&
+      echo '=== Starting App ===' &&
+      /app/docker-entrypoint.sh
+      "
+
+  ollama:
+    build: 
+      context: ./docker/ollama
+      dockerfile: Dockerfile
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - /dev/shm:/dev/shm
+    environment:
+      - GIN_MODE=release
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_COMPUTE=cpu
+      - OLLAMA_MODELS=/root/.ollama/models
+      - OLLAMA_CTX_SIZE=131072
+      - OLLAMA_TIMEOUT=600
+      - OLLAMA_GPU_LAYERS=0
+      - OLLAMA_THREADS=8
+      - GOAMD64=v3
+    ipc: host
+    deploy:
+      resources:
+        limits:
+          memory: 70G
+          cpus: '8'
+        reservations:
+          memory: 32G
+          cpus: '4'
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    shm_size: '16gb'
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/version || exit 0"]
+      interval: 60s
+      timeout: 600s
+      retries: 15
+      start_period: 180s
+    restart: unless-stopped
+
+volumes:
+  ollama_data: 
