@@ -1,0 +1,9 @@
+name: "cleanup_files"
+version: "0.1.0"
+enabled: false
+dependencies: ["desktop_notifier"]
+config:
+  include_dirs: ["data"]
+  exclude_dirs: ["data/meeting_notes_local","data/meeting_notes_remote"]
+  # Wait 5 seconds before starting cleanup
+  cleanup_delay: 5
