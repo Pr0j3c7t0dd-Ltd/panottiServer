@@ -159,7 +159,7 @@ class NoiseReductionPlugin(PluginBase):
     # ------------------------------------------------------------------------
     def _align_signals_by_fft(
     self, mic_data: np.ndarray, sys_data: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, int]:
         logger.debug("Preparing chunk-based alignment via FFT cross-correlation",
                     extra={"chunk_secs": self._alignment_chunk_seconds})
 
@@ -193,7 +193,7 @@ class NoiseReductionPlugin(PluginBase):
 
         logger.debug("Alignment complete, signals are padded to equal length",
                     extra={"aligned_len": max_len})
-        return mic_aligned, sys_aligned
+        return mic_aligned, sys_aligned, best_lag
 
 
     # ------------------------------------------------------------------------
@@ -241,7 +241,8 @@ class NoiseReductionPlugin(PluginBase):
 
         if do_alignment:
             if self._use_fft_alignment:
-                mic_data, sys_data = self._align_signals_by_fft(mic_data, sys_data)
+                mic_data, sys_data, alignment_lag = self._align_signals_by_fft(mic_data, sys_data)
+                lag_samples = alignment_lag
             else:
                 mic_data, sys_data = self._align_signals_by_ccf(mic_data, sys_data)
 
@@ -319,7 +320,7 @@ class NoiseReductionPlugin(PluginBase):
         # Optionally align
         if do_alignment:
             if self._use_fft_alignment:
-                mic_data, sys_data = self._align_signals_by_fft(mic_data, sys_data)
+                mic_data, sys_data, best_lag = self._align_signals_by_fft(mic_data, sys_data)
             else:
                 mic_data, sys_data = self._align_signals_by_ccf(mic_data, sys_data)
 
@@ -486,9 +487,32 @@ class NoiseReductionPlugin(PluginBase):
         alpha: float = 2.2,
         second_pass: bool = True
     ) -> np.ndarray:
-        """Existing Wiener filter approach."""
-        # ... [unchanged] ...
-        pass
+        """Apply Wiener filter to reduce noise."""
+        return spec * (np.abs(spec) ** 2 / (np.abs(spec) ** 2 + alpha * noise_power))
+
+    def trim_audio_with_lag(input_file: str, output_file: str, lag_samples: int, sample_rate: int) -> None:
+        """
+        Trims the start of the audio file based on the alignment lag.
+
+        Args:
+            input_file (str): Path to the input audio file.
+            output_file (str): Path to save the trimmed audio file.
+            lag_samples (int): Number of samples to trim based on alignment lag.
+            sample_rate (int): Sampling rate of the audio file.
+        """
+        # Read the input audio
+        audio_data, file_sample_rate = sf.read(input_file)
+
+        # Ensure the sample rate matches the provided value
+        if file_sample_rate != sample_rate:
+            raise ValueError("Mismatch between provided and file sample rates.")
+
+        # Trim the audio based on the lag in samples
+        trimmed_audio = audio_data[lag_samples:]
+
+        # Save the trimmed audio
+        sf.write(output_file, trimmed_audio, sample_rate)
+
 
     # ------------------------------------------------------------------------
     # Event handling
@@ -734,6 +758,11 @@ class NoiseReductionPlugin(PluginBase):
                         "freq_domain_bleed_removal": self._freq_domain_bleed_removal
                     }
                 )
+
+                # Trim the first N seconds of the cleaned audio based on alignment_chunk_seconds config
+                # Get actual sample rate from the audio file
+                _, sample_rate = sf.read(str(final_output))
+                self.trim_audio_with_lag(str(final_output), str(final_output), lag_samples=int(self._alignment_chunk_seconds * sample_rate), sample_rate=sample_rate)
 
                 # Emit completion event
                 if self.event_bus:
