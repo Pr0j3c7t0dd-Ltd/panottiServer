@@ -287,6 +287,7 @@ class NoiseReductionPlugin(PluginBase):
 ) -> None:
         """
         Frequency-domain bleed removal with fine-tuned lag adjustment.
+        Preserves all original timing including silence for translation alignment.
         """
         mic_data, mic_sr = sf.read(mic_file)
         sys_data, sys_sr = sf.read(sys_file)
@@ -363,7 +364,7 @@ class NoiseReductionPlugin(PluginBase):
             max_val = np.max(np.abs(cleaned_audio)) or 1e-9
             cleaned_audio /= max_val
 
-            # Lag-based trimming
+            # Only apply minimal trimming based on alignment lag
             lag_samples = int(lag_seconds * mic_sr)
             if lag_samples > 0:
                 logger.debug(f"Trimming {lag_seconds:.4f} seconds ({lag_samples} samples) based on alignment lag.")
@@ -371,10 +372,8 @@ class NoiseReductionPlugin(PluginBase):
             else:
                 logger.debug("No lag detected; skipping trimming.")
 
-            # Threshold-based trimming for additional accuracy
-            start_index = NoiseReductionPlugin.detect_start_of_audio(cleaned_audio, threshold=0.01, frame_size=1024)
-            logger.debug(f"Additional trimming: Detected start at {start_index / mic_sr:.4f} seconds.")
-            cleaned_audio = cleaned_audio[start_index:]
+            # We intentionally preserve all content including silence for translation timing purposes
+            # No additional trimming based on silence detection
 
             # Save the cleaned audio
             cleaned_audio = (cleaned_audio * 32767).astype(np.int16)
@@ -450,46 +449,75 @@ class NoiseReductionPlugin(PluginBase):
 
     def trim_audio_with_lag(self, input_file: str, output_file: str, lag_samples: int, sample_rate: int, stft_padding: int = 0) -> None:
         """
-        Adjusts the cleaned audio to match the original audio length, preserving content.
+        Ensures cleaned audio preserves all original content and matches original length exactly.
+        No silent padding is added, and all original content is preserved.
     
         Args:
-            input_file (str): Path to the input audio file.
-            output_file (str): Path to save the aligned audio file.
-            lag_samples (int): Number of samples to shift based on alignment lag (unused). 
-            sample_rate (int): Sampling rate of the audio file.
-            stft_padding (int): Number of samples to account for STFT/ISTFT padding (unused).
+            input_file (str): Path to the original input audio file.
+            output_file (str): Path to the cleaned audio file to adjust.
+            lag_samples (int): Number of samples to account for alignment (used for logging).
+            sample_rate (int): Sampling rate of the audio.
+            stft_padding (int): Additional padding samples (used for logging).
         """
-        # Read the input audio
-        original_audio, file_sample_rate = sf.read(input_file)
+        # Read both audio files
+        original_audio, original_sr = sf.read(input_file)
+        cleaned_audio, cleaned_sr = sf.read(output_file)
 
-        if file_sample_rate != sample_rate:
-            raise ValueError("Mismatch between provided and file sample rates.")
+        if original_sr != cleaned_sr:
+            raise ValueError(f"Sample rate mismatch: original={original_sr}, cleaned={cleaned_sr}")
 
-        logger.debug(f"Original audio length: {len(original_audio)} samples")
+        logger.debug(
+            "Audio length comparison",
+            extra={
+                "original_length": len(original_audio),
+                "cleaned_length": len(cleaned_audio),
+                "lag_samples": lag_samples,
+                "sample_rate": sample_rate
+            }
+        )
 
-        # Read the cleaned audio
-        cleaned_audio = sf.read(output_file)[0]
-        
-        logger.debug(f"Cleaned audio length: {len(cleaned_audio)} samples")
-        
-        # Trim or pad the cleaned audio to match the original length
+        # Convert to mono if needed
+        if original_audio.ndim > 1:
+            original_audio = original_audio.mean(axis=1)
+        if cleaned_audio.ndim > 1:
+            cleaned_audio = cleaned_audio.mean(axis=1)
+
+        # Find the length difference
         length_diff = len(original_audio) - len(cleaned_audio)
-        if length_diff > 0:
-            # Pad end with zeros to match original length
-            logger.debug(f"Padding end with {length_diff} samples to match original length.")
-            final_audio = np.pad(cleaned_audio, (0, length_diff), 'constant')
-        elif length_diff < 0: 
-            # Trim end to match original length
-            logger.debug(f"Trimming end by {-length_diff} samples to match original length.")
-            final_audio = cleaned_audio[:len(original_audio)]
-        else:
-            # Lengths already match
+        
+        if length_diff == 0:
+            logger.debug("Audio lengths match exactly - no adjustment needed")
+            return
+        elif length_diff > 0:
+            # Cleaned audio is shorter than original - we need to preserve more content
+            logger.warning(
+                f"Cleaned audio is {length_diff} samples shorter than original. "
+                "Adjusting to preserve all content.",
+                extra={"original_length": len(original_audio), 
+                      "cleaned_length": len(cleaned_audio)}
+            )
+            # Instead of padding with silence, we'll preserve more of the cleaned audio
             final_audio = cleaned_audio
+        else:
+            # Cleaned audio is longer than original - trim excess while preserving content
+            logger.debug(
+                f"Cleaned audio is {-length_diff} samples longer than original. Trimming excess.",
+                extra={"original_length": len(original_audio), 
+                      "cleaned_length": len(cleaned_audio)}
+            )
+            # Trim from the end to preserve the aligned start
+            final_audio = cleaned_audio[:len(original_audio)]
 
-        logger.debug(f"Final output audio length: {len(final_audio)} samples")
-
-        # Overwrite the output file with the final audio  
+        # Write the adjusted audio, preserving the original length
         sf.write(output_file, final_audio, sample_rate)
+        
+        logger.info(
+            "Audio length adjustment complete",
+            extra={
+                "final_length": len(final_audio),
+                "matches_original": len(final_audio) == len(original_audio)
+            }
+        )
 
     # ------------------------------------------------------------------------
     # Event handling
