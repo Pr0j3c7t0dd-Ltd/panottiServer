@@ -582,22 +582,41 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         segments = []
         for transcript_file, label in zip(transcript_files, labels, strict=False):
             with open(transcript_file) as tf:
+                in_metadata = False
                 for line in tf:
-                    if line.strip() and "[" in line and "]" in line:
+                    # Skip empty lines
+                    if not line.strip():
+                        continue
+                        
+                    # Track metadata section
+                    if line.strip() == "```json":
+                        in_metadata = True
+                        continue
+                    elif line.strip() == "```":
+                        in_metadata = False
+                        continue
+                        
+                    # Skip metadata section and headers
+                    if in_metadata or line.startswith("#"):
+                        continue
+
+                    # Only parse lines that look like transcript entries
+                    if line.strip() and "[" in line and "]" in line and "->" in line:
                         try:
                             # Parse timestamp and text
                             time_part = line[line.find("[")+1:line.find("]")]
                             start_time = float(time_part.split("->")[0].strip().split(":")[0]) * 60 + \
-                                       float(time_part.split("->")[0].strip().split(":")[1])
+                                     float(time_part.split("->")[0].strip().split(":")[1])
                             text = line[line.find("]")+1:].strip()
                             segments.append((start_time, label, text))
                         except (ValueError, IndexError) as e:
                             logger.warning(
-                                f"Failed to parse line in transcript: {line}",
+                                f"Failed to parse timestamp in transcript line",
                                 extra={
                                     "plugin": self.name,
                                     "error": str(e),
-                                    "line": line
+                                    "line": line,
+                                    "file": transcript_file
                                 }
                             )
 

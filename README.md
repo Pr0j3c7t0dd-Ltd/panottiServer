@@ -14,6 +14,22 @@ A FastAPI-based server for handling recording events with a plugin-based archite
 - Automated meeting notes generation with local or remote Ollama LLM
 - Desktop notifications for important events
 
+## Help & Support
+
+For comprehensive documentation, tutorials, and best practices, visit our official website at [https://www.panotti.io/](https://www.panotti.io/). Join our Discord community for support, discussions, and to connect with other users.
+
+While this server is open source and compatible with any client that implements the API, it works best with the official Panotti MacOS desktop app, available on the MacOS App Store. The desktop app provides a seamless, integrated experience with features like:
+- One-click setup and configuration
+- Real-time recording status
+- Callbacks to any server(s) (not just PanottiServer)
+- Optional Google Calendar integration
+
+## Plugin Architecture
+
+panottiServer features an extensible plugin architecture that allows you to create custom plugins to support your specific workflows. Whether you need to integrate with your team's tools, add custom processing steps, or implement unique features, you can easily extend the server's functionality through plugins.
+
+Check out the [Plugin Development](#plugin-development) section below for a guide on creating your own plugins. In the future, we'll launch a community plugin repository where users can share and discover plugins built by the Panotti community.
+
 ## Architecture
 
 The application follows a modular, plugin-based architecture:
@@ -431,13 +447,21 @@ class YourPlugin(PluginBase):
 
 ### Available Plugins
 
-#### Audio Transcription
-- Transcribes WAV audio files with timestamps
+#### Noise Reduction
+- Reduces background noise in audio recordings
+- Advanced signal processing with FFT-based alignment
+- Configurable parameters for noise reduction
+- Supports both time and frequency domain processing
+- Optimized for speech clarity
+
+#### Audio Transcription Local
+- Transcribes WAV audio files with timestamps using Whisper locally
 - Uses OpenAI's Whisper model through `faster-whisper` library
 - Supports concurrent processing
-- Merges multiple transcripts based on timestamps
+- Configurable model selection from tiny to large
+- Automatic transcript cleanup, formatting and merging
 
-#### Meeting Notes (Local)
+#### Meeting Notes Local
 - Generates meeting notes from transcripts using local Ollama LLM
 - Listens for transcription completion events
 - Produces structured markdown notes with:
@@ -448,9 +472,9 @@ class YourPlugin(PluginBase):
   - Decisions made
   - Next steps
 
-#### Meeting Notes (Remote)
+#### Meeting Notes Remote
 - Same features as local meeting notes plugin
-- Connects to remote Ollama instance
+- Connects to remote OpenAI, Anthropic, or Google APIs to generate notes
 - Configurable model and parameters
 - Supports larger context windows
 
@@ -458,6 +482,96 @@ class YourPlugin(PluginBase):
 - Provides desktop notifications for important events
 - Customizable notification settings
 - Cross-platform support
+- Auto-opens generated notes
+- Concurrent notification handling
+
+#### Cleanup Files
+- Automated file management and cleanup
+- Configurable include/exclude directories
+- Safe deletion with notifications
+- Protects important directories
+- Integration with desktop notifications
+
+#### Example Plugin
+- Reference implementation for plugin development
+- Demonstrates best practices and patterns
+- Shows event handling and configuration
+- Includes comprehensive documentation
+
+### Default Plugin Configuration
+
+The server comes with several built-in plugins. Here's a summary of each plugin and its default state:
+
+#### Audio Transcription Local
+- **Status**: Enabled by default
+- **Dependencies**: noise_reduction
+- **Description**: Transcribes audio using Whisper's base.en model locally
+- **Features**:
+  - Configurable output directory for transcripts
+  - Concurrent task processing
+  - Transcript cleanup option
+
+#### Meeting Notes Local
+- **Status**: Enabled by default
+- **Dependencies**: audio_transcription
+- **Description**: Generates meeting notes using local Ollama LLM
+- **Features**:
+  - Uses llama3.1:latest model by default
+  - Configurable Ollama URL for Docker/local setup
+  - Large context window (131K tokens)
+
+#### Meeting Notes Remote
+- **Status**: Disabled by default
+- **Dependencies**: audio_transcription
+- **Description**: Generates meeting notes using remote LLM services
+- **Features**:
+  - Supports OpenAI, Anthropic, and Google providers
+  - Configurable API keys and models
+  - Timeout settings for long meetings
+
+#### Noise Reduction
+- **Status**: Enabled by default
+- **Dependencies**: None
+- **Description**: Reduces background noise in audio recordings
+- **Features**:
+  - Configurable noise reduction parameters
+  - FFT-based alignment
+  - Frequency domain processing
+
+#### Desktop Notifier
+- **Status**: Enabled by default
+- **Dependencies**: meeting_notes_local, meeting_notes_remote
+- **Description**: Provides system notifications for important events
+- **Features**:
+  - Auto-opens generated notes
+  - Concurrent notification handling
+
+#### Cleanup Files
+- **Status**: Disabled by default
+- **Dependencies**: desktop_notifier
+- **Description**: Manages automatic cleanup of processed files
+- **Features**:
+  - Configurable include/exclude directories
+  - Safe deletion with notifications
+  - Protects important directories by default
+
+#### Example Plugin
+- **Status**: Disabled by default
+- **Dependencies**: None
+- **Description**: Reference implementation for plugin development
+- **Features**:
+  - Demonstrates plugin structure
+  - Shows event handling patterns
+  - Includes development best practices
+
+### Default Pluging Workflow
+
+1. End recording
+2. Audio cleaning
+3. Audio transcription
+4. Meeting notes (local or remote or both)
+5. Desktop notification(s)
+6. Cleanup files
 
 ## Development
 
