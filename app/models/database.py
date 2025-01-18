@@ -18,6 +18,7 @@ T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
+
 class DatabaseManager:
     _instance = None
     _lock = asyncio.Lock()
@@ -53,7 +54,7 @@ class DatabaseManager:
             del self._local.connection
 
     @classmethod
-    async def get_instance(cls) -> 'DatabaseManager':
+    async def get_instance(cls) -> DatabaseManager:
         """Get singleton instance of DatabaseManager."""
         async with cls._lock:
             if cls._instance is None:
@@ -65,10 +66,7 @@ class DatabaseManager:
         """Initialize database connection."""
         logger.info(
             "Initializing database",
-            extra={
-                "req_id": self._req_id,
-                "db_path": self.db_path
-            }
+            extra={"req_id": self._req_id, "db_path": self.db_path},
         )
 
         try:
@@ -76,14 +74,11 @@ class DatabaseManager:
             def _init() -> None:
                 conn = self.get_connection()
                 conn.execute("PRAGMA foreign_keys = ON")
-                
+
             await asyncio.get_event_loop().run_in_executor(self._executor, _init)
             logger.info(
                 "Database initialized successfully",
-                extra={
-                    "req_id": self._req_id,
-                    "db_path": self.db_path
-                }
+                extra={"req_id": self._req_id, "db_path": self.db_path},
             )
         except Exception as e:
             logger.error(
@@ -91,8 +86,8 @@ class DatabaseManager:
                 extra={
                     "req_id": self._req_id,
                     "db_path": self.db_path,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             raise
 
@@ -184,10 +179,7 @@ class DatabaseManager:
         """Run any pending database migrations."""
         logger.info(
             "Running database migrations",
-            extra={
-                "req_id": self._req_id,
-                "db_path": self.db_path
-            }
+            extra={"req_id": self._req_id, "db_path": self.db_path},
         )
 
         try:
@@ -216,31 +208,26 @@ class DatabaseManager:
                         "Applying migration",
                         extra={
                             "req_id": self._req_id,
-                            "migration": migration_file.name
-                        }
+                            "migration": migration_file.name,
+                        },
                     )
-                    
+
                     with migration_file.open() as f:
                         conn.executescript(f.read())
                     conn.execute(
-                        "INSERT INTO migrations (name) VALUES (?)", (migration_file.stem,)
+                        "INSERT INTO migrations (name) VALUES (?)",
+                        (migration_file.stem,),
                     )
                     conn.commit()
 
             logger.info(
                 "Database migrations complete",
-                extra={
-                    "req_id": self._req_id,
-                    "applied_count": len(applied)
-                }
+                extra={"req_id": self._req_id, "applied_count": len(applied)},
             )
         except Exception as e:
             logger.error(
                 "Failed to apply migrations",
-                extra={
-                    "req_id": self._req_id,
-                    "error": str(e)
-                }
+                extra={"req_id": self._req_id, "error": str(e)},
             )
             raise
 
@@ -258,13 +245,17 @@ class DatabaseManager:
                 self.db_path,
                 check_same_thread=False,
                 timeout=60.0,  # Increased timeout for busy waiting
-                isolation_level='IMMEDIATE'  # Immediate transaction mode
+                isolation_level="IMMEDIATE",  # Immediate transaction mode
             )
             # Enable foreign keys and set pragmas for better concurrency
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("PRAGMA busy_timeout = 60000")  # 60 second busy timeout
-            connection.execute("PRAGMA journal_mode = WAL")  # Write-Ahead Logging for better concurrency
-            connection.execute("PRAGMA synchronous = NORMAL")  # Slightly faster while still safe
+            connection.execute(
+                "PRAGMA journal_mode = WAL"
+            )  # Write-Ahead Logging for better concurrency
+            connection.execute(
+                "PRAGMA synchronous = NORMAL"
+            )  # Slightly faster while still safe
             # Row factory for dictionary-like access
             connection.row_factory = sqlite3.Row
             self._local.connection = connection
@@ -274,11 +265,7 @@ class DatabaseManager:
         """Execute a SQL query asynchronously."""
         logger.info(
             "Executing SQL query",
-            extra={
-                "req_id": self._req_id,
-                "sql": sql,
-                "parameters": parameters
-            }
+            extra={"req_id": self._req_id, "sql": sql, "parameters": parameters},
         )
 
         def _execute() -> None:
@@ -295,11 +282,7 @@ class DatabaseManager:
 
         logger.info(
             "Executing SQL query and fetching results",
-            extra={
-                "req_id": self._req_id,
-                "sql": sql,
-                "parameters": parameters
-            }
+            extra={"req_id": self._req_id, "sql": sql, "parameters": parameters},
         )
 
         def _execute_fetchall() -> list[sqlite3.Row]:
@@ -316,11 +299,7 @@ class DatabaseManager:
 
         logger.info(
             "Inserting record into database",
-            extra={
-                "req_id": self._req_id,
-                "sql": sql,
-                "parameters": parameters
-            }
+            extra={"req_id": self._req_id, "sql": sql, "parameters": parameters},
         )
 
         def _insert() -> None:
@@ -343,11 +322,7 @@ class DatabaseManager:
 
         logger.info(
             "Fetching single row from database",
-            extra={
-                "req_id": self._req_id,
-                "sql": sql,
-                "parameters": parameters
-            }
+            extra={"req_id": self._req_id, "sql": sql, "parameters": parameters},
         )
 
         def _fetch_one() -> sqlite3.Row | None:
@@ -365,11 +340,7 @@ class DatabaseManager:
 
         logger.info(
             "Fetching all records from database",
-            extra={
-                "req_id": self._req_id,
-                "sql": sql,
-                "parameters": parameters
-            }
+            extra={"req_id": self._req_id, "sql": sql, "parameters": parameters},
         )
 
         def _fetch_all() -> list[sqlite3.Row]:
@@ -384,12 +355,7 @@ class DatabaseManager:
     async def commit(self) -> None:
         """Commit the current transaction asynchronously."""
 
-        logger.info(
-            "Committing transaction",
-            extra={
-                "req_id": self._req_id
-            }
-        )
+        logger.info("Committing transaction", extra={"req_id": self._req_id})
 
         def _commit() -> None:
             conn = self.get_connection()
@@ -402,30 +368,25 @@ class DatabaseManager:
         try:
             # Close thread pool executor
             self._executor.shutdown(wait=True)
-            
+
             # Close any remaining connections
             if hasattr(self._local, "connection"):
+
                 def _close() -> None:
                     if hasattr(self._local, "connection"):
                         self._local.connection.close()
                         del self._local.connection
-                
+
                 await asyncio.get_event_loop().run_in_executor(None, _close)
-                
+
             logger.info(
                 "Database connections closed",
-                extra={
-                    "req_id": self._req_id,
-                    "db_path": self.db_path
-                }
+                extra={"req_id": self._req_id, "db_path": self.db_path},
             )
         except Exception as e:
             logger.error(
                 "Error closing database connections",
-                extra={
-                    "req_id": self._req_id,
-                    "error": str(e)
-                }
+                extra={"req_id": self._req_id, "error": str(e)},
             )
             raise
 

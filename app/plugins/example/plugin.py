@@ -1,13 +1,9 @@
 """Example plugin that demonstrates plugin functionality."""
 
-import logging
-import os
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-from pathlib import Path
-from typing import Any
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.models import EventContext
@@ -23,7 +19,7 @@ class ExamplePlugin(PluginBase):
 
     def __init__(self, config: PluginConfig, event_bus: Any = None) -> None:
         """Initialize the example plugin.
-        
+
         Args:
             config: Plugin configuration
             event_bus: Event bus for subscribing to events
@@ -40,8 +36,7 @@ class ExamplePlugin(PluginBase):
 
         try:
             logger.debug(
-                "Starting example plugin initialization",
-                extra={"plugin": self.name}
+                "Starting example plugin initialization", extra={"plugin": self.name}
             )
 
             # Initialize thread pool for processing
@@ -50,8 +45,7 @@ class ExamplePlugin(PluginBase):
 
             # Subscribe to events
             await self.event_bus.subscribe(
-                "recording.ended",
-                self._handle_recording_ended
+                "recording.ended", self._handle_recording_ended
             )
 
             logger.info("Example plugin initialization complete")
@@ -82,19 +76,21 @@ class ExamplePlugin(PluginBase):
             )
             raise
 
-    async def _handle_recording_ended(
-        self, event: EventData
-    ) -> None:
+    async def _handle_recording_ended(self, event: EventData) -> None:
         """Handle recording.ended event.
-        
+
         This is an example event handler that demonstrates how to process events.
-        
+
         Args:
             event: Event data containing both event data and context
         """
         try:
             # Extract context from event
-            context = event.get('context') if isinstance(event, dict) else getattr(event, 'context', None)
+            context = (
+                event.get("context")
+                if isinstance(event, dict)
+                else getattr(event, "context", None)
+            )
             if not context:
                 logger.warning("No context found in event")
                 context = EventContext(correlation_id=str(uuid.uuid4()))
@@ -102,8 +98,8 @@ class ExamplePlugin(PluginBase):
             logger.debug(
                 "Handling recording.ended event",
                 extra={
-                    "event_id": getattr(context, 'event_id', None),
-                    "event_type": getattr(context, 'event_type', None),
+                    "event_id": getattr(context, "event_id", None),
+                    "event_type": getattr(context, "event_type", None),
                 },
             )
 
@@ -114,7 +110,7 @@ class ExamplePlugin(PluginBase):
             logger.info(
                 "Example plugin processed recording.ended event",
                 extra={
-                    "event_id": getattr(context, 'event_id', None),
+                    "event_id": getattr(context, "event_id", None),
                     "debug_mode": debug_mode,
                     "example_setting": example_setting,
                 },
@@ -124,7 +120,7 @@ class ExamplePlugin(PluginBase):
             logger.error(
                 "Error handling recording.ended event",
                 extra={
-                    "event_id": getattr(context, 'event_id', None) if context else None,
+                    "event_id": getattr(context, "event_id", None) if context else None,
                     "error": str(e),
                     "error_type": type(e).__name__,
                 },

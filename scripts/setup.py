@@ -172,7 +172,7 @@ def check_docker_installation():
         # Check Docker installation
         subprocess.run(["docker", "--version"], check=True, capture_output=True)
         print("Docker is installed")
-        
+
         # Check Docker memory allocation
         if platform.system() == "Darwin":  # macOS
             result = subprocess.run(
@@ -182,10 +182,16 @@ def check_docker_installation():
                 if "Total Memory:" in line:
                     memory_gb = float(line.split(":")[1].strip().replace("GiB", ""))
                     if memory_gb < 12:
-                        print("Warning: Docker memory allocation is less than recommended 12GB")
-                        print("Please allocate at least 12GB (recommended 16GB) in Docker Desktop settings")
+                        print(
+                            "Warning: Docker memory allocation is less than recommended 12GB"
+                        )
+                        print(
+                            "Please allocate at least 12GB (recommended 16GB) in Docker Desktop settings"
+                        )
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("Docker is not installed. Please install Docker Desktop from https://www.docker.com/products/docker-desktop")
+        print(
+            "Docker is not installed. Please install Docker Desktop from https://www.docker.com/products/docker-desktop"
+        )
         sys.exit(1)
 
 

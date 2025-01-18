@@ -5,4 +5,4 @@ from .plugin import MeetingNotesRemotePlugin
 
 Plugin = MeetingNotesRemotePlugin
 
-__all__ = ["Plugin"] 
+__all__ = ["Plugin"]

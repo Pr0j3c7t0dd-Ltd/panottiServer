@@ -1,8 +1,9 @@
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
-import logging
+
 from pydantic import BaseModel
 
 from app.models.recording.events import (
@@ -53,7 +54,7 @@ class PluginBase(ABC):
 
     async def initialize(self) -> None:
         """Initialize the plugin.
-        
+
         This method should be called only once. Subsequent calls will be ignored.
         """
         if self._initialized:
@@ -62,8 +63,8 @@ class PluginBase(ABC):
                 extra={
                     "req_id": self._req_id,
                     "plugin": self.name,
-                    "version": self.version
-                }
+                    "version": self.version,
+                },
             )
             return
 
@@ -73,8 +74,8 @@ class PluginBase(ABC):
                 extra={
                     "req_id": self._req_id,
                     "plugin": self.name,
-                    "version": self.version
-                }
+                    "version": self.version,
+                },
             )
             await self._initialize()
             self._initialized = True
@@ -83,8 +84,8 @@ class PluginBase(ABC):
                 extra={
                     "req_id": self._req_id,
                     "plugin": self.name,
-                    "version": self.version
-                }
+                    "version": self.version,
+                },
             )
         except Exception as e:
             self.logger.error(
@@ -93,9 +94,9 @@ class PluginBase(ABC):
                     "req_id": self._req_id,
                     "plugin": self.name,
                     "version": self.version,
-                    "error": str(e)
+                    "error": str(e),
                 },
-                exc_info=True
+                exc_info=True,
             )
             raise
 
@@ -104,19 +105,13 @@ class PluginBase(ABC):
         try:
             self.logger.info(
                 "Shutting down plugin",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name
-                }
+                extra={"req_id": self._req_id, "plugin_name": self.name},
             )
             await self._shutdown()
             self._initialized = False
             self.logger.info(
                 "Plugin shutdown complete",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name
-                }
+                extra={"req_id": self._req_id, "plugin_name": self.name},
             )
         except Exception as e:
             self.logger.error(
@@ -124,8 +119,8 @@ class PluginBase(ABC):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             raise
 
@@ -140,8 +135,8 @@ class PluginBase(ABC):
                 "req_id": self._req_id,
                 "plugin_name": self.name,
                 "config_key": key,
-                "config_value": value
-            }
+                "config_value": value,
+            },
         )
         return value
 
@@ -174,8 +169,8 @@ class PluginBase(ABC):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "event_name": name
-                }
+                    "event_name": name,
+                },
             )
             return
 

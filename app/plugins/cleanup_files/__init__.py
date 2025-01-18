@@ -2,4 +2,4 @@
 
 from .plugin import CleanupFilesPlugin
 
-__all__ = ["CleanupFilesPlugin"] 
+__all__ = ["CleanupFilesPlugin"]

@@ -1,13 +1,13 @@
 """Recording event models."""
 
+import asyncio
 import json
 import logging
-import uuid
-from datetime import datetime, UTC
-from typing import Any, Literal, TypeVar
-import asyncio
-import traceback
 import sqlite3
+import traceback
+import uuid
+from datetime import UTC, datetime
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
@@ -79,8 +79,12 @@ class RecordingEvent(BaseModel):
 
     recording_timestamp: str
     recording_id: str
-    system_audio_path: str | None = Field(None, description="Path to system audio recording")
-    microphone_audio_path: str | None = Field(None, description="Path to microphone audio recording")
+    system_audio_path: str | None = Field(
+        None, description="Path to system audio recording"
+    )
+    microphone_audio_path: str | None = Field(
+        None, description="Path to microphone audio recording"
+    )
     event: Literal[
         "recording.started",
         "recording.ended",
@@ -115,32 +119,36 @@ class RecordingEvent(BaseModel):
     def set_data(cls, v: dict[str, Any] | None, info: ValidationInfo) -> dict[str, Any]:
         """Set the data field with relevant event information."""
         data = v or {}
-        
+
         # Get values from the model
         recording_id = info.data.get("recording_id")
         event = info.data.get("event")
         event_id = info.data.get("event_id")
         system_audio = info.data.get("system_audio_path")
         microphone_audio = info.data.get("microphone_audio_path")
-        
+
         # Update data dict
-        data.update({
-            "recording_id": recording_id,
-            "event": event,
-            "event_id": event_id,
-            "current_event": {
-                "recording": {
-                    "status": info.data.get("status", "completed"),
-                    "timestamp": info.data.get("recording_timestamp"),
-                    "audio_paths": {
-                        "system": system_audio,
-                        "microphone": microphone_audio
-                    } if system_audio or microphone_audio else None,
-                    "metadata": info.data.get("metadata")
-                }
+        data.update(
+            {
+                "recording_id": recording_id,
+                "event": event,
+                "event_id": event_id,
+                "current_event": {
+                    "recording": {
+                        "status": info.data.get("status", "completed"),
+                        "timestamp": info.data.get("recording_timestamp"),
+                        "audio_paths": {
+                            "system": system_audio,
+                            "microphone": microphone_audio,
+                        }
+                        if system_audio or microphone_audio
+                        else None,
+                        "metadata": info.data.get("metadata"),
+                    }
+                },
             }
-        })
-        
+        )
+
         return data
 
     @field_validator("recording_timestamp")
@@ -232,7 +240,7 @@ class RecordingEvent(BaseModel):
         # Wait for all tasks with retry on database lock
         max_retries = 3
         retry_delay = 1.0  # seconds
-        
+
         for attempt in range(max_retries):
             try:
                 # Wait for all tasks to complete
@@ -242,8 +250,8 @@ class RecordingEvent(BaseModel):
                     extra={
                         "recording_id": self.recording_id,
                         "event_id": self.event_id,
-                        "attempt": attempt + 1
-                    }
+                        "attempt": attempt + 1,
+                    },
                 )
                 return
             except sqlite3.OperationalError as e:
@@ -254,8 +262,8 @@ class RecordingEvent(BaseModel):
                             "recording_id": self.recording_id,
                             "event_id": self.event_id,
                             "attempt": attempt + 1,
-                            "retry_delay": retry_delay
-                        }
+                            "retry_delay": retry_delay,
+                        },
                     )
                     await asyncio.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
@@ -268,8 +276,10 @@ class RecordingEvent(BaseModel):
                         "recording_id": self.recording_id,
                         "event_id": self.event_id,
                         "error": str(e),
-                        "traceback": "".join(traceback.format_exception(type(e), e, e.__traceback__))
-                    }
+                        "traceback": "".join(
+                            traceback.format_exception(type(e), e, e.__traceback__)
+                        ),
+                    },
                 )
                 raise
 
@@ -299,10 +309,10 @@ class RecordingEvent(BaseModel):
 
     async def is_duplicate(self) -> bool:
         """Check if this event is a duplicate.
-        
+
         For now, we allow multiple recording.ended events for the same recording ID
         since they might be legitimate retries or different processing stages.
-        
+
         Returns:
             bool: Always returns False to allow all events
         """
@@ -320,13 +330,13 @@ class RecordingStartRequest(BaseModel):
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def normalize_event(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Normalize event name before validation."""
-        if 'event' in data:
-            if data['event'].lower() in ["recording started", "recording.started"]:
-                data['event'] = "recording.started"
+        if "event" in data:
+            if data["event"].lower() in ["recording started", "recording.started"]:
+                data["event"] = "recording.started"
         return data
 
     @field_validator("recording_timestamp")
@@ -373,13 +383,13 @@ class RecordingEndRequest(BaseModel):
     event: str = Field(default="recording.ended")
     metadata: dict[str, Any]
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def normalize_event(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Normalize event name before validation."""
-        if 'event' in data:
-            if data['event'].lower() in ["recording ended", "recording.ended"]:
-                data['event'] = "recording.ended"
+        if "event" in data:
+            if data["event"].lower() in ["recording ended", "recording.ended"]:
+                data["event"] = "recording.ended"
         return data
 
     @field_validator("recording_timestamp")
@@ -419,6 +429,6 @@ class RecordingEndRequest(BaseModel):
                 "metadata": self.metadata,
                 "event": self.event,
                 "event_id": event_id,
-                "status": "completed"
+                "status": "completed",
             },
         )

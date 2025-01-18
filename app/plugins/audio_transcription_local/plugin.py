@@ -1,27 +1,24 @@
 """Audio transcription plugin for converting audio to text locally."""
 
+import asyncio
 import json
-import logging
 import os
 import threading
 import wave
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from faster_whisper import WhisperModel
 from pathlib import Path
 from typing import Any
-import uuid
-import asyncio
+
 import numpy as np
 import soundfile as sf
-from scipy.signal import find_peaks
+from faster_whisper import WhisperModel
 
 from app.models.database import DatabaseManager
 from app.models.recording.events import RecordingEvent
-from app.plugins.base import PluginBase, PluginConfig
-from app.plugins.events.models import EventContext
-from app.utils.logging_config import get_logger
 from app.plugins.audio_transcription_local.transcript_cleaner import TranscriptCleaner
+from app.plugins.base import PluginBase
+from app.utils.logging_config import get_logger
 
 logger = get_logger("app.plugins.audio_transcription_local.plugin")
 
@@ -51,10 +48,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         try:
             logger.debug(
                 "Initializing audio transcription plugin",
-                extra={
-                    "plugin": self.name,
-                    "output_dir": str(self._output_dir)
-                }
+                extra={"plugin": self.name, "output_dir": str(self._output_dir)},
             )
 
             # Initialize Whisper model
@@ -66,8 +60,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
 
             # Subscribe to noise reduction completed event
             await self.event_bus.subscribe(
-                "noise_reduction.completed",
-                self.handle_noise_reduction_completed
+                "noise_reduction.completed", self.handle_noise_reduction_completed
             )
 
             logger.info(
@@ -75,18 +68,15 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 extra={
                     "plugin": self.name,
                     "subscribed_events": ["noise_reduction.completed"],
-                    "handler": "handle_noise_reduction_completed"
-                }
+                    "handler": "handle_noise_reduction_completed",
+                },
             )
 
         except Exception as e:
             logger.error(
                 "Failed to initialize plugin",
-                extra={
-                    "plugin": self.name,
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"plugin": self.name, "error": str(e)},
+                exc_info=True,
             )
             raise
 
@@ -94,10 +84,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         """Shutdown plugin"""
         try:
             logger.info(
-                "Shutting down audio transcription plugin",
-                extra={
-                    "plugin": self.name
-                }
+                "Shutting down audio transcription plugin", extra={"plugin": self.name}
             )
 
             # Signal shutdown
@@ -123,10 +110,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 except Exception as e:
                     logger.error(
                         "Error shutting down thread pool",
-                        extra={
-                            "plugin": self.name,
-                            "error": str(e)
-                        }
+                        extra={"plugin": self.name, "error": str(e)},
                     )
                 finally:
                     self._executor = None
@@ -142,32 +126,24 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 except Exception as e:
                     logger.error(
                         "Error releasing model resources",
-                        extra={
-                            "plugin": self.name,
-                            "error": str(e)
-                        }
+                        extra={"plugin": self.name, "error": str(e)},
                     )
 
             logger.info(
                 "Audio transcription plugin shutdown complete",
-                extra={
-                    "plugin": self.name
-                }
+                extra={"plugin": self.name},
             )
 
         except asyncio.TimeoutError:
             logger.error(
                 "Timeout waiting for processing to complete during shutdown",
-                extra={"plugin": self.name}
+                extra={"plugin": self.name},
             )
         except Exception as e:
             logger.error(
                 "Error during plugin shutdown",
-                extra={
-                    "plugin": self.name,
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"plugin": self.name, "error": str(e)},
+                exc_info=True,
             )
 
     async def handle_noise_reduction_completed(self, event_data: EventData) -> None:
@@ -184,17 +160,14 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 extra={
                     "plugin": self.name,
                     "event_type": event_type,
-                    "event_data": str(event_data)
-                }
+                    "event_data": str(event_data),
+                },
             )
 
             if event_type != "noise_reduction.completed":
                 logger.debug(
                     "Ignoring non-noise_reduction.completed event",
-                    extra={
-                        "plugin": self.name,
-                        "event_type": event_type
-                    }
+                    extra={"plugin": self.name, "event_type": event_type},
                 )
                 return
 
@@ -202,29 +175,28 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             if isinstance(event_data, dict):
                 recording_id = event_data.get("recording_id")
                 processed_mic_audio = event_data.get("output_path")
-                
+
                 # Get original event data
                 original_event = None
                 if "original_event" in event_data:
                     original_event = event_data["original_event"]
                 elif "data" in event_data and "current_event" in event_data["data"]:
                     original_event = event_data["data"]["current_event"]
-                
+
                 logger.debug(
                     "Original event data",
-                    extra={
-                        "plugin": self.name,
-                        "original_event": str(original_event)
-                    }
+                    extra={"plugin": self.name, "original_event": str(original_event)},
                 )
-                
+
                 # Extract system audio path
                 original_sys_audio = None
                 if original_event and "recording" in original_event:
-                    original_sys_audio = original_event["recording"]["audio_paths"]["system"]
+                    original_sys_audio = original_event["recording"]["audio_paths"][
+                        "system"
+                    ]
                 elif "system_audio_path" in event_data:
                     original_sys_audio = event_data["system_audio_path"]
-                
+
                 # Extract metadata
                 metadata = {}
                 if original_event and "recording" in original_event:
@@ -237,25 +209,26 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             else:
                 recording_id = event_data.recording_id
                 processed_mic_audio = getattr(event_data, "output_path", None)
-                
+
                 # Get original event data
                 original_event = None
-                if hasattr(event_data, "data") and hasattr(event_data.data, "current_event"):
+                if hasattr(event_data, "data") and hasattr(
+                    event_data.data, "current_event"
+                ):
                     original_event = event_data.data.current_event
-                
+
                 logger.debug(
                     "Original event data (object)",
-                    extra={
-                        "plugin": self.name,
-                        "original_event": str(original_event)
-                    }
+                    extra={"plugin": self.name, "original_event": str(original_event)},
                 )
-                
+
                 # Extract system audio path
                 original_sys_audio = getattr(event_data, "system_audio_path", None)
                 if original_event and hasattr(original_event, "recording"):
-                    original_sys_audio = original_event.recording.audio_paths.get("system", original_sys_audio)
-                
+                    original_sys_audio = original_event.recording.audio_paths.get(
+                        "system", original_sys_audio
+                    )
+
                 # Extract metadata
                 metadata = getattr(event_data, "metadata", {})
                 if original_event and hasattr(original_event, "recording"):
@@ -264,10 +237,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             if not recording_id or not processed_mic_audio:
                 logger.error(
                     "Missing required data in noise reduction event",
-                    extra={
-                        "plugin": self.name,
-                        "event_data": str(event_data)
-                    }
+                    extra={"plugin": self.name, "event_data": str(event_data)},
                 )
                 return
 
@@ -278,8 +248,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "recording_id": recording_id,
                     "processed_mic_audio": processed_mic_audio,
                     "original_sys_audio": original_sys_audio,
-                    "metadata": metadata
-                }
+                    "metadata": metadata,
+                },
             )
 
             # Get speaker labels from metadata
@@ -294,18 +264,21 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "Processing system audio",
                     extra={
                         "plugin": self.name,
-                        "system_audio_path": original_sys_audio
-                    }
+                        "system_audio_path": original_sys_audio,
+                    },
                 )
-                sys_transcript = await self._process_audio(original_sys_audio, sys_label)
+                sys_transcript = await self._process_audio(
+                    original_sys_audio, sys_label
+                )
             else:
                 logger.warning(
                     "System audio not found or not accessible",
                     extra={
                         "plugin": self.name,
                         "system_audio_path": original_sys_audio,
-                        "exists": original_sys_audio and os.path.exists(original_sys_audio)
-                    }
+                        "exists": original_sys_audio
+                        and os.path.exists(original_sys_audio),
+                    },
                 )
 
             # Create merged transcript
@@ -320,8 +293,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "sys_transcript": str(sys_transcript),
                     "mic_label": mic_label,
                     "sys_label": sys_label,
-                    "metadata": metadata
-                }
+                    "metadata": metadata,
+                },
             )
 
             # Merge transcripts
@@ -335,7 +308,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 transcript_files=transcript_files,
                 output_path=str(merged_transcript),
                 labels=labels,
-                original_event=metadata
+                original_event=metadata,
             )
 
             # Create enriched event data
@@ -345,12 +318,12 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 "output_path": str(merged_transcript),
                 "input_paths": {
                     "microphone": processed_mic_audio,
-                    "system": original_sys_audio
+                    "system": original_sys_audio,
                 },
                 "transcript_paths": {
                     "microphone": str(mic_transcript),
                     "system": str(sys_transcript) if sys_transcript else None,
-                    "merged": str(merged_transcript)
+                    "merged": str(merged_transcript),
                 },
                 "transcript_path": str(merged_transcript),
                 "event_id": f"{recording_id}_transcription_completed",
@@ -362,26 +335,28 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                         "recording": {
                             "audio_paths": {
                                 "system": original_sys_audio,
-                                "microphone": processed_mic_audio
+                                "microphone": processed_mic_audio,
                             },
-                            "metadata": metadata
+                            "metadata": metadata,
                         },
                         "transcription": {
                             "status": "completed",
                             "timestamp": datetime.utcnow().isoformat(),
                             "transcript_paths": {
                                 "microphone": str(mic_transcript),
-                                "system": str(sys_transcript) if sys_transcript else None,
-                                "merged": str(merged_transcript)
+                                "system": str(sys_transcript)
+                                if sys_transcript
+                                else None,
+                                "merged": str(merged_transcript),
                             },
                             "transcript_path": str(merged_transcript),
                             "speaker_labels": {
                                 "microphone": mic_label,
-                                "system": sys_label
-                            }
-                        }
+                                "system": sys_label,
+                            },
+                        },
                     }
-                }
+                },
             }
 
             # Emit enriched event
@@ -391,11 +366,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         except Exception as e:
             logger.error(
                 "Error handling noise reduction completed event",
-                extra={
-                    "plugin": self.name,
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"plugin": self.name, "error": str(e)},
+                exc_info=True,
             )
 
     async def _emit_transcription_event(
@@ -417,11 +389,9 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             "transcription": {
                 "status": status,
                 "timestamp": datetime.utcnow().isoformat(),
-                "output_paths": {
-                    "transcript": output_file
-                } if output_file else None,
-                "error": error
-            }
+                "output_paths": {"transcript": output_file} if output_file else None,
+                "error": error,
+            },
         }
 
         # Preserve previous event data in nested structure
@@ -437,23 +407,23 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             recording_id=recording_id,
             event="transcription_local.completed",
             data=event_data,
-            context=original_event.get("context") if original_event else None
+            context=original_event.get("context") if original_event else None,
         )
 
         await self.event_bus.publish(event)
-        
+
         # Structured logging
         log_data = {
             "plugin": self.name,
             "recording_id": recording_id,
             "event": "transcription_local.completed",
-            "status": status
+            "status": status,
         }
         if output_file:
             log_data["output_file"] = output_file
         if error:
             log_data["error"] = error
-            
+
         logger.info("Emitted transcription event", extra=log_data)
 
     async def _init_database(self) -> None:
@@ -463,7 +433,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
 
         # Create tables using the connection from our db instance
         with self.db.get_connection() as conn:  # Now this will work
-            conn.execute("""
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS transcriptions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     recording_id TEXT NOT NULL,
@@ -471,7 +442,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (recording_id) REFERENCES recordings(recording_id)
                 )
-            """)
+            """
+            )
             conn.commit()
 
     def _update_task_status(
@@ -574,7 +546,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         """Merge multiple transcript files ordered by timestamp"""
         # Update output path to .md
         output_path = str(Path(output_path).with_suffix(".md"))
-        
+
         # Create output directory if it doesn't exist
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -587,7 +559,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     # Skip empty lines
                     if not line.strip():
                         continue
-                        
+
                     # Track metadata section
                     if line.strip() == "```json":
                         in_metadata = True
@@ -595,7 +567,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     elif line.strip() == "```":
                         in_metadata = False
                         continue
-                        
+
                     # Skip metadata section and headers
                     if in_metadata or line.startswith("#"):
                         continue
@@ -604,20 +576,23 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     if line.strip() and "[" in line and "]" in line and "->" in line:
                         try:
                             # Parse timestamp and text
-                            time_part = line[line.find("[")+1:line.find("]")]
-                            start_time = float(time_part.split("->")[0].strip().split(":")[0]) * 60 + \
-                                     float(time_part.split("->")[0].strip().split(":")[1])
-                            text = line[line.find("]")+1:].strip()
+                            time_part = line[line.find("[") + 1 : line.find("]")]
+                            start_time = float(
+                                time_part.split("->")[0].strip().split(":")[0]
+                            ) * 60 + float(
+                                time_part.split("->")[0].strip().split(":")[1]
+                            )
+                            text = line[line.find("]") + 1 :].strip()
                             segments.append((start_time, label, text))
                         except (ValueError, IndexError) as e:
                             logger.warning(
-                                f"Failed to parse timestamp in transcript line",
+                                "Failed to parse timestamp in transcript line",
                                 extra={
                                     "plugin": self.name,
                                     "error": str(e),
                                     "line": line,
-                                    "file": transcript_file
-                                }
+                                    "file": transcript_file,
+                                },
                             )
 
         # Sort segments by timestamp
@@ -628,7 +603,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             # Add metadata header
             f.write("# Merged Transcript\n\n")
             f.write("## Metadata\n\n")
-            
+
             # Create metadata object
             metadata = {
                 "event": {
@@ -637,12 +612,12 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "providerId": original_event.get("eventProviderId"),
                     "started": original_event.get("recordingStarted"),
                     "ended": original_event.get("recordingEnded"),
-                    "attendees": original_event.get("eventAttendees", [])
+                    "attendees": original_event.get("eventAttendees", []),
                 },
                 "speakers": labels,
-                "transcriptionCompleted": datetime.utcnow().isoformat()
+                "transcriptionCompleted": datetime.utcnow().isoformat(),
             }
-            
+
             # Write metadata as JSON in markdown code block
             f.write("```json\n")
             f.write(json.dumps(metadata, indent=2))
@@ -655,35 +630,37 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 seconds = start_time % 60
                 # Remove doubled label from text if it exists
                 text = text.replace(f"{label}: ", "").strip()
-                
+
                 # Clean up transcript if enabled in config
                 if self.config.config.get("clean_up_transcript", False):
                     text = self._transcript_cleaner.clean_transcript(text)
-                
+
                 f.write(f"[{minutes:02d}:{seconds:05.2f}] {label}: {text}\n")
 
-    async def _process_audio(self, audio_path: str, speaker_label: str | None = None) -> Path:
+    async def _process_audio(
+        self, audio_path: str, speaker_label: str | None = None
+    ) -> Path:
         """Process audio file and return transcript path"""
         # Create output paths
         output_base = self._output_dir / Path(audio_path).stem
         transcript_file = output_base.with_suffix(".md")
-        
+
         # Process audio file here...
         if self._model is None:
             self._init_model()
-            
+
         # Get audio duration and detect silence at start
         audio_data, sample_rate = sf.read(audio_path)
         duration = len(audio_data) / sample_rate
-        
+
         # Detect silence threshold
         rms = np.sqrt(np.mean(audio_data**2))
         silence_threshold = rms * 0.1  # 10% of RMS as threshold
-        
+
         # Find first non-silent segment
         non_silent = np.where(np.abs(audio_data) > silence_threshold)[0]
         start_offset = non_silent[0] / sample_rate if len(non_silent) > 0 else 0
-        
+
         logger.debug(
             "Audio analysis",
             extra={
@@ -693,13 +670,13 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 "start_offset": start_offset,
                 "sample_rate": sample_rate,
                 "rms": rms,
-                "silence_threshold": silence_threshold
-            }
+                "silence_threshold": silence_threshold,
+            },
         )
 
         # Run transcription in thread pool
         loop = asyncio.get_running_loop()
-        
+
         def run_transcription():
             return self._model.transcribe(
                 audio_path,
@@ -708,11 +685,11 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 vad_filter=True,  # Use voice activity detection
                 vad_parameters=dict(
                     min_silence_duration_ms=500,  # Minimum silence duration to split segments
-                    speech_pad_ms=100  # Padding around speech segments
+                    speech_pad_ms=100,  # Padding around speech segments
                 ),
-                beam_size=5  # Increase beam size for better word-level timestamps
+                beam_size=5,  # Increase beam size for better word-level timestamps
             )
-            
+
         segments, info = await loop.run_in_executor(self._executor, run_transcription)
 
         # Write transcript to file in thread pool
@@ -725,26 +702,38 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     f.write(f"Speaker: {speaker_label}\n\n")
 
                 # Add metadata if available from event data
-                if hasattr(self, '_current_event_metadata'):
+                if hasattr(self, "_current_event_metadata"):
                     metadata = {
                         "event": {
                             "title": self._current_event_metadata.get("eventTitle"),
-                            "provider": self._current_event_metadata.get("eventProvider"),
-                            "providerId": self._current_event_metadata.get("eventProviderId"),
-                            "started": self._current_event_metadata.get("recordingStarted"),
+                            "provider": self._current_event_metadata.get(
+                                "eventProvider"
+                            ),
+                            "providerId": self._current_event_metadata.get(
+                                "eventProviderId"
+                            ),
+                            "started": self._current_event_metadata.get(
+                                "recordingStarted"
+                            ),
                             "ended": self._current_event_metadata.get("recordingEnded"),
-                            "attendees": self._current_event_metadata.get("eventAttendees", [])
+                            "attendees": self._current_event_metadata.get(
+                                "eventAttendees", []
+                            ),
                         },
-                        "speakers": [self._current_event_metadata.get("microphoneLabel", "Microphone"), 
-                                   self._current_event_metadata.get("systemLabel", "System")],
-                        "transcriptionCompleted": datetime.utcnow().isoformat()
+                        "speakers": [
+                            self._current_event_metadata.get(
+                                "microphoneLabel", "Microphone"
+                            ),
+                            self._current_event_metadata.get("systemLabel", "System"),
+                        ],
+                        "transcriptionCompleted": datetime.utcnow().isoformat(),
                     }
                     f.write("## Metadata\n\n```json\n")
                     f.write(json.dumps(metadata, indent=2))
                     f.write("\n```\n\n")
 
                 f.write("## Segments\n\n")
-                
+
                 # Write segments with adjusted timestamps
                 for segment in segments:
                     # Break up long segments into smaller chunks based on words
@@ -753,16 +742,20 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                         chunk_words = []
                         chunk_start = segment.words[0].start
                         current_text = []
-                        
+
                         for word in segment.words:
                             # Check if this word is a repeat of the last few words
-                            last_n_words = ' '.join(current_text[-3:]) if len(current_text) >= 3 else ''
+                            last_n_words = (
+                                " ".join(current_text[-3:])
+                                if len(current_text) >= 3
+                                else ""
+                            )
                             current_word = word.word.strip()
-                            
+
                             # Skip if this word would create a repetition
                             if last_n_words and current_word in last_n_words:
                                 continue
-                                
+
                             if word.start - chunk_start > 5.0 and current_text:
                                 # Write current chunk
                                 chunk_end = word.start
@@ -770,21 +763,23 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                                 start_seconds = chunk_start % 60
                                 end_minutes = int(chunk_end // 60)
                                 end_seconds = chunk_end % 60
-                                
+
                                 timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
                                 speaker = f"{speaker_label}: " if speaker_label else ""
-                                text = ' '.join(current_text).strip()
-                                
+                                text = " ".join(current_text).strip()
+
                                 # Clean up transcript if enabled in config
                                 if self.config.config.get("clean_up_transcript", False):
-                                    text = self._transcript_cleaner.clean_transcript(text)
-                                    
+                                    text = self._transcript_cleaner.clean_transcript(
+                                        text
+                                    )
+
                                 f.write(f"{timestamp} {speaker}{text}\n")
-                                
+
                                 # Start new chunk
                                 chunk_start = word.start
                                 current_text = []
-                            
+
                             current_text.append(word.word)
 
                         # Write final chunk if any words remain
@@ -794,15 +789,15 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                             start_seconds = chunk_start % 60
                             end_minutes = int(chunk_end // 60)
                             end_seconds = chunk_end % 60
-                            
+
                             timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
                             speaker = f"{speaker_label}: " if speaker_label else ""
-                            text = ' '.join(current_text).strip()
-                            
+                            text = " ".join(current_text).strip()
+
                             # Clean up transcript if enabled in config
                             if self.config.config.get("clean_up_transcript", False):
                                 text = self._transcript_cleaner.clean_transcript(text)
-                                
+
                             f.write(f"{timestamp} {speaker}{text}\n")
                     else:
                         # Fallback for segments without word-level info
@@ -810,15 +805,15 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                         start_seconds = segment.start % 60
                         end_minutes = int(segment.end // 60)
                         end_seconds = segment.end % 60
-                        
+
                         timestamp = f"[{start_minutes:02d}:{start_seconds:05.2f} -> {end_minutes:02d}:{end_seconds:05.2f}]"
                         speaker = f"{speaker_label}: " if speaker_label else ""
                         text = segment.text.strip()
-                        
+
                         # Clean up transcript if enabled in config
                         if self.config.config.get("clean_up_transcript", False):
                             text = self._transcript_cleaner.clean_transcript(text)
-                            
+
                         f.write(f"{timestamp} {speaker}{text}\n")
 
         await loop.run_in_executor(self._executor, write_transcript)
@@ -831,13 +826,13 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             # Get model configuration
             config_dict = self.config.config or {}
             model_name = config_dict.get("model_name", "base.en")
-            
+
             # Get project root directory
             current_dir = Path(__file__).resolve().parent
             project_root = current_dir.parent.parent.parent
             model_dir = project_root / "models" / "whisper"
             model_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Initialize the model with offline settings
             self._model = WhisperModel(
                 model_size_or_path=model_name,
@@ -845,7 +840,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 device_index=0,
                 compute_type="default",
                 download_root=str(model_dir),
-                local_files_only=True  # Ensure offline mode
+                local_files_only=True,  # Ensure offline mode
             )
 
             logger.info(
@@ -854,17 +849,14 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "plugin": self.name,
                     "model_name": model_name,
                     "model_dir": str(model_dir),
-                    "offline_mode": True
-                }
+                    "offline_mode": True,
+                },
             )
 
         except Exception as e:
             logger.error(
                 "Failed to initialize Whisper model",
-                extra={
-                    "plugin": self.name,
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"plugin": self.name, "error": str(e)},
+                exc_info=True,
             )
             raise

@@ -1,21 +1,21 @@
-import os
+import asyncio
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast, Literal
-import asyncio
-import httpx
-from openai import AsyncOpenAI
-from anthropic import AsyncAnthropic
-import google.generativeai as genai
+from typing import Any, Literal
 
+import google.generativeai as genai
+import httpx
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
+
+from app.models.recording.events import EventContext, RecordingEvent
 from app.plugins.base import PluginBase
 from app.plugins.events.bus import EventBus
-from app.plugins.events.models import Event, EventContext, EventPriority
+from app.plugins.events.models import Event, EventContext
 from app.utils.logging_config import get_logger
-from app.models.recording.events import RecordingEvent, EventContext
 
 EventData = dict[str, Any] | RecordingEvent
 ProviderType = Literal["openai", "anthropic", "google"]
@@ -32,7 +32,7 @@ class MeetingNotesRemotePlugin(PluginBase):
         """Initialize the plugin"""
         super().__init__(config, event_bus)
         self._req_id = str(uuid.uuid4())
-        
+
         # Default values
         self.output_dir = Path("data/meeting_notes_remote")
         self.max_concurrent_tasks = 4
@@ -43,21 +43,27 @@ class MeetingNotesRemotePlugin(PluginBase):
         if config and hasattr(config, "config"):
             config_dict = config.config
             if isinstance(config_dict, dict):
-                self.output_dir = Path(config_dict.get("output_directory", str(self.output_dir)))
-                self.max_concurrent_tasks = config_dict.get("max_concurrent_tasks", self.max_concurrent_tasks)
+                self.output_dir = Path(
+                    config_dict.get("output_directory", str(self.output_dir))
+                )
+                self.max_concurrent_tasks = config_dict.get(
+                    "max_concurrent_tasks", self.max_concurrent_tasks
+                )
                 self.timeout = config_dict.get("timeout", self.timeout)
                 self.provider = config_dict.get("provider", self.provider)
-                
+
                 # Initialize provider-specific clients
                 if self.provider == "openai":
                     self.client = AsyncOpenAI(
                         api_key=config_dict["openai"]["api_key"],
-                        http_client=httpx.AsyncClient(verify=False)
+                        http_client=httpx.AsyncClient(verify=False),
                     )
                     self.model = config_dict["openai"]["model"]
                 elif self.provider == "anthropic":
                     # Anthropic SDK doesn't support custom http client configuration
-                    self.client = AsyncAnthropic(api_key=config_dict["anthropic"]["api_key"])
+                    self.client = AsyncAnthropic(
+                        api_key=config_dict["anthropic"]["api_key"]
+                    )
                     self.model = config_dict["anthropic"]["model"]
                 elif self.provider == "google":
                     # Standard configuration for Google GenerativeAI
@@ -69,19 +75,19 @@ class MeetingNotesRemotePlugin(PluginBase):
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Initialize thread pool with configured max tasks
         self._executor = ThreadPoolExecutor(max_workers=self.max_concurrent_tasks)
         self._processing_lock = threading.Lock()
-        
+
         logger.info(
             "Initializing meeting notes plugin",
             extra={
                 "plugin_name": self.name,
                 "output_directory": str(self.output_dir),
                 "provider": self.provider,
-                "model": self.model
-            }
+                "model": self.model,
+            },
         )
 
     async def _initialize(self) -> None:
@@ -89,10 +95,7 @@ class MeetingNotesRemotePlugin(PluginBase):
         if not self.event_bus:
             logger.warning(
                 "No event bus available for plugin",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name
-                }
+                extra={"req_id": self._req_id, "plugin_name": self.name},
             )
             return
 
@@ -106,16 +109,15 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "model": self.model,
                     "output_dir": str(self.output_dir),
                     "provider": self.provider,
-                    "model": self.model
-                }
+                    "model": self.model,
+                },
             )
-            
+
             # Subscribe to transcription completed event
             await self.event_bus.subscribe(
-                "transcription_local.completed",
-                self.handle_transcription_completed
+                "transcription_local.completed", self.handle_transcription_completed
             )
-            
+
             logger.info(
                 "Meeting notes plugin initialized",
                 extra={
@@ -124,8 +126,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
                     "event": "transcription_local.completed",
-                    "output_dir": str(self.output_dir)
-                }
+                    "output_dir": str(self.output_dir),
+                },
             )
 
         except Exception as e:
@@ -137,9 +139,9 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "error": str(e),
                     "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
-                    "output_dir": str(self.output_dir)
+                    "output_dir": str(self.output_dir),
                 },
-                exc_info=True
+                exc_info=True,
             )
             raise
 
@@ -147,25 +149,37 @@ class MeetingNotesRemotePlugin(PluginBase):
         """Handle transcription completed event"""
         try:
             event_id = str(uuid.uuid4())
-            
+
             logger.info(
                 "Processing transcription completed event",
                 extra={
                     "plugin_name": self.name,
-                    "event_id": getattr(event_data, "event_id", None)
-                }
+                    "event_id": getattr(event_data, "event_id", None),
+                },
             )
 
             # Get transcript path and recording ID
-            transcript_path = event_data.get("transcript_path") if isinstance(event_data, dict) else getattr(event_data, "transcript_path", None)
-            recording_id = event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None)
+            transcript_path = (
+                event_data.get("transcript_path")
+                if isinstance(event_data, dict)
+                else getattr(event_data, "transcript_path", None)
+            )
+            recording_id = (
+                event_data.get("recording_id")
+                if isinstance(event_data, dict)
+                else getattr(event_data, "recording_id", None)
+            )
 
             if not transcript_path:
-                logger.warning("No transcript path in event", extra={"plugin_name": self.name})
+                logger.warning(
+                    "No transcript path in event", extra={"plugin_name": self.name}
+                )
                 return
 
             # Generate meeting notes
-            output_path = await self._generate_meeting_notes(Path(transcript_path), event_id, recording_id)
+            output_path = await self._generate_meeting_notes(
+                Path(transcript_path), event_id, recording_id
+            )
             if not output_path:
                 return
 
@@ -175,8 +189,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "req_id": event_id,
                     "plugin_name": self.name,
                     "output_path": str(output_path),
-                    "recording_id": recording_id
-                }
+                    "recording_id": recording_id,
+                },
             )
 
             # Emit completion event
@@ -193,10 +207,10 @@ class MeetingNotesRemotePlugin(PluginBase):
                         "meeting_notes": {
                             "status": "completed",
                             "timestamp": datetime.utcnow().isoformat(),
-                            "output_path": str(output_path)
+                            "output_path": str(output_path),
                         }
                     }
-                }
+                },
             }
 
             logger.debug(
@@ -205,8 +219,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "plugin": self.name,
                     "event_name": completion_event["event"],
                     "recording_id": recording_id,
-                    "output_path": str(output_path)
-                }
+                    "output_path": str(output_path),
+                },
             )
             await self.event_bus.publish(completion_event)
 
@@ -217,18 +231,15 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "plugin_name": self.name,
                     "event_name": completion_event["event"],
                     "recording_id": recording_id,
-                    "output_path": str(output_path)
-                }
+                    "output_path": str(output_path),
+                },
             )
 
         except Exception as e:
             logger.error(
                 "Error processing transcription event",
-                extra={
-                    "plugin_name": self.name,
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"plugin_name": self.name, "error": str(e)},
+                exc_info=True,
             )
             raise
 
@@ -246,8 +257,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                 "provider": self.provider,
                 "model": self.model,
                 "num_ctx": self.num_ctx,
-                "transcript_length": len(transcript_text)
-            }
+                "transcript_length": len(transcript_text),
+            },
         )
 
         # Extract metadata section
@@ -256,11 +267,19 @@ class MeetingNotesRemotePlugin(PluginBase):
         if "## Metadata" in transcript_text:
             parts = transcript_text.split("## Metadata", 1)
             if len(parts) > 1:
-                metadata_parts = parts[1].split("```", 3)  # Split into 3 parts to handle both json and transcript sections
+                metadata_parts = parts[1].split(
+                    "```", 3
+                )  # Split into 3 parts to handle both json and transcript sections
                 if len(metadata_parts) > 2:
-                    metadata_section = metadata_parts[1].replace('json', '').strip()  # Get the JSON content
+                    metadata_section = (
+                        metadata_parts[1].replace("json", "").strip()
+                    )  # Get the JSON content
                     # Get the transcript section after metadata
-                    transcript_content = "## Transcript" + metadata_parts[2].split("## Transcript", 1)[1] if "## Transcript" in metadata_parts[2] else ""
+                    transcript_content = (
+                        "## Transcript" + metadata_parts[2].split("## Transcript", 1)[1]
+                        if "## Transcript" in metadata_parts[2]
+                        else ""
+                    )
 
         logger.debug(
             "Extracted metadata and transcript",
@@ -268,8 +287,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                 "plugin_name": self.name,
                 "has_metadata": bool(metadata_section),
                 "metadata_length": len(metadata_section),
-                "transcript_length": len(transcript_content)
-            }
+                "transcript_length": len(transcript_content),
+            },
         )
 
         # Prepare prompt with explicit metadata handling
@@ -277,7 +296,7 @@ class MeetingNotesRemotePlugin(PluginBase):
 
 Please ensure the notes are clear, concise, and well-organized using markdown formatting.
 
-IMPORTANT: 
+IMPORTANT:
 1. Do not use placeholders - extract and use the actual values from the METADATA JSON and the transcript.
 2. For attendees, use ONLY the email addresses or names from event.attendees in the METADATA JSON, not the speakers list.
 3. Don't include any other information in the notes, just the meeting notes.
@@ -332,10 +351,7 @@ Keep each bullet point concise but informative]
 
         logger.debug(
             "Generated prompt for meeting notes",
-            extra={
-                "plugin_name": self.name,
-                "prompt": prompt
-            }
+            extra={"plugin_name": self.name, "prompt": prompt},
         )
 
         try:
@@ -348,8 +364,8 @@ Keep each bullet point concise but informative]
                     "model": self.model,
                     "prompt_length": len(prompt),
                     "num_ctx": self.num_ctx,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
             )
 
             try:
@@ -358,9 +374,9 @@ Keep each bullet point concise but informative]
                         model=self.model,
                         messages=[
                             {"role": "system", "content": self.SYSTEM_PROMPT},
-                            {"role": "user", "content": prompt}
+                            {"role": "user", "content": prompt},
                         ],
-                        temperature=0
+                        temperature=0,
                     )
                     return response.choices[0].message.content
 
@@ -369,27 +385,22 @@ Keep each bullet point concise but informative]
                         model=self.model,
                         system=self.SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": prompt}],
-                        max_tokens=4096  # Maximum allowed response length
+                        max_tokens=4096,  # Maximum allowed response length
                     )
                     return response.content[0].text
 
                 elif self.provider == "google":
                     response = await self.client.generate_content_async(
                         f"{self.SYSTEM_PROMPT}\n\n{prompt}",
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0
-                        )
+                        generation_config=genai.types.GenerationConfig(temperature=0),
                     )
                     return response.text
 
             except Exception as e:
                 logger.error(
                     f"Error calling {self.provider} API",
-                    extra={
-                        "req_id": self._req_id,
-                        "error": str(e)
-                    },
-                    exc_info=True
+                    extra={"req_id": self._req_id, "error": str(e)},
+                    exc_info=True,
                 )
                 return None
 
@@ -401,9 +412,9 @@ Keep each bullet point concise but informative]
                     "error_type": type(e).__name__,
                     "error": str(e),
                     "transcript_length": len(transcript_text),
-                    "model": self.model
+                    "model": self.model,
                 },
-                exc_info=True
+                exc_info=True,
             )
             return f"Error generating meeting notes: {e}"
 
@@ -413,7 +424,9 @@ Keep each bullet point concise but informative]
         """Process transcript and generate meeting notes"""
         try:
             # Generate meeting notes synchronously since the API call is blocking
-            meeting_notes = await self._generate_meeting_notes_from_text(transcript_text)
+            meeting_notes = await self._generate_meeting_notes_from_text(
+                transcript_text
+            )
 
             # Save to file
             output_file = self.output_dir / f"{recording_id}_notes.md"
@@ -433,13 +446,15 @@ Keep each bullet point concise but informative]
                         "meeting_notes": {
                             "status": "completed",
                             "timestamp": datetime.utcnow().isoformat(),
-                            "output_path": str(output_file)
+                            "output_path": str(output_file),
                         }
                     },
                     "event_history": {},
                     "transcription": original_event.payload.get("transcription", {}),
-                    "noise_reduction": original_event.payload.get("noise_reduction", {}),
-                    "recording": original_event.payload.get("recording", {})
+                    "noise_reduction": original_event.payload.get(
+                        "noise_reduction", {}
+                    ),
+                    "recording": original_event.payload.get("recording", {}),
                 }
 
                 event = Event(
@@ -449,24 +464,24 @@ Keep each bullet point concise but informative]
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
                         timestamp=datetime.utcnow().isoformat(),
-                        source_plugin=self.name
-                    )
+                        source_plugin=self.name,
+                    ),
                 )
-                
+
                 await self.event_bus.publish(event)
-                
+
                 logger.info(
                     "Meeting notes completion event published",
                     extra={
                         "plugin_name": self.name,
                         "event_name": "meeting_notes_remote.completed",
                         "recording_id": recording_id,
-                        "output_path": str(output_file)
-                    }
+                        "output_path": str(output_file),
+                    },
                 )
 
         except Exception as e:
-            error_msg = f"Failed to process transcript: {str(e)}"
+            error_msg = f"Failed to process transcript: {e!s}"
             logger.error(
                 error_msg,
                 extra={
@@ -474,11 +489,11 @@ Keep each bullet point concise but informative]
                     "plugin_name": self.name,
                     "recording_id": recording_id,
                     "error": str(e),
-                    "event_id": original_event.event_id
+                    "event_id": original_event.event_id,
                 },
-                exc_info=True
+                exc_info=True,
             )
-            
+
             if self.event_bus:
                 # Emit error event with preserved chain
                 event = Event(
@@ -489,18 +504,22 @@ Keep each bullet point concise but informative]
                         "meeting_notes": {
                             "status": "error",
                             "timestamp": datetime.utcnow().isoformat(),
-                            "error": str(e)
+                            "error": str(e),
                         },
                         # Preserve previous event data
-                        "transcription": original_event.payload.get("transcription", {}),
-                        "noise_reduction": original_event.payload.get("noise_reduction", {}),
-                        "recording": original_event.payload.get("recording", {})
+                        "transcription": original_event.payload.get(
+                            "transcription", {}
+                        ),
+                        "noise_reduction": original_event.payload.get(
+                            "noise_reduction", {}
+                        ),
+                        "recording": original_event.payload.get("recording", {}),
                     },
                     context=EventContext(
                         recording_id=recording_id,
                         plugin_name=self.name,
-                        req_id=self._req_id
-                    )
+                        req_id=self._req_id,
+                    ),
                 )
                 await self.event_bus.publish(event)
 
@@ -511,25 +530,31 @@ Keep each bullet point concise but informative]
             if event.output_file:
                 return Path(event.output_file)
             return None
-            
+
         # Handle generic Event type
-        if hasattr(event, 'payload') and isinstance(event.payload, dict):
-            transcript_path = event.payload.get('transcript_path') or event.payload.get('output_file')
+        if hasattr(event, "payload") and isinstance(event.payload, dict):
+            transcript_path = event.payload.get("transcript_path") or event.payload.get(
+                "output_file"
+            )
             if transcript_path:
                 return Path(transcript_path)
-        
+
         return None
 
     async def _read_transcript(self, transcript_path: str | Path) -> str:
         """Read transcript file contents"""
         try:
             # Convert string path to Path object if needed
-            path = Path(transcript_path) if isinstance(transcript_path, str) else transcript_path
-            
+            path = (
+                Path(transcript_path)
+                if isinstance(transcript_path, str)
+                else transcript_path
+            )
+
             # Run file read in thread pool
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(self._executor, path.read_text)
-            
+
         except Exception as e:
             logger.error(
                 "Failed to read transcript",
@@ -537,13 +562,15 @@ Keep each bullet point concise but informative]
                     "plugin_name": self.name,
                     "transcript_path": str(transcript_path),
                     "error": str(e),
-                    "req_id": self._req_id
+                    "req_id": self._req_id,
                 },
-                exc_info=True
+                exc_info=True,
             )
             raise
 
-    async def _generate_notes_with_llm(self, transcript: str, event_id: str) -> str | None:
+    async def _generate_notes_with_llm(
+        self, transcript: str, event_id: str
+    ) -> str | None:
         """Generate meeting notes using the configured LLM provider"""
         try:
             system_prompt = """You are a professional meeting notes taker. Your task is to analyze the meeting transcript and create clear, concise, and well-structured meeting notes. Focus on:
@@ -562,8 +589,8 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                 extra={
                     "req_id": event_id,
                     "provider": self.provider,
-                    "model": self.model
-                }
+                    "model": self.model,
+                },
             )
 
             try:
@@ -572,9 +599,9 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                         model=self.model,
                         messages=[
                             {"role": "system", "content": self.SYSTEM_PROMPT},
-                            {"role": "user", "content": user_prompt}
+                            {"role": "user", "content": user_prompt},
                         ],
-                        temperature=0.3
+                        temperature=0.3,
                     )
                     return response.choices[0].message.content
 
@@ -584,38 +611,30 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                         system=self.SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": user_prompt}],
                         temperature=0.3,
-                        max_tokens=4000
+                        max_tokens=4000,
                     )
                     return response.content[0].text
 
                 elif self.provider == "google":
                     response = await self.client.generate_content_async(
                         f"{self.SYSTEM_PROMPT}\n\n{user_prompt}",
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.3
-                        )
+                        generation_config=genai.types.GenerationConfig(temperature=0.3),
                     )
                     return response.text
 
             except Exception as e:
                 logger.error(
                     f"Error calling {self.provider} API",
-                    extra={
-                        "req_id": event_id,
-                        "error": str(e)
-                    },
-                    exc_info=True
+                    extra={"req_id": event_id, "error": str(e)},
+                    exc_info=True,
                 )
                 return None
 
         except Exception as e:
             logger.error(
                 "Error generating meeting notes",
-                extra={
-                    "req_id": event_id,
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"req_id": event_id, "error": str(e)},
+                exc_info=True,
             )
             return None
 
@@ -627,25 +646,19 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                 "plugin_name": self.name,
                 "transcript_path": str(transcript_path),
                 "transcript_path_type": type(transcript_path).__name__,
-                "output_dir": str(self.output_dir)
-            }
+                "output_dir": str(self.output_dir),
+            },
         )
-        stem = transcript_path.stem.replace('_merged', '')
+        stem = transcript_path.stem.replace("_merged", "")
         output_path = self.output_dir / f"{stem}_meeting_notes.md"
         logger.debug(
             "Generated output path",
-            extra={
-                "plugin_name": self.name,
-                "output_path": str(output_path)
-            }
+            extra={"plugin_name": self.name, "output_path": str(output_path)},
         )
         return output_path
 
     async def _generate_meeting_notes(
-        self,
-        transcript_path: Path,
-        event_id: str,
-        recording_id: str | None = None
+        self, transcript_path: Path, event_id: str, recording_id: str | None = None
     ) -> Path | None:
         """Generate meeting notes from transcript."""
         try:
@@ -655,8 +668,8 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                     "req_id": event_id,
                     "plugin_name": self.name,
                     "transcript_path": str(transcript_path),
-                    "recording_id": recording_id
-                }
+                    "recording_id": recording_id,
+                },
             )
 
             # Read transcript
@@ -667,8 +680,8 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
-                        "transcript_path": str(transcript_path)
-                    }
+                        "transcript_path": str(transcript_path),
+                    },
                 )
                 return None
 
@@ -680,8 +693,8 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
-                        "transcript_length": len(transcript)
-                    }
+                        "transcript_length": len(transcript),
+                    },
                 )
                 return None
 
@@ -696,8 +709,8 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                     "req_id": event_id,
                     "plugin_name": self.name,
                     "output_path": str(output_path),
-                    "notes_length": len(notes)
-                }
+                    "notes_length": len(notes),
+                },
             )
 
             return output_path
@@ -710,9 +723,9 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                     "plugin_name": self.name,
                     "error": str(e),
                     "transcript_path": str(transcript_path),
-                    "recording_id": recording_id
+                    "recording_id": recording_id,
                 },
-                exc_info=True
+                exc_info=True,
             )
             return None
 
@@ -723,10 +736,7 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                 self._executor.shutdown(wait=True)
             logger.info(
                 "Meeting notes plugin shutdown",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name
-                }
+                extra={"req_id": self._req_id, "plugin_name": self.name},
             )
         except Exception as e:
             logger.error(
@@ -734,7 +744,7 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "error": str(e)
+                    "error": str(e),
                 },
-                exc_info=True
-            ) 
+                exc_info=True,
+            )

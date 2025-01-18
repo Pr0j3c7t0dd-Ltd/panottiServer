@@ -1,20 +1,18 @@
-import os
+import asyncio
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
-import uuid
-from datetime import datetime
-import asyncio
+
 import aiohttp
 
-import requests
-
+from app.models.recording.events import EventContext, RecordingEvent
 from app.plugins.base import PluginBase
 from app.plugins.events.bus import EventBus
-from app.plugins.events.models import Event, EventContext, EventPriority
+from app.plugins.events.models import Event, EventContext
 from app.utils.logging_config import get_logger
-from app.models.recording.events import RecordingEvent, EventContext
 
 EventData = dict[str, Any] | RecordingEvent
 
@@ -28,7 +26,7 @@ class MeetingNotesLocalPlugin(PluginBase):
         """Initialize the plugin"""
         super().__init__(config, event_bus)
         self._req_id = str(uuid.uuid4())
-        
+
         # Default values
         self.ollama_url = "http://localhost:11434/api/generate"
         self.model = "llama3.1:latest"
@@ -43,26 +41,30 @@ class MeetingNotesLocalPlugin(PluginBase):
             if isinstance(config_dict, dict):
                 self.ollama_url = config_dict.get("ollama_url", self.ollama_url)
                 self.model = config_dict.get("model_name", self.model)
-                self.output_dir = Path(config_dict.get("output_directory", str(self.output_dir)))
+                self.output_dir = Path(
+                    config_dict.get("output_directory", str(self.output_dir))
+                )
                 self.num_ctx = config_dict.get("num_ctx", self.num_ctx)
-                self.max_concurrent_tasks = config_dict.get("max_concurrent_tasks", self.max_concurrent_tasks)
+                self.max_concurrent_tasks = config_dict.get(
+                    "max_concurrent_tasks", self.max_concurrent_tasks
+                )
                 self.timeout = config_dict.get("timeout", self.timeout)
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Initialize thread pool with configured max tasks
         self._executor = ThreadPoolExecutor(max_workers=self.max_concurrent_tasks)
         self._processing_lock = threading.Lock()
-        
+
         logger.info(
             "Initializing meeting notes plugin",
             extra={
                 "plugin_name": self.name,
                 "output_directory": str(self.output_dir),
                 "ollama_url": self.ollama_url,
-                "num_ctx": self.num_ctx
-            }
+                "num_ctx": self.num_ctx,
+            },
         )
 
     async def _initialize(self) -> None:
@@ -70,10 +72,7 @@ class MeetingNotesLocalPlugin(PluginBase):
         if not self.event_bus:
             logger.warning(
                 "No event bus available for plugin",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name
-                }
+                extra={"req_id": self._req_id, "plugin_name": self.name},
             )
             return
 
@@ -87,16 +86,15 @@ class MeetingNotesLocalPlugin(PluginBase):
                     "model": self.model,
                     "output_dir": str(self.output_dir),
                     "ollama_url": self.ollama_url,
-                    "num_ctx": self.num_ctx
-                }
+                    "num_ctx": self.num_ctx,
+                },
             )
-            
+
             # Subscribe to transcription completed event
             await self.event_bus.subscribe(
-                "transcription_local.completed",
-                self.handle_transcription_completed
+                "transcription_local.completed", self.handle_transcription_completed
             )
-            
+
             logger.info(
                 "Meeting notes plugin initialized",
                 extra={
@@ -105,8 +103,8 @@ class MeetingNotesLocalPlugin(PluginBase):
                     "max_workers": self.max_concurrent_tasks,
                     "model": self.model,
                     "event": "transcription_local.completed",
-                    "output_dir": str(self.output_dir)
-                }
+                    "output_dir": str(self.output_dir),
+                },
             )
 
         except Exception as e:
@@ -115,8 +113,8 @@ class MeetingNotesLocalPlugin(PluginBase):
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             raise
 
@@ -133,8 +131,8 @@ class MeetingNotesLocalPlugin(PluginBase):
                 "model": self.model,
                 "ollama_url": self.ollama_url,
                 "num_ctx": self.num_ctx,
-                "transcript_length": len(transcript_text)
-            }
+                "transcript_length": len(transcript_text),
+            },
         )
 
         # Extract metadata section
@@ -143,11 +141,19 @@ class MeetingNotesLocalPlugin(PluginBase):
         if "## Metadata" in transcript_text:
             parts = transcript_text.split("## Metadata", 1)
             if len(parts) > 1:
-                metadata_parts = parts[1].split("```", 3)  # Split into 3 parts to handle both json and transcript sections
+                metadata_parts = parts[1].split(
+                    "```", 3
+                )  # Split into 3 parts to handle both json and transcript sections
                 if len(metadata_parts) > 2:
-                    metadata_section = metadata_parts[1].replace('json', '').strip()  # Get the JSON content
+                    metadata_section = (
+                        metadata_parts[1].replace("json", "").strip()
+                    )  # Get the JSON content
                     # Get the transcript section after metadata
-                    transcript_content = "## Transcript" + metadata_parts[2].split("## Transcript", 1)[1] if "## Transcript" in metadata_parts[2] else ""
+                    transcript_content = (
+                        "## Transcript" + metadata_parts[2].split("## Transcript", 1)[1]
+                        if "## Transcript" in metadata_parts[2]
+                        else ""
+                    )
 
         logger.debug(
             "Extracted metadata and transcript",
@@ -155,8 +161,8 @@ class MeetingNotesLocalPlugin(PluginBase):
                 "plugin_name": self.name,
                 "has_metadata": bool(metadata_section),
                 "metadata_length": len(metadata_section),
-                "transcript_length": len(transcript_content)
-            }
+                "transcript_length": len(transcript_content),
+            },
         )
 
         # Prepare prompt with explicit metadata handling
@@ -164,7 +170,7 @@ class MeetingNotesLocalPlugin(PluginBase):
 
 Please ensure the notes are clear, concise, and well-organized using markdown formatting.
 
-IMPORTANT: 
+IMPORTANT:
 1. Do not use placeholders - extract and use the actual values from the METADATA JSON and the transcript.
 2. For attendees, use ONLY the email addresses or names from event.attendees in the METADATA JSON, not the speakers list.
 3. Don't include any other information in the notes, just the meeting notes.
@@ -219,10 +225,7 @@ Keep each bullet point concise but informative]
 
         logger.debug(
             "Generated prompt for meeting notes",
-            extra={
-                "plugin_name": self.name,
-                "prompt": prompt
-            }
+            extra={"plugin_name": self.name, "prompt": prompt},
         )
 
         try:
@@ -235,8 +238,8 @@ Keep each bullet point concise but informative]
                     "ollama_url": self.ollama_url,
                     "prompt_length": len(prompt),
                     "num_ctx": self.num_ctx,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
             )
 
             async with aiohttp.ClientSession() as session:
@@ -247,12 +250,9 @@ Keep each bullet point concise but informative]
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
-                        "options": {
-                            "num_ctx": self.num_ctx,
-                            "temperature": 0
-                        }
+                        "options": {"num_ctx": self.num_ctx, "temperature": 0},
                     },
-                    timeout=aiohttp.ClientTimeout(total=self.timeout)
+                    timeout=aiohttp.ClientTimeout(total=self.timeout),
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()
@@ -268,8 +268,8 @@ Keep each bullet point concise but informative]
                             "duration_seconds": duration,
                             "response_length": len(result.get("response", "")),
                             "model": self.model,
-                            "timestamp": end_time.isoformat()
-                        }
+                            "timestamp": end_time.isoformat(),
+                        },
                     )
 
                     return cast(str, result.get("response", ""))
@@ -282,9 +282,9 @@ Keep each bullet point concise but informative]
                     "error_type": type(e).__name__,
                     "error": str(e),
                     "model": self.model,
-                    "ollama_url": self.ollama_url
+                    "ollama_url": self.ollama_url,
                 },
-                exc_info=True
+                exc_info=True,
             )
             return f"Error calling Ollama API: {e}"
         except Exception as e:
@@ -295,9 +295,9 @@ Keep each bullet point concise but informative]
                     "error_type": type(e).__name__,
                     "error": str(e),
                     "transcript_length": len(transcript_text),
-                    "model": self.model
+                    "model": self.model,
                 },
-                exc_info=True
+                exc_info=True,
             )
             return f"Error generating meeting notes: {e}"
 
@@ -307,7 +307,9 @@ Keep each bullet point concise but informative]
         """Process transcript and generate meeting notes"""
         try:
             # Generate meeting notes synchronously since the API call is blocking
-            meeting_notes = await self._generate_meeting_notes_from_text(transcript_text)
+            meeting_notes = await self._generate_meeting_notes_from_text(
+                transcript_text
+            )
 
             # Save to file
             output_file = self.output_dir / f"{recording_id}_notes.txt"
@@ -327,10 +329,10 @@ Keep each bullet point concise but informative]
                         "meeting_notes": {
                             "status": "completed",
                             "timestamp": datetime.utcnow().isoformat(),
-                            "output_path": str(output_file)
+                            "output_path": str(output_file),
                         }
                     },
-                    "event_history": {}
+                    "event_history": {},
                 }
 
                 event = Event(
@@ -341,36 +343,36 @@ Keep each bullet point concise but informative]
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
                         timestamp=datetime.utcnow().isoformat(),
-                        source_plugin=self.name
+                        source_plugin=self.name,
                     ),
-                    priority="normal"
+                    priority="normal",
                 )
-                
+
                 await self.event_bus.publish(event)
-                
+
                 logger.info(
                     "Meeting notes completion event published",
                     extra={
                         "plugin_name": self.name,
                         "event_name": "meeting_notes_local.completed",
                         "recording_id": recording_id,
-                        "output_path": str(output_file)
-                    }
+                        "output_path": str(output_file),
+                    },
                 )
 
         except Exception as e:
-            error_msg = f"Failed to process transcript: {str(e)}"
+            error_msg = f"Failed to process transcript: {e!s}"
             logger.error(
                 error_msg,
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": self.name,
                     "recording_id": recording_id,
-                    "error": str(e)
+                    "error": str(e),
                 },
-                exc_info=True
+                exc_info=True,
             )
-            
+
             if self.event_bus:
                 # Emit error event with preserved chain
                 event = Event(
@@ -382,15 +384,17 @@ Keep each bullet point concise but informative]
                         "meeting_notes": {
                             "status": "error",
                             "timestamp": datetime.utcnow().isoformat(),
-                            "error": str(e)
+                            "error": str(e),
                         },
                         # Preserve previous event data
                         "transcription": original_event.data.get("transcription", {}),
-                        "noise_reduction": original_event.data.get("noise_reduction", {}),
-                        "recording": original_event.data.get("recording", {})
+                        "noise_reduction": original_event.data.get(
+                            "noise_reduction", {}
+                        ),
+                        "recording": original_event.data.get("recording", {}),
                     },
                     context=original_event.context,
-                    priority="normal"
+                    priority="normal",
                 )
                 await self.event_bus.publish(event)
 
@@ -420,13 +424,13 @@ Keep each bullet point concise but informative]
         """Handle transcription completed event"""
         try:
             event_id = str(uuid.uuid4())  # Generate new event ID
-            
+
             logger.info(
                 "Processing transcription completed event",
                 extra={
                     "plugin_name": self.name,
-                    "event_id": getattr(event_data, "event_id", None)
-                }
+                    "event_id": getattr(event_data, "event_id", None),
+                },
             )
 
             # Debug logging for event data
@@ -436,29 +440,43 @@ Keep each bullet point concise but informative]
                     "plugin_name": self.name,
                     "event_data": str(event_data),
                     "event_data_type": type(event_data).__name__,
-                    "has_transcript_path": "transcript_path" in event_data if isinstance(event_data, dict) else hasattr(event_data, "transcript_path"),
-                    "has_transcript_paths": "transcript_paths" in event_data if isinstance(event_data, dict) else hasattr(event_data, "transcript_paths"),
-                    "transcript_path": event_data.get("transcript_path") if isinstance(event_data, dict) else getattr(event_data, "transcript_path", None),
-                    "transcript_paths": event_data.get("transcript_paths") if isinstance(event_data, dict) else getattr(event_data, "transcript_paths", None)
-                }
+                    "has_transcript_path": "transcript_path" in event_data
+                    if isinstance(event_data, dict)
+                    else hasattr(event_data, "transcript_path"),
+                    "has_transcript_paths": "transcript_paths" in event_data
+                    if isinstance(event_data, dict)
+                    else hasattr(event_data, "transcript_paths"),
+                    "transcript_path": event_data.get("transcript_path")
+                    if isinstance(event_data, dict)
+                    else getattr(event_data, "transcript_path", None),
+                    "transcript_paths": event_data.get("transcript_paths")
+                    if isinstance(event_data, dict)
+                    else getattr(event_data, "transcript_paths", None),
+                },
             )
 
             # Get transcript path
             transcript_path = None
             if isinstance(event_data, dict):
-                transcript_path = event_data.get("transcript_path") or \
-                                (event_data.get("transcript_paths", {}).get("merged") if event_data.get("transcript_paths") else None)
+                transcript_path = event_data.get("transcript_path") or (
+                    event_data.get("transcript_paths", {}).get("merged")
+                    if event_data.get("transcript_paths")
+                    else None
+                )
             else:
-                transcript_path = getattr(event_data, "transcript_path", None) or \
-                                (getattr(event_data, "transcript_paths", {}).get("merged") if hasattr(event_data, "transcript_paths") else None)
+                transcript_path = getattr(event_data, "transcript_path", None) or (
+                    getattr(event_data, "transcript_paths", {}).get("merged")
+                    if hasattr(event_data, "transcript_paths")
+                    else None
+                )
 
             if not transcript_path:
                 logger.warning(
                     "No transcript path found in event",
                     extra={
                         "plugin_name": self.name,
-                        "event_id": getattr(event_data, "event_id", None)
-                    }
+                        "event_id": getattr(event_data, "event_id", None),
+                    },
                 )
                 return
 
@@ -466,13 +484,15 @@ Keep each bullet point concise but informative]
             transcript_path = Path(transcript_path)
 
             # Get recording ID
-            recording_id = event_data.get("recording_id") if isinstance(event_data, dict) else getattr(event_data, "recording_id", None)
+            recording_id = (
+                event_data.get("recording_id")
+                if isinstance(event_data, dict)
+                else getattr(event_data, "recording_id", None)
+            )
 
             # Generate meeting notes
             output_path = await self._generate_meeting_notes(
-                transcript_path,
-                event_id,
-                recording_id
+                transcript_path, event_id, recording_id
             )
 
             if output_path:
@@ -482,8 +502,8 @@ Keep each bullet point concise but informative]
                         "req_id": event_id,
                         "plugin_name": self.name,
                         "output_path": str(output_path),
-                        "recording_id": recording_id
-                    }
+                        "recording_id": recording_id,
+                    },
                 )
 
                 # Publish completion event
@@ -500,10 +520,10 @@ Keep each bullet point concise but informative]
                             "meeting_notes": {
                                 "status": "completed",
                                 "timestamp": datetime.utcnow().isoformat(),
-                                "output_path": str(output_path)
+                                "output_path": str(output_path),
                             }
                         }
-                    }
+                    },
                 }
 
                 logger.debug(
@@ -512,8 +532,8 @@ Keep each bullet point concise but informative]
                         "plugin": self.name,
                         "event_name": completion_event["event"],
                         "recording_id": recording_id,
-                        "output_path": str(output_path)
-                    }
+                        "output_path": str(output_path),
+                    },
                 )
                 await self.event_bus.publish(completion_event)
 
@@ -524,25 +544,22 @@ Keep each bullet point concise but informative]
                         "plugin_name": self.name,
                         "event_name": completion_event["event"],
                         "recording_id": recording_id,
-                        "output_path": str(output_path)
-                    }
+                        "output_path": str(output_path),
+                    },
                 )
             else:
                 logger.error(
                     "Failed to generate meeting notes",
                     extra={
                         "plugin_name": self.name,
-                        "transcript_path": str(transcript_path)
-                    }
+                        "transcript_path": str(transcript_path),
+                    },
                 )
 
         except Exception as e:
             logger.error(
                 "Error processing transcription event",
-                extra={
-                    "plugin_name": self.name,
-                    "error": str(e)
-                }
+                extra={"plugin_name": self.name, "error": str(e)},
             )
             raise
 
@@ -553,36 +570,44 @@ Keep each bullet point concise but informative]
             if event.output_file:
                 return Path(event.output_file)
             return None
-            
+
         # Handle generic Event type
-        if hasattr(event, 'data') and isinstance(event.data, dict):
-            transcript_path = event.data.get('transcript_path') or event.data.get('output_file')
+        if hasattr(event, "data") and isinstance(event.data, dict):
+            transcript_path = event.data.get("transcript_path") or event.data.get(
+                "output_file"
+            )
             if transcript_path:
                 return Path(transcript_path)
-        
+
         return None
 
     async def _read_transcript(self, transcript_path: str | Path) -> str:
         """Read transcript file contents"""
         try:
             # Convert string path to Path object if needed
-            path = Path(transcript_path) if isinstance(transcript_path, str) else transcript_path
-            
+            path = (
+                Path(transcript_path)
+                if isinstance(transcript_path, str)
+                else transcript_path
+            )
+
             # Run file read in thread pool
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(self._executor, path.read_text)
-            
-        except Exception as e:
+
+        except Exception:
             logger.error(
                 "Failed to read transcript",
                 extra={
                     "plugin_name": self.name,
-                    "transcript_path": str(transcript_path)
-                }
+                    "transcript_path": str(transcript_path),
+                },
             )
             raise
 
-    async def _generate_notes_with_llm(self, transcript: str, event_id: str) -> str | None:
+    async def _generate_notes_with_llm(
+        self, transcript: str, event_id: str
+    ) -> str | None:
         """Generate notes using LLM from transcript text."""
         try:
             return await self._generate_meeting_notes_from_text(transcript)
@@ -598,25 +623,19 @@ Keep each bullet point concise but informative]
                 "plugin_name": self.name,
                 "transcript_path": str(transcript_path),
                 "transcript_path_type": type(transcript_path).__name__,
-                "output_dir": str(self.output_dir)
-            }
+                "output_dir": str(self.output_dir),
+            },
         )
-        stem = transcript_path.stem.replace('_merged', '')
+        stem = transcript_path.stem.replace("_merged", "")
         output_path = self.output_dir / f"{stem}_meeting_notes.md"
         logger.debug(
             "Generated output path",
-            extra={
-                "plugin_name": self.name,
-                "output_path": str(output_path)
-            }
+            extra={"plugin_name": self.name, "output_path": str(output_path)},
         )
         return output_path
 
     async def _generate_meeting_notes(
-        self,
-        transcript_path: Path,
-        event_id: str,
-        recording_id: str | None = None
+        self, transcript_path: Path, event_id: str, recording_id: str | None = None
     ) -> Path | None:
         """Generate meeting notes from transcript."""
         try:
@@ -626,8 +645,8 @@ Keep each bullet point concise but informative]
                     "req_id": event_id,
                     "plugin_name": self.name,
                     "transcript_path": str(transcript_path),
-                    "recording_id": recording_id
-                }
+                    "recording_id": recording_id,
+                },
             )
 
             # Read transcript
@@ -638,8 +657,8 @@ Keep each bullet point concise but informative]
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
-                        "transcript_path": str(transcript_path)
-                    }
+                        "transcript_path": str(transcript_path),
+                    },
                 )
                 return None
 
@@ -651,8 +670,8 @@ Keep each bullet point concise but informative]
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
-                        "transcript_length": len(transcript)
-                    }
+                        "transcript_length": len(transcript),
+                    },
                 )
                 return None
 
@@ -667,8 +686,8 @@ Keep each bullet point concise but informative]
                     "req_id": event_id,
                     "plugin_name": self.name,
                     "output_path": str(output_path),
-                    "notes_length": len(notes)
-                }
+                    "notes_length": len(notes),
+                },
             )
 
             return output_path
@@ -676,11 +695,7 @@ Keep each bullet point concise but informative]
         except Exception as e:
             logger.error(
                 "Error generating meeting notes",
-                extra={
-                    "req_id": event_id,
-                    "plugin_name": self.name,
-                    "error": str(e)
-                }
+                extra={"req_id": event_id, "plugin_name": self.name, "error": str(e)},
             )
             return None
 
@@ -690,8 +705,5 @@ Keep each bullet point concise but informative]
             self._executor.shutdown(wait=True)
         logger.info(
             "Meeting notes plugin shutdown",
-            extra={
-                "req_id": self._req_id,
-                "plugin_name": self.name
-            }
+            extra={"req_id": self._req_id, "plugin_name": self.name},
         )

@@ -1,10 +1,10 @@
 import importlib
-from pathlib import Path
 import sys
 import traceback
 import uuid
+from pathlib import Path
+
 import yaml
-from typing import Optional
 
 from app.plugins.base import PluginBase, PluginConfig
 from app.plugins.events.bus import EventBus
@@ -25,15 +25,12 @@ class PluginManager:
         if event_bus is None:
             logger.warning(
                 "No event bus provided to plugin manager",
-                extra={"req_id": self._req_id}
+                extra={"req_id": self._req_id},
             )
         self.event_bus = event_bus
         logger.info(
             "Plugin manager initialized",
-            extra={
-                "req_id": self._req_id,
-                "plugin_dir": str(plugin_dir)
-            }
+            extra={"req_id": self._req_id, "plugin_dir": str(plugin_dir)},
         )
 
     async def discover_plugins(self) -> list[PluginConfig]:
@@ -41,16 +38,13 @@ class PluginManager:
         if self.event_bus is None:
             logger.error(
                 "Cannot discover plugins without event bus",
-                extra={"req_id": self._req_id}
+                extra={"req_id": self._req_id},
             )
             return []
 
         logger.info(
             "Starting plugin discovery",
-            extra={
-                "req_id": self._req_id,
-                "plugin_dir": str(self.plugin_dir)
-            }
+            extra={"req_id": self._req_id, "plugin_dir": str(self.plugin_dir)},
         )
 
         logger.debug(
@@ -59,13 +53,19 @@ class PluginManager:
                 "req_id": self._req_id,
                 "plugin_dir": str(self.plugin_dir),
                 "plugin_dir_exists": self.plugin_dir.exists(),
-                "plugin_dir_is_dir": self.plugin_dir.is_dir() if self.plugin_dir.exists() else None,
-                "plugin_dir_contents": [str(p) for p in self.plugin_dir.iterdir()] if self.plugin_dir.exists() and self.plugin_dir.is_dir() else [],
+                "plugin_dir_is_dir": self.plugin_dir.is_dir()
+                if self.plugin_dir.exists()
+                else None,
+                "plugin_dir_contents": [str(p) for p in self.plugin_dir.iterdir()]
+                if self.plugin_dir.exists() and self.plugin_dir.is_dir()
+                else [],
             },
         )
 
         # Search for both plugin.yaml and plugin.yaml.example files
-        yaml_files = list(self.plugin_dir.glob("*/plugin.yaml")) + list(self.plugin_dir.glob("*/plugin.yaml.example"))
+        yaml_files = list(self.plugin_dir.glob("*/plugin.yaml")) + list(
+            self.plugin_dir.glob("*/plugin.yaml.example")
+        )
         logger.debug(
             "Found yaml files",
             extra={
@@ -74,7 +74,7 @@ class PluginManager:
             },
         )
         config_files = []
-        
+
         # For each directory, prefer plugin.yaml over plugin.yaml.example
         plugin_dirs = {f.parent for f in yaml_files}
         logger.debug(
@@ -91,13 +91,15 @@ class PluginManager:
                     "req_id": self._req_id,
                     "plugin_dir": str(plugin_dir),
                     "is_dir": plugin_dir.is_dir(),
-                    "contents": [str(p) for p in plugin_dir.iterdir()] if plugin_dir.is_dir() else [],
+                    "contents": [str(p) for p in plugin_dir.iterdir()]
+                    if plugin_dir.is_dir()
+                    else [],
                 },
             )
-            
+
             yaml_path = plugin_dir / "plugin.yaml"
             example_path = plugin_dir / "plugin.yaml.example"
-            
+
             logger.debug(
                 "Checking plugin directory",
                 extra={
@@ -107,7 +109,7 @@ class PluginManager:
                     "example_exists": (plugin_dir / "plugin.yaml.example").exists(),
                 },
             )
-            
+
             if yaml_path.exists():
                 logger.debug(
                     "Found plugin config file",
@@ -135,10 +137,10 @@ class PluginManager:
                         "req_id": self._req_id,
                         "plugin_dir": str(plugin_dir),
                         "example_path": str(example_path),
-                        "yaml_path": str(yaml_path)
-                    }
+                        "yaml_path": str(yaml_path),
+                    },
                 )
-                with open(example_path, "r") as src, open(yaml_path, "w") as dst:
+                with open(example_path) as src, open(yaml_path, "w") as dst:
                     dst.write(src.read())
                 config_files.append(yaml_path)
             else:
@@ -150,7 +152,7 @@ class PluginManager:
                         "expected_config": str(yaml_path),
                     },
                 )
-        
+
         logger.debug(
             "Found plugin config files",
             extra={
@@ -159,12 +161,20 @@ class PluginManager:
                 "plugin_dir": str(self.plugin_dir),
                 "search_pattern": "*/plugin.yaml",
                 "plugin_dir_exists": self.plugin_dir.exists(),
-                "plugin_dir_contents": [str(p) for p in self.plugin_dir.iterdir()] if self.plugin_dir.exists() else [],
+                "plugin_dir_contents": [str(p) for p in self.plugin_dir.iterdir()]
+                if self.plugin_dir.exists()
+                else [],
                 "example_plugin_dir": str(self.plugin_dir / "example"),
                 "example_plugin_dir_exists": (self.plugin_dir / "example").exists(),
-                "example_plugin_dir_contents": [str(p) for p in (self.plugin_dir / "example").iterdir()] if (self.plugin_dir / "example").exists() else [],
+                "example_plugin_dir_contents": [
+                    str(p) for p in (self.plugin_dir / "example").iterdir()
+                ]
+                if (self.plugin_dir / "example").exists()
+                else [],
                 "example_plugin_yaml": str(self.plugin_dir / "example" / "plugin.yaml"),
-                "example_plugin_yaml_exists": (self.plugin_dir / "example" / "plugin.yaml").exists(),
+                "example_plugin_yaml_exists": (
+                    self.plugin_dir / "example" / "plugin.yaml"
+                ).exists(),
             },
         )
 
@@ -180,7 +190,7 @@ class PluginManager:
                 },
             )
             try:
-                with open(config_file, "r") as f:
+                with open(config_file) as f:
                     config_data = yaml.safe_load(f)
                     logger.debug(
                         "Loaded plugin config data",
@@ -225,8 +235,8 @@ class PluginManager:
             extra={
                 "req_id": self._req_id,
                 "discovered_plugins": [config.name for config in configs],
-                "total_plugins": len(configs)
-            }
+                "total_plugins": len(configs),
+            },
         )
 
         return configs
@@ -235,10 +245,7 @@ class PluginManager:
         """Initialize all discovered plugins."""
         logger.info(
             "Starting plugin initialization",
-            extra={
-                "req_id": self._req_id,
-                "plugin_count": len(self.plugins)
-            }
+            extra={"req_id": self._req_id, "plugin_count": len(self.plugins)},
         )
 
         initialized_plugins = []
@@ -260,7 +267,7 @@ class PluginManager:
                 },
             },
         )
-        
+
         # Initialize plugins in dependency order
         for config in sorted_configs:
             if not config.enabled:
@@ -284,7 +291,9 @@ class PluginManager:
                     "plugin_dependencies": config.dependencies,
                     "plugin_dir": str(self.plugin_dir / config.name),
                     "plugin_dir_exists": (self.plugin_dir / config.name).exists(),
-                    "plugin_py_exists": (self.plugin_dir / config.name / "plugin.py").exists(),
+                    "plugin_py_exists": (
+                        self.plugin_dir / config.name / "plugin.py"
+                    ).exists(),
                 },
             )
 
@@ -396,11 +405,13 @@ class PluginManager:
                 "initialized_plugins": initialized_plugins,
                 "failed_plugins": failed_plugins,
                 "total_initialized": len(initialized_plugins),
-                "total_failed": len(failed_plugins)
-            }
+                "total_failed": len(failed_plugins),
+            },
         )
 
-    def _sort_by_dependencies(self, configs: dict[str, PluginConfig]) -> list[PluginConfig]:
+    def _sort_by_dependencies(
+        self, configs: dict[str, PluginConfig]
+    ) -> list[PluginConfig]:
         """Sort plugins by dependencies."""
         sorted_configs = []
         visited = set()
@@ -423,10 +434,7 @@ class PluginManager:
         """Shutdown all plugins in reverse dependency order"""
         logger.info(
             "Shutting down plugins",
-            extra={
-                "req_id": self._req_id,
-                "plugin_count": len(self.plugins)
-            }
+            extra={"req_id": self._req_id, "plugin_count": len(self.plugins)},
         )
 
         # Shutdown in reverse dependency order
@@ -434,18 +442,12 @@ class PluginManager:
             try:
                 logger.debug(
                     "Shutting down plugin",
-                    extra={
-                        "req_id": self._req_id,
-                        "plugin_name": name
-                    }
+                    extra={"req_id": self._req_id, "plugin_name": name},
                 )
                 await plugin.shutdown()
                 logger.info(
                     "Plugin shutdown successfully",
-                    extra={
-                        "req_id": self._req_id,
-                        "plugin_name": name
-                    }
+                    extra={"req_id": self._req_id, "plugin_name": name},
                 )
             except Exception as e:
                 logger.error(
@@ -453,8 +455,8 @@ class PluginManager:
                     extra={
                         "req_id": self._req_id,
                         "plugin_name": name,
-                        "error": str(e)
-                    }
+                        "error": str(e),
+                    },
                 )
 
     def get_plugin(self, name: str) -> PluginBase | None:
@@ -466,16 +468,12 @@ class PluginManager:
                 extra={
                     "req_id": self._req_id,
                     "plugin_name": name,
-                    "plugin_version": plugin.version
-                }
+                    "plugin_version": plugin.version,
+                },
             )
         else:
             logger.debug(
-                "Plugin not found",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": name
-                }
+                "Plugin not found", extra={"req_id": self._req_id, "plugin_name": name}
             )
         return plugin
 
@@ -485,12 +483,11 @@ class PluginManager:
             # Import the plugin module
             module_name = plugin_path.stem
             spec = importlib.util.spec_from_file_location(
-                f"app.plugins.{module_name}",
-                plugin_path / "plugin.py"
+                f"app.plugins.{module_name}", plugin_path / "plugin.py"
             )
             if not spec or not spec.loader:
                 raise ImportError(f"Could not load plugin spec for {module_name}")
-            
+
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
@@ -507,21 +504,14 @@ class PluginManager:
             # Initialize plugin
             plugin = plugin_class(self.configs, self.event_bus)
             await plugin._initialize()
-            
-            self.plugins[module_name] = plugin
-            logger.info(
-                "Plugin loaded successfully",
-                extra={
-                    "req_id": self._req_id
-                }
-            )
 
-        except Exception as e:
+            self.plugins[module_name] = plugin
+            logger.info("Plugin loaded successfully", extra={"req_id": self._req_id})
+
+        except Exception:
             logger.error(
                 f"Failed to load plugin module {plugin_path.stem}",
-                extra={
-                    "req_id": self._req_id
-                },
-                exc_info=True
+                extra={"req_id": self._req_id},
+                exc_info=True,
             )
             raise

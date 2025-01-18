@@ -1,31 +1,33 @@
 """Main FastAPI application module."""
 
 import asyncio
-import json
 import logging
 import os
 import traceback
 import uuid
+import weakref
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Annotated, Callable
-import weakref
 from pathlib import Path
+from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, Header, BackgroundTasks
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 
 from app.models.database import DatabaseManager
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
+)
 from app.plugins.events import bus
 from app.plugins.events.persistence import EventStore
 from app.plugins.manager import PluginManager
+from app.utils.directory_sync import DirectorySync
 from app.utils.logging_config import setup_logging
-from app.models.recording.events import RecordingEvent, RecordingEndRequest, RecordingStartRequest
-from app.plugins.events.models import EventContext
-from app.utils.directory_sync import DirectorySync, MonitorStatus
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -89,17 +91,17 @@ async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
 async def startup() -> None:
     """Initialize application state."""
     global event_bus, plugin_manager, directory_sync
-    
+
     # Setup logging first
     setup_logging()
-    
+
     # Set log level from environment
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     print(f"Setting log level to: {log_level}")
     logging.basicConfig(level=log_level)
 
     logger.info("Initializing database")
-    
+
     # Get database instance and test connection
     db = await DatabaseManager.get_instance()
     await db.execute("SELECT 1")
@@ -123,7 +125,7 @@ async def startup() -> None:
     logger.info("Initializing plugins")
     await plugin_manager.discover_plugins()
     await plugin_manager.initialize_plugins()
-    
+
     logger.info("Startup complete")
 
 
@@ -131,9 +133,9 @@ async def startup() -> None:
 async def shutdown() -> None:
     """Clean up application components."""
     global event_bus, plugin_manager, directory_sync
-    
+
     logger.info("Starting application shutdown")
-    
+
     try:
         # Cancel all background tasks
         tasks = list(background_tasks)
@@ -142,24 +144,24 @@ async def shutdown() -> None:
             for task in tasks:
                 if not task.done():
                     task.cancel()
-            
+
             # Wait for tasks to complete with timeout
             try:
                 await asyncio.wait(tasks, timeout=5.0)
             except asyncio.TimeoutError:
                 logger.warning("Some tasks did not complete within timeout")
-        
+
         # Stop directory sync
         if directory_sync:
             logger.info("Stopping directory sync")
             directory_sync.stop_monitoring()
             directory_sync = None
-        
+
         # First stop accepting new requests
         logger.info("Stopping event bus to prevent new events")
         if event_bus:
             await event_bus.stop()
-            
+
         # Then shutdown plugins
         if plugin_manager:
             logger.info("Shutting down plugins")
@@ -185,21 +187,19 @@ async def shutdown() -> None:
             except asyncio.CancelledError:
                 logger.warning("Event bus shutdown cancelled")
             event_bus = None
-        
+
         # Close database connections last
         logger.info("Closing database connections")
         try:
-            db = await DatabaseManager.get_instance() 
-            await asyncio.shield(
-                asyncio.wait_for(db.close(), timeout=5.0)
-            )
+            db = await DatabaseManager.get_instance()
+            await asyncio.shield(asyncio.wait_for(db.close(), timeout=5.0))
         except asyncio.TimeoutError:
             logger.warning("Database shutdown timed out after 5 seconds")
         except asyncio.CancelledError:
             logger.warning("Database shutdown cancelled")
         except Exception as e:
-            logger.error(f"Error closing database: {str(e)}")
-        
+            logger.error(f"Error closing database: {e!s}")
+
     except asyncio.CancelledError:
         logger.info("Shutdown cancelled - cleaning up remaining resources")
         try:
@@ -212,17 +212,14 @@ async def shutdown() -> None:
             db = await DatabaseManager.get_instance()
             await db.close()
         except Exception as e:
-            logger.error(f"Error during emergency cleanup: {str(e)}")
+            logger.error(f"Error during emergency cleanup: {e!s}")
         finally:
             logger.info("Emergency cleanup complete")
-        
+
     except Exception as e:
         logger.error(
             "Error during shutdown",
-            extra={
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            }
+            extra={"error": str(e), "traceback": traceback.format_exc()},
         )
     finally:
         logger.info("Shutdown complete")
@@ -247,33 +244,30 @@ async def api_logging_middleware(
                 "response": {
                     "status_code": response.status_code,
                     "headers": dict(response.headers),
-                    "duration": duration
+                    "duration": duration,
                 },
                 "request": {
                     "method": request.method,
                     "url": str(request.url),
                     "headers": dict(request.headers),
                     "path_params": request.path_params,
-                    "query_params": dict(request.query_params)
-                }
-            }
+                    "query_params": dict(request.query_params),
+                },
+            },
         )
         return response
-        
+
     except asyncio.CancelledError:
         logger.info(
             "Request cancelled during shutdown",
             extra={
                 "request_id": request_id,
-                "request": {
-                    "method": request.method,
-                    "url": str(request.url)
-                }
-            }
+                "request": {"method": request.method, "url": str(request.url)},
+            },
         )
         # Don't re-raise CancelledError to allow graceful shutdown
         return Response(status_code=503, content="Service shutting down")
-        
+
     except Exception as e:
         logger.error(
             "Error processing request",
@@ -281,11 +275,8 @@ async def api_logging_middleware(
                 "request_id": request_id,
                 "error": str(e),
                 "traceback": traceback.format_exc(),
-                "request": {
-                    "method": request.method,
-                    "url": str(request.url)
-                }
-            }
+                "request": {"method": request.method, "url": str(request.url)},
+            },
         )
         raise
 
@@ -308,7 +299,7 @@ async def validation_exception_handler(
         extra={
             "errors": exc.errors(),
             "body": exc.body,
-        }
+        },
     )
     return JSONResponse(
         status_code=HTTP_UNPROCESSABLE_ENTITY,
@@ -323,7 +314,7 @@ async def validation_exception_handler(
 async def recording_started(
     background_tasks_fastapi: BackgroundTasks,
     request: RecordingStartRequest,
-    x_api_key: str = Depends(get_api_key)
+    x_api_key: str = Depends(get_api_key),
 ) -> dict[str, Any]:
     """Handle recording started event.
 
@@ -342,7 +333,7 @@ async def recording_started(
 
     # Create event
     event = request.to_event()
-    
+
     # Return success immediately and process everything else in background
     background_tasks_fastapi.add_task(process_event, event)
     return {"status": "success", "recording_id": request.recording_id}
@@ -362,41 +353,41 @@ async def recording_ended(
             "recording_id": recording_end.recording_id,
             "method": request.method,
             "path": str(request.url),
-        }
+        },
     )
 
     # Create event
     event = recording_end.to_event()
     event_id = f"{event.recording_id}_ended_{event.recording_timestamp}"
     event.event_id = event_id
-    
+
     logger.debug(
         "Generated event details",
         extra={
             "recording_id": event.recording_id,
             "event_id": event_id,
             "event_timestamp": event.recording_timestamp,
-        }
+        },
     )
 
     # Return success immediately and process everything else in background
     task = asyncio.create_task(process_event(event))
     background_tasks.add(task)
     task.add_done_callback(lambda t: background_tasks.discard(t))
-    
+
     return {"status": "success", "event_id": event_id}
 
 
 async def process_event(event: RecordingEvent) -> None:
     """Process recording event in background.
-    
+
     Args:
         event: Recording event to process
     """
     try:
         # Create a new database connection for background processing
         db = await DatabaseManager.get_instance()
-        
+
         # Check for duplicates
         if await event.is_duplicate():
             logger.info(
@@ -404,18 +395,18 @@ async def process_event(event: RecordingEvent) -> None:
                 extra={
                     "recording_id": event.recording_id,
                     "event_id": event.event_id,
-                }
+                },
             )
             return
 
         # Create tasks for parallel execution
         save_task = asyncio.create_task(event.save())
         publish_task = asyncio.create_task(event_bus.publish(event))
-        
+
         # Track tasks for cleanup
         background_tasks.add(save_task)
         background_tasks.add(publish_task)
-        
+
         # Add callbacks for logging and cleanup
         def task_done_callback(task: asyncio.Task) -> None:
             try:
@@ -428,8 +419,12 @@ async def process_event(event: RecordingEvent) -> None:
                             "recording_id": event.recording_id,
                             "event_id": event.event_id,
                             "error": str(exc),
-                            "traceback": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-                        }
+                            "traceback": "".join(
+                                traceback.format_exception(
+                                    type(exc), exc, exc.__traceback__
+                                )
+                            ),
+                        },
                     )
                 else:
                     logger.debug(
@@ -437,7 +432,7 @@ async def process_event(event: RecordingEvent) -> None:
                         extra={
                             "recording_id": event.recording_id,
                             "event_id": event.event_id,
-                        }
+                        },
                     )
             except asyncio.CancelledError:
                 logger.debug(
@@ -445,7 +440,7 @@ async def process_event(event: RecordingEvent) -> None:
                     extra={
                         "recording_id": event.recording_id,
                         "event_id": event.event_id,
-                    }
+                    },
                 )
             except Exception as e:
                 logger.error(
@@ -454,13 +449,13 @@ async def process_event(event: RecordingEvent) -> None:
                         "recording_id": event.recording_id,
                         "event_id": event.event_id,
                         "error": str(e),
-                        "traceback": traceback.format_exc()
-                    }
+                        "traceback": traceback.format_exc(),
+                    },
                 )
 
         save_task.add_done_callback(task_done_callback)
         publish_task.add_done_callback(task_done_callback)
-        
+
     except Exception as e:
         logger.error(
             "Error processing recording end event",
@@ -468,8 +463,8 @@ async def process_event(event: RecordingEvent) -> None:
                 "recording_id": event.recording_id,
                 "event_id": event.event_id,
                 "error": str(e),
-                "traceback": traceback.format_exc()
-            }
+                "traceback": traceback.format_exc(),
+            },
         )
 
 
