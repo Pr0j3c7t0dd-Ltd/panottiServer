@@ -30,25 +30,6 @@ panottiServer features an extensible plugin architecture that allows you to crea
 
 Check out the [Plugin Development](#plugin-development) section below for a guide on creating your own plugins. In the future, we'll launch a community plugin repository where users can share and discover plugins built by the Panotti community.
 
-## Architecture
-
-The application follows a modular, plugin-based architecture:
-
-```
-app/
-├── core/                     # Core system interfaces
-├── models/                   # Domain models
-├── plugins/                  # Plugin system
-│   ├── base.py              # Base plugin classes
-│   ├── manager.py           # Plugin lifecycle
-│   ├── audio_transcription/ # Audio transcription plugin
-│   ├── meeting_notes_local/ # Local meeting notes plugin
-│   ├── meeting_notes_remote/# Remote meeting notes plugin
-│   └── desktop_notifier/    # Desktop notifications plugin
-├── utils/                   # Utilities
-└── tests/                   # Test suite
-```
-
 ## Requirements
 
 - Python 3.12
@@ -413,7 +394,30 @@ Content-Type: application/json
 }
 ```
 
+
 ## Plugin Development
+
+### System Architecture
+
+The application follows a modular, plugin-based architecture:
+
+```
+app/
+├── core/                     # Core system interfaces
+├── models/                   # Domain models
+├── plugins/                  # Plugin system
+│   ├── base.py              # Base plugin classes
+│   ├── manager.py           # Plugin lifecycle
+│   ├── audio_transcription_local/ # Local audio transcription plugin
+│   ├── cleanup_files/       # File cleanup plugin
+│   ├── desktop_notifier/    # Desktop notifications plugin
+│   ├── events/              # Event handling plugin
+│   ├── meeting_notes_local/ # Local meeting notes plugin
+│   ├── meeting_notes_remote/# Remote meeting notes plugin
+│   └── noise_reduction/     # Noise reduction plugin
+├── utils/                   # Utilities
+└── tests/                   # Test suite
+```
 
 ### Creating a New Plugin
 
