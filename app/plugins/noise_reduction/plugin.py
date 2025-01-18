@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 import threading
+import sqlite3
 
 import numpy as np
 import soundfile as sf
@@ -447,29 +448,48 @@ class NoiseReductionPlugin(PluginBase):
         """Apply Wiener filter to reduce noise."""
         return spec * (np.abs(spec) ** 2 / (np.abs(spec) ** 2 + alpha * noise_power))
 
-    def trim_audio_with_lag(input_file: str, output_file: str, lag_samples: int, sample_rate: int) -> None:
+    def trim_audio_with_lag(self, input_file: str, output_file: str, lag_samples: int, sample_rate: int, stft_padding: int = 0) -> None:
         """
-        Trims the start of the audio file based on the alignment lag.
+        Trims the start of the audio file based on alignment lag, preserving all original silence.
 
         Args:
             input_file (str): Path to the input audio file.
             output_file (str): Path to save the trimmed audio file.
             lag_samples (int): Number of samples to trim based on alignment lag.
             sample_rate (int): Sampling rate of the audio file.
+            stft_padding (int): Number of samples to account for STFT/ISTFT padding.
         """
         # Read the input audio
         audio_data, file_sample_rate = sf.read(input_file)
 
-        # Ensure the sample rate matches the provided value
         if file_sample_rate != sample_rate:
             raise ValueError("Mismatch between provided and file sample rates.")
 
-        # Trim the audio based on the lag in samples
-        trimmed_audio = audio_data[lag_samples:]
+        logger.debug(f"Original audio length: {len(audio_data)} samples")
+        logger.debug(f"Calculated lag_samples: {lag_samples}")
+        logger.debug(f"STFT padding: {stft_padding} samples")
+
+        # Adjust lag_samples for STFT/ISTFT padding
+        adjusted_lag_samples = lag_samples + stft_padding
+        if adjusted_lag_samples < 0:
+            logger.debug("Negative lag detected; no trimming will be applied.")
+            adjusted_lag_samples = 0
+
+        logger.debug(f"Adjusted lag_samples after accounting for padding: {adjusted_lag_samples}")
+
+        # Trim based on adjusted lag
+        if adjusted_lag_samples > 0:
+            trimmed_audio = audio_data[adjusted_lag_samples:]
+            logger.debug(f"Trimming {adjusted_lag_samples / sample_rate:.4f} seconds ({adjusted_lag_samples} samples) based on alignment lag.")
+        else:
+            trimmed_audio = audio_data
+            logger.debug("No trimming applied based on alignment lag.")
+
+        # Log final trimmed length
+        logger.debug(f"Final trimmed audio length: {len(trimmed_audio)} samples")
 
         # Save the trimmed audio
         sf.write(output_file, trimmed_audio, sample_rate)
-
 
     # ------------------------------------------------------------------------
     # Event handling
@@ -544,15 +564,53 @@ class NoiseReductionPlugin(PluginBase):
             if not self._db:
                 self._db = await get_db_async()
 
-            await self._db.execute(
-                """
-                INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
-                VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT(recording_id, plugin_name) 
-                DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-                """,
-                (recording_id, self.name)
-            )
+            # Retry database operations with exponential backoff
+            max_retries = 3
+            retry_delay = 1.0  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    await self._db.execute(
+                        """
+                        INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
+                        VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT(recording_id, plugin_name) 
+                        DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (recording_id, self.name)
+                    )
+                    break
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e) and attempt < max_retries - 1:
+                        logger.warning(
+                            "Database locked, retrying...",
+                            extra={
+                                "req_id": event_id,
+                                "plugin_name": self.name,
+                                "attempt": attempt + 1,
+                                "retry_delay": retry_delay
+                            }
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                        continue
+                    raise
+                except sqlite3.IntegrityError as e:
+                    if "FOREIGN KEY constraint failed" in str(e):
+                        logger.warning(
+                            "Recording not yet in database, retrying...",
+                            extra={
+                                "req_id": event_id,
+                                "plugin_name": self.name,
+                                "recording_id": recording_id,
+                                "attempt": attempt + 1,
+                                "retry_delay": retry_delay
+                            }
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                    raise
 
             await self._process_audio_files(recording_id, sys_path, mic_path, metadata)
 
