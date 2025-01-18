@@ -7,6 +7,7 @@ from datetime import datetime, UTC
 from typing import Any, Literal, TypeVar
 import asyncio
 import traceback
+import sqlite3
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
@@ -228,53 +229,49 @@ class RecordingEvent(BaseModel):
         commit_task = asyncio.create_task(db.commit())
         tasks.append(commit_task)
 
-        # Add error handling callbacks
-        def task_done_callback(task: asyncio.Task) -> None:
+        # Wait for all tasks with retry on database lock
+        max_retries = 3
+        retry_delay = 1.0  # seconds
+        
+        for attempt in range(max_retries):
             try:
-                exc = task.exception()
-                if exc:
-                    logger.error(
-                        "Database operation failed",
+                # Wait for all tasks to complete
+                await asyncio.gather(*tasks)
+                logger.debug(
+                    "Database operations completed successfully",
+                    extra={
+                        "recording_id": self.recording_id,
+                        "event_id": self.event_id,
+                        "attempt": attempt + 1
+                    }
+                )
+                return
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e) and attempt < max_retries - 1:
+                    logger.warning(
+                        "Database locked, retrying...",
                         extra={
                             "recording_id": self.recording_id,
                             "event_id": self.event_id,
-                            "error": str(exc),
-                            "traceback": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+                            "attempt": attempt + 1,
+                            "retry_delay": retry_delay
                         }
                     )
-                else:
-                    logger.debug(
-                        "Database operation completed",
-                        extra={
-                            "recording_id": self.recording_id,
-                            "event_id": self.event_id
-                        }
-                    )
-            except asyncio.CancelledError:
-                logger.debug(
-                    "Database operation cancelled",
-                    extra={
-                        "recording_id": self.recording_id,
-                        "event_id": self.event_id
-                    }
-                )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                raise
             except Exception as e:
                 logger.error(
-                    "Error in database operation callback",
+                    "Database operation failed",
                     extra={
                         "recording_id": self.recording_id,
                         "event_id": self.event_id,
                         "error": str(e),
-                        "traceback": traceback.format_exc()
+                        "traceback": "".join(traceback.format_exception(type(e), e, e.__traceback__))
                     }
                 )
-
-        # Add callbacks to all tasks
-        for task in tasks:
-            task.add_done_callback(task_done_callback)
-            
-        # Return immediately, don't wait for tasks
-        return
+                raise
 
     @classmethod
     async def get_by_recording_id(cls, recording_id: str) -> list["RecordingEvent"]:

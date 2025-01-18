@@ -450,46 +450,46 @@ class NoiseReductionPlugin(PluginBase):
 
     def trim_audio_with_lag(self, input_file: str, output_file: str, lag_samples: int, sample_rate: int, stft_padding: int = 0) -> None:
         """
-        Trims the start of the audio file based on alignment lag, preserving all original silence.
-
+        Adjusts the cleaned audio to match the original audio length, preserving content.
+    
         Args:
             input_file (str): Path to the input audio file.
-            output_file (str): Path to save the trimmed audio file.
-            lag_samples (int): Number of samples to trim based on alignment lag.
+            output_file (str): Path to save the aligned audio file.
+            lag_samples (int): Number of samples to shift based on alignment lag (unused). 
             sample_rate (int): Sampling rate of the audio file.
-            stft_padding (int): Number of samples to account for STFT/ISTFT padding.
+            stft_padding (int): Number of samples to account for STFT/ISTFT padding (unused).
         """
         # Read the input audio
-        audio_data, file_sample_rate = sf.read(input_file)
+        original_audio, file_sample_rate = sf.read(input_file)
 
         if file_sample_rate != sample_rate:
             raise ValueError("Mismatch between provided and file sample rates.")
 
-        logger.debug(f"Original audio length: {len(audio_data)} samples")
-        logger.debug(f"Calculated lag_samples: {lag_samples}")
-        logger.debug(f"STFT padding: {stft_padding} samples")
+        logger.debug(f"Original audio length: {len(original_audio)} samples")
 
-        # Adjust lag_samples for STFT/ISTFT padding
-        adjusted_lag_samples = lag_samples + stft_padding
-        if adjusted_lag_samples < 0:
-            logger.debug("Negative lag detected; no trimming will be applied.")
-            adjusted_lag_samples = 0
-
-        logger.debug(f"Adjusted lag_samples after accounting for padding: {adjusted_lag_samples}")
-
-        # Trim based on adjusted lag
-        if adjusted_lag_samples > 0:
-            trimmed_audio = audio_data[adjusted_lag_samples:]
-            logger.debug(f"Trimming {adjusted_lag_samples / sample_rate:.4f} seconds ({adjusted_lag_samples} samples) based on alignment lag.")
+        # Read the cleaned audio
+        cleaned_audio = sf.read(output_file)[0]
+        
+        logger.debug(f"Cleaned audio length: {len(cleaned_audio)} samples")
+        
+        # Trim or pad the cleaned audio to match the original length
+        length_diff = len(original_audio) - len(cleaned_audio)
+        if length_diff > 0:
+            # Pad end with zeros to match original length
+            logger.debug(f"Padding end with {length_diff} samples to match original length.")
+            final_audio = np.pad(cleaned_audio, (0, length_diff), 'constant')
+        elif length_diff < 0: 
+            # Trim end to match original length
+            logger.debug(f"Trimming end by {-length_diff} samples to match original length.")
+            final_audio = cleaned_audio[:len(original_audio)]
         else:
-            trimmed_audio = audio_data
-            logger.debug("No trimming applied based on alignment lag.")
+            # Lengths already match
+            final_audio = cleaned_audio
 
-        # Log final trimmed length
-        logger.debug(f"Final trimmed audio length: {len(trimmed_audio)} samples")
+        logger.debug(f"Final output audio length: {len(final_audio)} samples")
 
-        # Save the trimmed audio
-        sf.write(output_file, trimmed_audio, sample_rate)
+        # Overwrite the output file with the final audio  
+        sf.write(output_file, final_audio, sample_rate)
 
     # ------------------------------------------------------------------------
     # Event handling
