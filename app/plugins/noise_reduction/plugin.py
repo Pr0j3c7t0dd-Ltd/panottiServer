@@ -158,46 +158,27 @@ class NoiseReductionPlugin(PluginBase):
     #  Time alignment helpers
     # ------------------------------------------------------------------------
     def _align_signals_by_fft(
-        self, mic_data: np.ndarray, sys_data: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Align sys_data to mic_data using FFT-based cross-correlation on a chunk.
-        """
+    self, mic_data: np.ndarray, sys_data: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
         logger.debug("Preparing chunk-based alignment via FFT cross-correlation",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "chunk_secs": self._alignment_chunk_seconds
-                     })
+                    extra={"chunk_secs": self._alignment_chunk_seconds})
 
+        # Determine the chunk length for alignment
         chunk_len = min(len(mic_data), len(sys_data))
         sr_guess = 48000
         if self._alignment_chunk_seconds > 0:
             chunk_limit = int(self._alignment_chunk_seconds * sr_guess)
             chunk_len = min(chunk_len, chunk_limit)
 
+        # Extract chunks for alignment
         mic_chunk = mic_data[:chunk_len].astype(np.float32)
         sys_chunk = sys_data[:chunk_len].astype(np.float32)
 
-        logger.debug("Performing FFT-based cross-correlation on chunk",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "mic_chunk_len": len(mic_chunk),
-                         "sys_chunk_len": len(sys_chunk)
-                     })
-
+        # Perform FFT-based cross-correlation
         corr = signal.correlate(mic_chunk, sys_chunk, mode='full', method='fft')
         best_lag = np.argmax(corr) - (len(sys_chunk) - 1)
 
-        logger.debug("FFT cross-correlation complete",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "best_lag": best_lag,
-                         "corr_len": len(corr)
-                     })
-
+        # Align signals based on the best lag
         if best_lag > 0:
             sys_aligned = np.pad(sys_data, (best_lag, 0), 'constant')
             mic_aligned = mic_data
@@ -205,54 +186,15 @@ class NoiseReductionPlugin(PluginBase):
             mic_aligned = np.pad(mic_data, (-best_lag, 0), 'constant')
             sys_aligned = sys_data
 
-        min_len = min(len(mic_aligned), len(sys_aligned))
-        mic_aligned = mic_aligned[:min_len]
-        sys_aligned = sys_aligned[:min_len]
+        # Pad shorter signal to match the length of the longer signal
+        max_len = max(len(mic_aligned), len(sys_aligned))
+        mic_aligned = np.pad(mic_aligned, (0, max_len - len(mic_aligned)), 'constant')
+        sys_aligned = np.pad(sys_aligned, (0, max_len - len(sys_aligned)), 'constant')
 
-        logger.debug("Alignment done, returning aligned signals",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "aligned_len": min_len
-                     })
+        logger.debug("Alignment complete, signals are padded to equal length",
+                    extra={"aligned_len": max_len})
         return mic_aligned, sys_aligned
 
-    def _align_signals_by_ccf(
-        self, mic_data: np.ndarray, sys_data: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Naive cross-correlation using np.correlate, O(N^2).
-        """
-        logger.debug("Starting naive cross-correlation (O(N^2))",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "mic_len": len(mic_data),
-                         "sys_len": len(sys_data),
-                     })
-        mic_data = mic_data.astype(np.float32)
-        sys_data = sys_data.astype(np.float32)
-        corr = np.correlate(mic_data, sys_data, mode='full')
-        best_lag = np.argmax(corr) - (len(sys_data) - 1)
-
-        logger.debug("Naive correlation complete",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "best_lag": best_lag
-                     })
-
-        if best_lag > 0:
-            sys_aligned = np.pad(sys_data, (best_lag, 0), 'constant')
-            mic_aligned = mic_data
-        else:
-            mic_aligned = np.pad(mic_data, (-best_lag, 0), 'constant')
-            sys_aligned = sys_data
-
-        min_len = min(len(mic_aligned), len(sys_aligned))
-        mic_aligned = mic_aligned[:min_len]
-        sys_aligned = sys_aligned[:min_len]
-        return mic_aligned, sys_aligned
 
     # ------------------------------------------------------------------------
     # 1) Basic time-domain bleed removal (unchanged)
