@@ -217,7 +217,7 @@ class NoiseReductionPlugin(PluginBase):
         :param threshold: RMS energy threshold to detect silence.
         :return: Trimmed audio signal.
         """
-        start_index = detect_start_of_audio(audio_data, threshold)
+        start_index = NoiseReductionPlugin.detect_start_of_audio(audio_data, threshold)
         logger.debug(f"Trimming {start_index / sr:.2f} seconds of silence at the start.")
         return audio_data[start_index:]
 
