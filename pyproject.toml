@@ -227,5 +227,27 @@ convention = "google"
 keep-runtime-typing = true
 
 [tool.bandit]
-exclude_dirs = ["tests", "test_*"]
-skips = ["B101", "B404", "B603", "B607"]
+# Directories to exclude from analysis
+exclude_dirs = ["tests", "test_*", ".venv", ".git", "__pycache__", ".pytest_cache"]
+
+# Tests to skip
+skips = [
+    "B101",  # Allow assert statements in tests
+    "B311"   # Allow random number generators (not for cryptography)
+]
+
+# Severity level (LOW, MEDIUM, HIGH)
+severity = "MEDIUM"
+
+# Confidence level (LOW, MEDIUM, HIGH)
+confidence = "MEDIUM"
+
+# Number of lines of context to display for issues
+show_context = true
+show_lineno = true
+
+# Output format
+output_format = "screen"
+
+# Set a baseline to track only new security issues
+# baseline = "bandit-baseline.json"
