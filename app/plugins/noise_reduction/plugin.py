@@ -288,9 +288,12 @@ class NoiseReductionPlugin(PluginBase):
         """
         Frequency-domain bleed removal with fine-tuned lag adjustment.
         Preserves all original timing including silence for translation alignment.
+        Ensures exact length matching with original file.
         """
+        # Read original files and get initial length
         mic_data, mic_sr = sf.read(mic_file)
         sys_data, sys_sr = sf.read(sys_file)
+        original_length = len(mic_data)  # Store original length for final check
 
         if mic_sr != sys_sr:
             raise ValueError("Mic and system sample rates differ.")
@@ -301,7 +304,7 @@ class NoiseReductionPlugin(PluginBase):
             sys_data = sys_data.mean(axis=1)
 
         lag_seconds = 0
-        cleaned_audio = None  # Ensure `cleaned_audio` is initialized
+        cleaned_audio = None
 
         try:
             if do_alignment:
@@ -372,8 +375,15 @@ class NoiseReductionPlugin(PluginBase):
             else:
                 logger.debug("No lag detected; skipping trimming.")
 
-            # We intentionally preserve all content including silence for translation timing purposes
-            # No additional trimming based on silence detection
+            # Final length check and adjustment
+            length_diff = len(cleaned_audio) - original_length
+            if length_diff > 0:
+                # If cleaned audio is longer than original, trim the excess from the start
+                logger.debug(f"Trimming {length_diff} excess samples from start of cleaned audio to match original length")
+                cleaned_audio = cleaned_audio[length_diff:]
+            elif length_diff < 0:
+                # This should not happen, but log if it does
+                logger.warning(f"Cleaned audio is {-length_diff} samples shorter than original")
 
             # Save the cleaned audio
             cleaned_audio = (cleaned_audio * 32767).astype(np.int16)
