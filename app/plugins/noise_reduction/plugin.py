@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 import threading
+import sqlite3
 
 import numpy as np
 import soundfile as sf
@@ -158,46 +159,25 @@ class NoiseReductionPlugin(PluginBase):
     #  Time alignment helpers
     # ------------------------------------------------------------------------
     def _align_signals_by_fft(
-        self, mic_data: np.ndarray, sys_data: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    self, mic_data: np.ndarray, sys_data: np.ndarray, sample_rate: int
+) -> tuple[np.ndarray, np.ndarray, int]:
         """
-        Align sys_data to mic_data using FFT-based cross-correlation on a chunk.
+        Align signals using FFT cross-correlation and calculate the lag.
         """
         logger.debug("Preparing chunk-based alignment via FFT cross-correlation",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "chunk_secs": self._alignment_chunk_seconds
-                     })
+                    extra={"chunk_secs": self._alignment_chunk_seconds})
 
         chunk_len = min(len(mic_data), len(sys_data))
-        sr_guess = 48000
         if self._alignment_chunk_seconds > 0:
-            chunk_limit = int(self._alignment_chunk_seconds * sr_guess)
+            chunk_limit = int(self._alignment_chunk_seconds * sample_rate)
             chunk_len = min(chunk_len, chunk_limit)
 
         mic_chunk = mic_data[:chunk_len].astype(np.float32)
         sys_chunk = sys_data[:chunk_len].astype(np.float32)
 
-        logger.debug("Performing FFT-based cross-correlation on chunk",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "mic_chunk_len": len(mic_chunk),
-                         "sys_chunk_len": len(sys_chunk)
-                     })
-
         corr = signal.correlate(mic_chunk, sys_chunk, mode='full', method='fft')
         best_lag = np.argmax(corr) - (len(sys_chunk) - 1)
 
-        logger.debug("FFT cross-correlation complete",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "best_lag": best_lag,
-                         "corr_len": len(corr)
-                     })
-
         if best_lag > 0:
             sys_aligned = np.pad(sys_data, (best_lag, 0), 'constant')
             mic_aligned = mic_data
@@ -205,87 +185,59 @@ class NoiseReductionPlugin(PluginBase):
             mic_aligned = np.pad(mic_data, (-best_lag, 0), 'constant')
             sys_aligned = sys_data
 
-        min_len = min(len(mic_aligned), len(sys_aligned))
-        mic_aligned = mic_aligned[:min_len]
-        sys_aligned = sys_aligned[:min_len]
+        max_len = max(len(mic_aligned), len(sys_aligned))
+        mic_aligned = np.pad(mic_aligned, (0, max_len - len(mic_aligned)), 'constant')
+        sys_aligned = np.pad(sys_aligned, (0, max_len - len(sys_aligned)), 'constant')
 
-        logger.debug("Alignment done, returning aligned signals",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "aligned_len": min_len
-                     })
-        return mic_aligned, sys_aligned
+        lag_seconds = best_lag / sample_rate
+        logger.debug(f"Alignment lag calculated: {lag_seconds:.4f} seconds")
 
-    def _align_signals_by_ccf(
-        self, mic_data: np.ndarray, sys_data: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+        return mic_aligned, sys_aligned, lag_seconds
+    
+    @staticmethod
+    def detect_start_of_audio(audio_data: np.ndarray, threshold: float = 0.01, frame_size: int = 1024) -> int:
         """
-        Naive cross-correlation using np.correlate, O(N^2).
+        Detect the start of meaningful audio content based on energy threshold.
+        :param audio_data: Input audio signal.
+        :param threshold: Energy threshold to determine silence.
+        :param frame_size: Number of samples per frame for analysis.
+        :return: Index of the first sample with significant energy.
         """
-        logger.debug("Starting naive cross-correlation (O(N^2))",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "mic_len": len(mic_data),
-                         "sys_len": len(sys_data),
-                     })
-        mic_data = mic_data.astype(np.float32)
-        sys_data = sys_data.astype(np.float32)
-        corr = np.correlate(mic_data, sys_data, mode='full')
-        best_lag = np.argmax(corr) - (len(sys_data) - 1)
+        for i in range(0, len(audio_data), frame_size):
+            frame = audio_data[i:i + frame_size]
+            if np.sqrt(np.mean(frame ** 2)) > threshold:  # Root mean square (RMS)
+                return i
+        return 0  # Default to start if no meaningful audio is detected
 
-        logger.debug("Naive correlation complete",
-                     extra={
-                         "req_id": self._req_id,
-                         "plugin_name": self.name,
-                         "best_lag": best_lag
-                     })
+    def trim_initial_silence(audio_data: np.ndarray, sr: int, threshold: float = 0.01) -> np.ndarray:
+        """
+        Trim initial silence from the audio signal.
+        :param audio_data: Input audio signal.
+        :param sr: Sample rate of the audio.
+        :param threshold: RMS energy threshold to detect silence.
+        :return: Trimmed audio signal.
+        """
+        start_index = detect_start_of_audio(audio_data, threshold)
+        logger.debug(f"Trimming {start_index / sr:.2f} seconds of silence at the start.")
+        return audio_data[start_index:]
 
-        if best_lag > 0:
-            sys_aligned = np.pad(sys_data, (best_lag, 0), 'constant')
-            mic_aligned = mic_data
-        else:
-            mic_aligned = np.pad(mic_data, (-best_lag, 0), 'constant')
-            sys_aligned = sys_data
 
-        min_len = min(len(mic_aligned), len(sys_aligned))
-        mic_aligned = mic_aligned[:min_len]
-        sys_aligned = sys_aligned[:min_len]
-        return mic_aligned, sys_aligned
 
     # ------------------------------------------------------------------------
     # 1) Basic time-domain bleed removal (unchanged)
     # ------------------------------------------------------------------------
     def _subtract_bleed_time_domain(
-        self,
-        mic_file: str,
-        sys_file: str,
-        output_file: str,
-        do_alignment: bool = True,
-        auto_scale: bool = True
-    ) -> None:
+    self,
+    mic_file: str,
+    sys_file: str,
+    output_file: str,
+    do_alignment: bool = True,
+    auto_scale: bool = True
+) -> None:
         """
         Simple time-domain approach with a global scale factor.
         difference = mic - alpha*sys
         """
-        logger.info(
-            "Performing time-domain bleed removal",
-            extra={
-                "plugin_name": self.name,
-                "mic_file": mic_file,
-                "sys_file": sys_file,
-                "output_file": output_file,
-                "do_alignment": do_alignment,
-                "auto_scale": auto_scale
-            },
-        )
-
-        if not os.path.exists(mic_file):
-            raise FileNotFoundError(f"Mic file not found: {mic_file}")
-        if not os.path.exists(sys_file):
-            raise FileNotFoundError(f"System file not found: {sys_file}")
-
         mic_data, mic_sr = sf.read(mic_file)
         sys_data, sys_sr = sf.read(sys_file)
 
@@ -297,11 +249,9 @@ class NoiseReductionPlugin(PluginBase):
         if sys_data.ndim > 1:
             sys_data = sys_data.mean(axis=1)
 
+        lag_seconds = 0
         if do_alignment:
-            if self._use_fft_alignment:
-                mic_data, sys_data = self._align_signals_by_fft(mic_data, sys_data)
-            else:
-                mic_data, sys_data = self._align_signals_by_ccf(mic_data, sys_data)
+            mic_data, sys_data, lag_seconds = self._align_signals_by_fft(mic_data, sys_data, mic_sr)
 
         alpha = 1.0
         if auto_scale:
@@ -310,183 +260,143 @@ class NoiseReductionPlugin(PluginBase):
                 alpha = np.dot(mic_data, sys_data) / denom
 
         difference = mic_data - alpha * sys_data
+
+        # Normalize and save
         max_val = np.max(np.abs(difference))
-        if max_val > 1.0:
+        if max_val > 0:
             difference /= max_val
 
+        # Trim the cleaned audio to account for lag
+        lag_samples = int(lag_seconds * mic_sr)
+        logger.debug(f"Trimming {lag_seconds:.4f} seconds (or {lag_samples} samples) due to alignment lag.")
+        difference = difference[lag_samples:]
+
         sf.write(output_file, difference, mic_sr)
-        logger.info(
-            "Saved time-domain-subtracted audio (bleed removal)",
-            extra={
-                "plugin_name": self.name,
-                "output_file": output_file,
-                "length_samples": len(difference),
-            }
-        )
+        logger.info("Time-domain bleed removal completed and saved.")
 
     # ------------------------------------------------------------------------
     # 2) Advanced frequency-domain bleed removal
     # ------------------------------------------------------------------------
     def _remove_bleed_frequency_domain(
-        self,
-        mic_file: str,
-        sys_file: str,
-        output_file: str,
-        do_alignment: bool = True,
-        randomize_phase: bool = True
-    ) -> None:
+    self,
+    mic_file: str,
+    sys_file: str,
+    output_file: str,
+    do_alignment: bool = True,
+    randomize_phase: bool = True
+) -> None:
         """
-        Frequency-domain bleed removal:
-          1) Align signals.
-          2) STFT mic and system.
-          3) Subtract system's spectrum from mic's, bin-by-bin,
-             with a small spectral floor + optional random phase
-             to ensure leftover is unintelligible.
+        Frequency-domain bleed removal with fine-tuned lag adjustment.
+        Preserves all original timing including silence for translation alignment.
+        Ensures exact length matching with original file.
         """
-
-        logger.info(
-            "Performing frequency-domain bleed removal",
-            extra={
-                "plugin_name": self.name,
-                "mic_file": mic_file,
-                "sys_file": sys_file,
-                "output_file": output_file,
-                "do_alignment": do_alignment,
-                "randomize_phase": randomize_phase
-            },
-        )
-
-        if not os.path.exists(mic_file):
-            raise FileNotFoundError(f"Mic file not found: {mic_file}")
-        if not os.path.exists(sys_file):
-            raise FileNotFoundError(f"System file not found: {sys_file}")
-
-        # Read audio
+        # Read original files and get initial length
         mic_data, mic_sr = sf.read(mic_file)
         sys_data, sys_sr = sf.read(sys_file)
+        original_length = len(mic_data)  # Store original length for final check
 
         if mic_sr != sys_sr:
             raise ValueError("Mic and system sample rates differ.")
 
-        # Mono
         if mic_data.ndim > 1:
             mic_data = mic_data.mean(axis=1)
         if sys_data.ndim > 1:
             sys_data = sys_data.mean(axis=1)
 
-        # Optionally align
-        if do_alignment:
-            if self._use_fft_alignment:
-                mic_data, sys_data = self._align_signals_by_fft(mic_data, sys_data)
+        lag_seconds = 0
+        cleaned_audio = None
+
+        try:
+            if do_alignment:
+                mic_data, sys_data, lag_seconds = self._align_signals_by_fft(mic_data, sys_data, mic_sr)
+
+            # STFT parameters
+            nperseg = 2048
+            noverlap = nperseg // 2
+            window = "hann"
+
+            # Perform STFT
+            f_mic, t_mic, mic_stft = signal.stft(
+                mic_data, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
+            )
+            _, _, sys_stft = signal.stft(
+                sys_data, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
+            )
+
+            # Ensure both STFT have the same shape
+            min_time_frames = min(mic_stft.shape[1], sys_stft.shape[1])
+            mic_stft = mic_stft[:, :min_time_frames]
+            sys_stft = sys_stft[:, :min_time_frames]
+
+            # Calculate bleed removal
+            mic_mag = np.abs(mic_stft)
+            sys_mag = np.abs(sys_stft)
+            mic_phase = np.angle(mic_stft)
+            sys_phase = np.angle(sys_stft)
+
+            epsilon = 1e-9
+            alpha = (mic_mag * sys_mag) / (sys_mag**2 + epsilon)
+            alpha = np.clip(alpha, 0.0, 1.2)
+
+            bleed_removed_mag = mic_mag - alpha * sys_mag
+            spectral_floor = 0.02 * mic_mag
+            bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
+
+            if randomize_phase:
+                dominant_mask = sys_mag > mic_mag
+                rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
+                final_phase = np.where(dominant_mask, rand_phase, mic_phase)
             else:
-                mic_data, sys_data = self._align_signals_by_ccf(mic_data, sys_data)
+                final_phase = mic_phase
 
-        # Normalize
-        mic_max = np.max(np.abs(mic_data)) or 1e-9
-        sys_max = np.max(np.abs(sys_data)) or 1e-9
-        mic_data = mic_data.astype(np.float32) / mic_max
-        sys_data = sys_data.astype(np.float32) / sys_max
+            bleed_removed_stft = bleed_removed_mag * np.exp(1j * final_phase)
 
-        # STFT parameters
-        nperseg = 2048
-        noverlap = nperseg // 2
-        window = "hann"
+            # Perform ISTFT
+            _, cleaned_audio = signal.istft(
+                bleed_removed_stft, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
+            )
 
-        # STFT
-        f_mic, t_mic, mic_stft = signal.stft(
-            mic_data,
-            fs=mic_sr,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            window=window
-        )
-        _, _, sys_stft = signal.stft(
-            sys_data,
-            fs=mic_sr,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            window=window
-        )
+            # Optional highpass filter
+            if self._highpass_cutoff > 0:
+                nyq = mic_sr / 2
+                cutoff = self._highpass_cutoff / nyq
+                b, a = butter(2, cutoff, btype="high")
+                cleaned_audio = filtfilt(b, a, cleaned_audio)
 
-        # Ensure both STFT have the same shape (if not, truncate to the min shape)
-        min_time_frames = min(mic_stft.shape[1], sys_stft.shape[1])
-        mic_stft = mic_stft[:, :min_time_frames]
-        sys_stft = sys_stft[:, :min_time_frames]
-
-        # Subtraction approach
-        # mic_stft_clean = mic_stft - alpha * sys_stft,
-        # but we can find alpha per frequency or per bin for better removal. 
-        # For simplicity, do an auto-scale per bin:
-        mic_mag = np.abs(mic_stft)
-        sys_mag = np.abs(sys_stft)
-        mic_phase = np.angle(mic_stft)
-        sys_phase = np.angle(sys_stft)
-
-        # To degrade system bleed, we can compute alpha per time-frequency bin:
-        # alpha(f,t) = (mic_mag * sys_mag) / (sys_mag^2 + epsilon)
-        # or simpler: alpha(f,t) = 1 if sys is significant,
-        # but let's do a scaled approach.
-        epsilon = 1e-9
-        alpha = (mic_mag * sys_mag) / (sys_mag**2 + epsilon)
-
-        # We'll limit alpha to [0, 1.2], so we don't over-subtract:
-        alpha = np.clip(alpha, 0.0, 1.2)
-
-        # Perform the bin-by-bin subtraction
-        bleed_removed_mag = mic_mag - alpha * sys_mag
-
-        # Floor any negative result to a small spectral floor:
-        # e.g., 0.02 * mic_mag => ensures we don't produce huge "musical" holes
-        # You can tweak these constants to degrade the bleed more/less.
-        spectral_floor = 0.02 * mic_mag  
-        bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
-
-        # Optionally randomize the phase where system was dominant
-        # if sys_mag > mic_mag, randomize that bin's phase:
-        if randomize_phase:
-            dominant_mask = sys_mag > mic_mag
-            rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
-            # We'll apply random phase only in dominant bins
-            final_phase = np.where(dominant_mask, rand_phase, mic_phase)
-        else:
-            final_phase = mic_phase
-
-        # Reconstruct complex STFT
-        bleed_removed_stft = bleed_removed_mag * np.exp(1j * final_phase)
-
-        # iSTFT
-        _, cleaned_audio = signal.istft(
-            bleed_removed_stft,
-            fs=mic_sr,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            window=window
-        )
-
-        # Optional final highpass to remove rumble
-        if self._highpass_cutoff > 0:
-            nyq = mic_sr / 2
-            cutoff = self._highpass_cutoff / nyq
-            b, a = butter(2, cutoff, btype="high")
-            cleaned_audio = filtfilt(b, a, cleaned_audio)
-
-        # Normalize to avoid clipping
-        max_val = np.max(np.abs(cleaned_audio))
-        if max_val > 0:
+            # Normalize
+            max_val = np.max(np.abs(cleaned_audio)) or 1e-9
             cleaned_audio /= max_val
 
-        # Save
-        cleaned_audio = (cleaned_audio * 32767).astype(np.int16)
-        sf.write(output_file, cleaned_audio, mic_sr)
+            # Only apply minimal trimming based on alignment lag
+            lag_samples = int(lag_seconds * mic_sr)
+            if lag_samples > 0:
+                logger.debug(f"Trimming {lag_seconds:.4f} seconds ({lag_samples} samples) based on alignment lag.")
+                cleaned_audio = cleaned_audio[lag_samples:]
+            else:
+                logger.debug("No lag detected; skipping trimming.")
 
-        logger.info(
-            "Saved frequency-domain bleed removal output",
-            extra={
-                "plugin_name": self.name,
-                "output_file": output_file,
-                "final_size": os.path.getsize(output_file)
-            }
-        )
+            # Final length check and adjustment
+            length_diff = len(cleaned_audio) - original_length
+            if length_diff > 0:
+                # If cleaned audio is longer than original, trim the excess from the start
+                logger.debug(f"Trimming {length_diff} excess samples from start of cleaned audio to match original length")
+                cleaned_audio = cleaned_audio[length_diff:]
+            elif length_diff < 0:
+                # This should not happen, but log if it does
+                logger.warning(f"Cleaned audio is {-length_diff} samples shorter than original")
+
+            # Save the cleaned audio
+            cleaned_audio = (cleaned_audio * 32767).astype(np.int16)
+            sf.write(output_file, cleaned_audio, mic_sr)
+
+            logger.info("Frequency-domain bleed removal completed and saved.")
+
+        except Exception as e:
+            logger.error(
+                "Error during frequency-domain bleed removal",
+                extra={"error": str(e), "mic_file": mic_file, "sys_file": sys_file}
+            )
+            raise
 
     # ------------------------------------------------------------------------
     # Original spectral noise reduction (Wiener/subtraction)
@@ -544,9 +454,80 @@ class NoiseReductionPlugin(PluginBase):
         alpha: float = 2.2,
         second_pass: bool = True
     ) -> np.ndarray:
-        """Existing Wiener filter approach."""
-        # ... [unchanged] ...
-        pass
+        """Apply Wiener filter to reduce noise."""
+        return spec * (np.abs(spec) ** 2 / (np.abs(spec) ** 2 + alpha * noise_power))
+
+    def trim_audio_with_lag(self, input_file: str, output_file: str, lag_samples: int, sample_rate: int, stft_padding: int = 0) -> None:
+        """
+        Ensures cleaned audio preserves all original content and matches original length exactly.
+        No silent padding is added, and all original content is preserved.
+    
+        Args:
+            input_file (str): Path to the original input audio file.
+            output_file (str): Path to the cleaned audio file to adjust.
+            lag_samples (int): Number of samples to account for alignment (used for logging).
+            sample_rate (int): Sampling rate of the audio.
+            stft_padding (int): Additional padding samples (used for logging).
+        """
+        # Read both audio files
+        original_audio, original_sr = sf.read(input_file)
+        cleaned_audio, cleaned_sr = sf.read(output_file)
+
+        if original_sr != cleaned_sr:
+            raise ValueError(f"Sample rate mismatch: original={original_sr}, cleaned={cleaned_sr}")
+
+        logger.debug(
+            "Audio length comparison",
+            extra={
+                "original_length": len(original_audio),
+                "cleaned_length": len(cleaned_audio),
+                "lag_samples": lag_samples,
+                "sample_rate": sample_rate
+            }
+        )
+
+        # Convert to mono if needed
+        if original_audio.ndim > 1:
+            original_audio = original_audio.mean(axis=1)
+        if cleaned_audio.ndim > 1:
+            cleaned_audio = cleaned_audio.mean(axis=1)
+
+        # Find the length difference
+        length_diff = len(original_audio) - len(cleaned_audio)
+        
+        if length_diff == 0:
+            logger.debug("Audio lengths match exactly - no adjustment needed")
+            return
+        elif length_diff > 0:
+            # Cleaned audio is shorter than original - we need to preserve more content
+            logger.warning(
+                f"Cleaned audio is {length_diff} samples shorter than original. "
+                "Adjusting to preserve all content.",
+                extra={"original_length": len(original_audio), 
+                      "cleaned_length": len(cleaned_audio)}
+            )
+            # Instead of padding with silence, we'll preserve more of the cleaned audio
+            final_audio = cleaned_audio
+        else:
+            # Cleaned audio is longer than original - trim excess while preserving content
+            logger.debug(
+                f"Cleaned audio is {-length_diff} samples longer than original. Trimming excess.",
+                extra={"original_length": len(original_audio), 
+                      "cleaned_length": len(cleaned_audio)}
+            )
+            # Trim from the end to preserve the aligned start
+            final_audio = cleaned_audio[:len(original_audio)]
+
+        # Write the adjusted audio, preserving the original length
+        sf.write(output_file, final_audio, sample_rate)
+        
+        logger.info(
+            "Audio length adjustment complete",
+            extra={
+                "final_length": len(final_audio),
+                "matches_original": len(final_audio) == len(original_audio)
+            }
+        )
 
     # ------------------------------------------------------------------------
     # Event handling
@@ -621,15 +602,53 @@ class NoiseReductionPlugin(PluginBase):
             if not self._db:
                 self._db = await get_db_async()
 
-            await self._db.execute(
-                """
-                INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
-                VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT(recording_id, plugin_name) 
-                DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-                """,
-                (recording_id, self.name)
-            )
+            # Retry database operations with exponential backoff
+            max_retries = 3
+            retry_delay = 1.0  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    await self._db.execute(
+                        """
+                        INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
+                        VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT(recording_id, plugin_name) 
+                        DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (recording_id, self.name)
+                    )
+                    break
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e) and attempt < max_retries - 1:
+                        logger.warning(
+                            "Database locked, retrying...",
+                            extra={
+                                "req_id": event_id,
+                                "plugin_name": self.name,
+                                "attempt": attempt + 1,
+                                "retry_delay": retry_delay
+                            }
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                        continue
+                    raise
+                except sqlite3.IntegrityError as e:
+                    if "FOREIGN KEY constraint failed" in str(e):
+                        logger.warning(
+                            "Recording not yet in database, retrying...",
+                            extra={
+                                "req_id": event_id,
+                                "plugin_name": self.name,
+                                "recording_id": recording_id,
+                                "attempt": attempt + 1,
+                                "retry_delay": retry_delay
+                            }
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                    raise
 
             await self._process_audio_files(recording_id, sys_path, mic_path, metadata)
 
@@ -792,6 +811,11 @@ class NoiseReductionPlugin(PluginBase):
                         "freq_domain_bleed_removal": self._freq_domain_bleed_removal
                     }
                 )
+
+                # Trim the first N seconds of the cleaned audio based on alignment_chunk_seconds config
+                # Get actual sample rate from the audio file
+                _, sample_rate = sf.read(str(final_output))
+                self.trim_audio_with_lag(str(final_output), str(final_output), lag_samples=int(self._alignment_chunk_seconds * sample_rate), sample_rate=sample_rate)
 
                 # Emit completion event
                 if self.event_bus:
