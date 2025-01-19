@@ -406,6 +406,11 @@ class EventBus:
             event_name: Name of the event to subscribe to
             handler: Async function to handle the event
         """
+        if not event_name:
+            raise ValueError("Event name cannot be empty")
+        if not handler:
+            raise ValueError("Handler cannot be None")
+
         async with self._lock:
             logger.debug(
                 "Attempting to subscribe handler",
@@ -477,6 +482,11 @@ class EventBus:
         Args:
             event: Event data to publish
         """
+        try:
+            event_dict = event if isinstance(event, dict) else getattr(event, "__dict__", {}) if event else {}
+        except Exception:
+            event_dict = {}
+
         logger.debug(
             "BEGIN Event Publishing",
             extra={
@@ -484,7 +494,7 @@ class EventBus:
                 "component": "event_bus",
                 "event_type": type(event).__name__,
                 "raw_event": str(event),
-                "event_dict": event if isinstance(event, dict) else event.__dict__,
+                "event_dict": event_dict,
                 "subscriber_count": len(
                     self._subscribers.get(self._get_event_name(event) or "", [])
                 ),
