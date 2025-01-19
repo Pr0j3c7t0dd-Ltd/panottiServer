@@ -149,13 +149,30 @@ class TestNoiseReductionPlugin(BasePluginTest):
         """Test recording ended event handler"""
         event_data = {
             "recording_id": "test_recording",
-            "data": {"system_audio": "system.wav", "mic_audio": "mic.wav"},
+            "current_event": {
+                "recording": {
+                    "audio_paths": {
+                        "microphone": "mic.wav",
+                        "system": "system.wav"
+                    }
+                }
+            },
+            "metadata": {}
         }
 
-        with patch.object(initialized_plugin, "process_recording") as mock_process:
-            await initialized_plugin.handle_recording_ended(event_data)
+        def mock_exists(path):
+            return path in ["mic.wav", "system.wav"]
 
-            mock_process.assert_called_once_with("test_recording", event_data)
+        with patch("os.path.exists", side_effect=mock_exists):
+            with patch.object(initialized_plugin, "_process_audio_files") as mock_process:
+                await initialized_plugin.handle_recording_ended(event_data)
+
+                mock_process.assert_called_once_with(
+                    "test_recording",
+                    "system.wav",
+                    "mic.wav",
+                    {}
+                )
 
     async def test_handle_recording_ended_no_audio(self, initialized_plugin):
         """Test recording ended handler with missing audio paths"""
