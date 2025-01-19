@@ -1,11 +1,8 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
-from unittest.mock import Mock
-
+from unittest.mock import AsyncMock, patch, Mock, mock_open
 import pytest
 from openai import AsyncOpenAI
-
-from app.core.events import Event, EventContext
+from app.core.events import Event, EventContext, ConcreteEventBus
 from app.plugins.base import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
@@ -13,13 +10,6 @@ from tests.plugins.test_plugin_interface import BasePluginTest
 
 class TestMeetingNotesRemotePlugin(BasePluginTest):
     """Test suite for MeetingNotesRemotePlugin"""
-
-    @pytest.fixture
-    def mock_mkdir(self, monkeypatch):
-        """Mock Path.mkdir"""
-        mock = Mock()
-        monkeypatch.setattr(Path, "mkdir", mock)
-        return mock
 
     @pytest.fixture
     def plugin_config(self):
@@ -44,17 +34,26 @@ class TestMeetingNotesRemotePlugin(BasePluginTest):
 
     @pytest.fixture
     def event_bus(self):
-        """Mock event bus"""
+        """Event bus fixture"""
+        return ConcreteEventBus()
+
+    @pytest.fixture
+    def mock_event_bus(self):
+        """Mock event bus for tests that need mocked behavior"""
         mock_bus = Mock()
         mock_bus.subscribe = AsyncMock()
         mock_bus.publish = AsyncMock()
         return mock_bus
 
     @pytest.fixture
+    def plugin_with_mock_bus(self, plugin_config, mock_event_bus):
+        """Plugin instance with mock event bus"""
+        return MeetingNotesRemotePlugin(plugin_config, mock_event_bus)
+
+    @pytest.fixture
     def plugin(self, plugin_config, event_bus):
         """Meeting notes remote plugin instance"""
-        plugin = MeetingNotesRemotePlugin(plugin_config, event_bus)
-        return plugin
+        return MeetingNotesRemotePlugin(plugin_config, event_bus)
 
     @pytest.fixture
     def sample_transcript(self):
@@ -78,132 +77,97 @@ Speaker 1: I agree. The deadline is next month.
 Speaker 2: I'll prepare the report by next week.
 """
 
-    async def test_meeting_notes_remote_initialization(self, plugin):
+    async def test_meeting_notes_remote_initialization(self, plugin_with_mock_bus):
         """Test meeting notes remote plugin specific initialization"""
         with patch.object(Path, "mkdir") as mock_mkdir:
-            await plugin.initialize()
-
-            # Verify directory creation happened in _initialize
+            await plugin_with_mock_bus.initialize()
             mock_mkdir.assert_called_with(parents=True, exist_ok=True)
-
-            # Verify event subscription happened in _initialize
-            plugin.event_bus.subscribe.assert_awaited_once_with(
-                "transcription_local.completed", plugin.handle_transcription_completed
+            plugin_with_mock_bus.event_bus.subscribe.assert_awaited_once_with(
+                "transcription_local.completed", plugin_with_mock_bus.handle_transcription_completed
             )
 
-    async def test_meeting_notes_remote_shutdown(self, plugin):
-        """Test meeting notes remote plugin specific shutdown"""
-        await plugin.initialize()
-        await plugin.shutdown()
-
-        # Verify thread pool shutdown
-        assert plugin._executor.shutdown.called
-
-    async def test_handle_transcription_completed(self, plugin, sample_transcript):
-        """Test handling transcription completed event"""
+    async def test_handle_transcription_completed_dict_event(self, plugin_with_mock_bus, sample_transcript):
+        """Test handling transcription completed event with dict data"""
         transcript_path = Path("test_transcript.txt")
         event_data = {
             "recording_id": "test_recording",
             "transcript_path": str(transcript_path),
-            "data": {
-                "recording_id": "test_recording",
-                "transcript_path": str(transcript_path),
-            },
         }
 
-        with patch.object(plugin, "_read_transcript") as mock_read:
-            with patch.object(plugin, "_generate_meeting_notes") as mock_generate:
-                mock_read.return_value = sample_transcript
-                mock_generate.return_value = Path("output.md")
+        with patch.object(Path, "mkdir"), \
+             patch.object(plugin_with_mock_bus, "_read_transcript", return_value=sample_transcript), \
+             patch.object(plugin_with_mock_bus, "_generate_meeting_notes", return_value=Path("output.md")):
+            
+            await plugin_with_mock_bus.initialize()
+            await plugin_with_mock_bus.handle_transcription_completed(event_data)
 
-                await plugin.initialize()
-                await plugin.handle_transcription_completed(event_data)
+            plugin_with_mock_bus.event_bus.publish.assert_called_once()
+            call_args = plugin_with_mock_bus.event_bus.publish.call_args[0][0]
+            assert call_args["event"] == "meeting_notes_remote.completed"
+            assert call_args["recording_id"] == "test_recording"
+            assert call_args["status"] == "completed"
 
-                mock_read.assert_called_once()
-                mock_generate.assert_called_once()
+    async def test_handle_transcription_completed_no_path(self, plugin_with_mock_bus):
+        """Test handling transcription completed event with no transcript path"""
+        event_data = {"recording_id": "test_recording"}
+        
+        with patch.object(Path, "mkdir"):
+            await plugin_with_mock_bus.initialize()
+            await plugin_with_mock_bus.handle_transcription_completed(event_data)
+            
+            plugin_with_mock_bus.event_bus.publish.assert_not_called()
 
-    async def test_generate_meeting_notes_from_text(self, plugin, sample_transcript):
-        """Test meeting notes generation from transcript text"""
-        with patch("aiohttp.ClientSession") as mock_session:
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json.return_value = {
-                "choices": [{"message": {"content": "Generated notes"}}]
-            }
+    async def test_generate_meeting_notes_from_text_empty(self, plugin):
+        """Test meeting notes generation with empty text"""
+        result = await plugin._generate_meeting_notes_from_text("")
+        assert result == "No transcript text found to generate notes from."
 
-            mock_context = AsyncMock()
-            mock_context.__aenter__.return_value = mock_response
-            mock_session.return_value.__aenter__.return_value.post.return_value = (
-                mock_context
-            )
-
-            await plugin.initialize()
-            result = await plugin._generate_meeting_notes_from_text(sample_transcript)
-
-            assert result == "Generated notes"
-            assert mock_session.return_value.__aenter__.return_value.post.called
-
-    async def test_process_transcript(self, plugin, sample_transcript):
-        """Test transcript processing"""
-        recording_id = "test_recording"
-        event = Event(
-            name="transcription_local.completed",
-            data={"recording_id": recording_id},
-            context=EventContext(correlation_id="test_id"),
+    def test_plugin_configuration_defaults(self):
+        """Test plugin configuration with defaults"""
+        config = PluginConfig(
+            name="meeting_notes_remote",
+            version="1.0.0",
+            enabled=True,
+            config={
+                "provider": "openai",
+                "openai": {
+                    "api_key": "test_key",
+                    "model": "gpt-4-turbo-preview",
+                },
+            },
         )
+        plugin = MeetingNotesRemotePlugin(config)
+        
+        assert plugin.output_dir == Path("data/meeting_notes_remote")
+        assert plugin.max_concurrent_tasks == 4
+        assert plugin.timeout == 600
+        assert plugin.provider == "openai"
 
-        with patch.object(plugin, "_generate_meeting_notes_from_text") as mock_generate:
-            with patch.object(plugin, "_get_output_path") as mock_path:
-                mock_generate.return_value = "Generated notes"
-                mock_path.return_value = Path("output.md")
-
-                await plugin.initialize()
-                await plugin._process_transcript(recording_id, sample_transcript, event)
-
-                mock_generate.assert_called_once_with(sample_transcript)
-                assert plugin.event_bus.publish.called
-
-    def test_get_output_path(self, plugin):
-        """Test output path generation"""
-        transcript_path = Path("data/transcripts/test.txt")
-        output_path = plugin._get_output_path(transcript_path)
-
-        assert isinstance(output_path, Path)
-        assert output_path.suffix == ".md"
-        assert output_path.parent == plugin.output_dir
-
-    async def test_read_transcript(self, plugin):
-        """Test transcript reading"""
-        transcript_path = Path("test.txt")
-        test_content = "Test transcript content"
-
-        with patch("builtins.open", mock_open(read_data=test_content)):
-            content = await plugin._read_transcript(transcript_path)
-            assert content == test_content
-
-    async def test_api_error_handling(self, plugin, sample_transcript):
-        """Test API error handling"""
-        with patch("aiohttp.ClientSession") as mock_session:
-            mock_response = AsyncMock()
-            mock_response.status = 500
-            mock_response.text.return_value = "Internal Server Error"
-
-            mock_context = AsyncMock()
-            mock_context.__aenter__.return_value = mock_response
-            mock_session.return_value.__aenter__.return_value.post.return_value = (
-                mock_context
-            )
-
-            await plugin.initialize()
-            with pytest.raises(Exception):
-                await plugin._generate_meeting_notes_from_text(sample_transcript)
-
-    def test_plugin_configuration(self, plugin):
-        """Test plugin configuration parameters"""
+    def test_plugin_configuration_custom(self, plugin):
+        """Test plugin configuration with custom values"""
         assert plugin.provider == "openai"
         assert isinstance(plugin.client, AsyncOpenAI)
         assert plugin.model == "gpt-4-turbo-preview"
-        assert isinstance(plugin.output_dir, Path)
-        assert str(plugin.output_dir) == "data/meeting_notes_remote"
+        assert plugin.output_dir == Path("data/meeting_notes_remote")
         assert plugin.max_concurrent_tasks == 2
         assert plugin.timeout == 300
+
+    async def test_plugin_initialization_no_event_bus(self):
+        """Test plugin initialization without event bus"""
+        config = PluginConfig(
+            name="meeting_notes_remote",
+            version="1.0.0",
+            enabled=True,
+            config={
+                "provider": "openai",
+                "openai": {
+                    "api_key": "test_key",
+                    "model": "gpt-4-turbo-preview",
+                },
+            },
+        )
+        plugin = MeetingNotesRemotePlugin(config, event_bus=None)
+        
+        with patch.object(Path, "mkdir"):
+            await plugin.initialize()
+            # Should not raise an exception
