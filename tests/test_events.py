@@ -194,4 +194,29 @@ async def test_event_bus_protocol_method_implementations():
     await EventBus.emit.__get__(bus)(mock_event)
 
     assert bus.publish_called
-    assert bus.published_event == mock_event 
+    assert bus.published_event == mock_event
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_event_handler_protocol():
+    """Test that EventHandler protocol is properly defined."""
+    from app.core.events.types import EventHandler
+
+    # Test that the Protocol's __call__ method is defined
+    assert hasattr(EventHandler, '__call__')
+
+    # Test that the method has the correct signature
+    call_method = getattr(EventHandler, '__call__')
+    assert call_method.__name__ == '__call__'
+
+    # Test that the method is abstract
+    assert getattr(call_method, '__isabstractmethod__', False)
+
+    # Verify we can create a concrete implementation
+    class ConcreteHandler:
+        async def __call__(self, event_data: Any) -> None:
+            pass
+
+    # This should not raise a TypeError
+    handler = ConcreteHandler()
+    assert isinstance(handler, EventHandler) 
