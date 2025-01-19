@@ -111,18 +111,30 @@ class TestNoiseReductionPlugin(BasePluginTest):
 
     async def test_handle_recording_ended_no_audio(self, plugin):
         """Test recording ended handler with missing audio paths"""
+        recording_id = "test_recording"
         event_data = {
-            "recording_id": "test_recording",
-            "data": {}
+            "recording_id": recording_id,
+            "current_event": {
+                "recording": {
+                    "audio_paths": {}  # Empty audio paths to test no-audio case
+                }
+            },
+            "metadata": {}
         }
 
-        with patch.object(plugin, 'process_recording') as mock_process:
+        with patch.object(plugin, '_process_audio_files') as mock_process:
+            mock_process.return_value = None  # Ensure async mock returns something
             await plugin.initialize()
+            
+            # Call handler directly since we're testing the handler itself
             await plugin.handle_recording_ended(event_data)
             
+            # Verify _process_audio_files was called with correct args
             mock_process.assert_called_once_with(
-                "test_recording",
-                event_data
+                recording_id,
+                None,  # system_audio_path
+                None,  # microphone_audio_path
+                {}     # metadata
             )
 
     def test_align_signals_by_fft(self, plugin):
