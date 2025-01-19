@@ -137,6 +137,7 @@ pylint = "^3.0"
 pre-commit = "^4.0.1"
 types-pyyaml = "^6.0.12.20241230"
 types-requests = "^2.32.0.20241016"
+aioresponses = "^0.7.7"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

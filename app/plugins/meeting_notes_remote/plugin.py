@@ -73,9 +73,6 @@ class MeetingNotesRemotePlugin(PluginBase):
                 else:
                     raise ValueError(f"Unsupported provider: {self.provider}")
 
-        # Create output directory
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-
         # Initialize thread pool with configured max tasks
         self._executor = ThreadPoolExecutor(max_workers=self.max_concurrent_tasks)
         self._processing_lock = threading.Lock()
@@ -112,6 +109,9 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "model": self.model,
                 },
             )
+
+            # Create output directory
+            self.output_dir.mkdir(parents=True, exist_ok=True)
 
             # Subscribe to transcription completed event
             await self.event_bus.subscribe(
