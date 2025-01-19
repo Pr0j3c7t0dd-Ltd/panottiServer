@@ -522,7 +522,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
 
     async def transcribe_audio(
         self, audio_path: str, output_path: str, label: str
-    ) -> None:
+    ) -> Path:
         """Transcribe an audio file using Whisper"""
         # Validate input file
         self.validate_wav_file(audio_path)
@@ -531,10 +531,12 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         # Write transcript to file
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding='utf-8') as f:
             f.write(f"# {label}'s Transcript\n\n")
             # Add actual transcription logic here
             f.write("Transcript content would go here\n")
+
+        return Path(output_path)
 
     def merge_transcripts(
         self,
