@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from dotenv import load_dotenv
+from app.models.recording.events import RecordingEvent
+from app.plugins.base import PluginBase, PluginConfig
+from app.core.events import ConcreteEventBus as EventBus
 
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
@@ -63,8 +66,6 @@ def load_test_env():
 @pytest.fixture
 def mock_event_bus():
     """Mock event bus fixture"""
-    from app.plugins.events.bus import EventBus
-
     event_bus = EventBus()
     event_bus.subscribe = AsyncMock()
     event_bus.unsubscribe = AsyncMock()

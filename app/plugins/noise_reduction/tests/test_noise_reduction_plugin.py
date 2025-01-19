@@ -7,7 +7,7 @@ from datetime import datetime, UTC
 
 from app.plugins.base import PluginConfig
 from app.plugins.noise_reduction.plugin import NoiseReductionPlugin, AudioPaths
-from app.plugins.events.models import Event, EventContext
+from app.core.events import Event, EventContext
 from app.models.recording.events import RecordingEvent
 from tests.plugins.test_plugin_interface import BasePluginTest
 

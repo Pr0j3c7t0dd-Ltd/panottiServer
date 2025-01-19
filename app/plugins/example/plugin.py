@@ -5,8 +5,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
-from app.plugins.events.models import EventContext
+from app.core.events import EventContext
 from app.utils.logging_config import get_logger
 
 logger = get_logger("app.plugins.example.plugin")

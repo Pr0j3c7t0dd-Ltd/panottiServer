@@ -1,4 +1,4 @@
-"""Core event system interfaces."""
+"""Core event system interfaces and implementations."""
 
 from abc import abstractmethod
 from collections.abc import Callable
@@ -9,6 +9,10 @@ from app.models.recording.events import (
     RecordingEvent,
     RecordingStartRequest,
 )
+
+from .bus import EventBus as ConcreteEventBus
+from .models import Event, EventContext, EventPriority
+from .persistence import EventProcessingStatus, EventStore
 
 # Type for any event data
 EventData = (
@@ -42,3 +46,14 @@ class EventBus(Protocol):
     async def emit(self, event: EventData) -> None:
         """Emit an event (alias for publish)."""
         await self.publish(event)
+
+
+__all__ = [
+    "EventBus",  # Protocol
+    "ConcreteEventBus",  # Implementation
+    "Event",
+    "EventContext",
+    "EventPriority",
+    "EventStore",
+    "EventProcessingStatus",
+]

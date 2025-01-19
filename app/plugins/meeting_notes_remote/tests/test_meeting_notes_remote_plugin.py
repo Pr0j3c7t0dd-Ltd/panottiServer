@@ -5,7 +5,7 @@ from datetime import datetime
 
 from app.plugins.base import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
-from app.plugins.events.models import Event, EventContext
+from app.core.events import Event, EventContext
 from app.models.recording.events import RecordingEvent
 from tests.plugins.test_plugin_interface import BasePluginTest
 from openai import AsyncOpenAI

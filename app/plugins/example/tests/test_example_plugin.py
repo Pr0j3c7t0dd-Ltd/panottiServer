@@ -1,8 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.plugins.base import PluginConfig
-from app.plugins.events.bus import EventBus
+from app.models.recording.events import RecordingEvent
+from app.plugins.base import PluginBase, PluginConfig
+from app.core.events import ConcreteEventBus as EventBus
 from app.plugins.example.plugin import ExamplePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
 

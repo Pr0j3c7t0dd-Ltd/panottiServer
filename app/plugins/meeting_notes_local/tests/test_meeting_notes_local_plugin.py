@@ -3,10 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 from datetime import datetime
 
-from app.plugins.base import PluginConfig
-from app.plugins.meeting_notes_local.plugin import MeetingNotesLocalPlugin
-from app.plugins.events.models import Event, EventContext
 from app.models.recording.events import RecordingEvent
+from app.plugins.base import PluginBase, PluginConfig
+from app.core.events import Event, EventContext
 from tests.plugins.test_plugin_interface import BasePluginTest
 
 

@@ -12,7 +12,7 @@ from typing import Any, Literal, TypeVar
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from app.models.database import DatabaseManager
-from app.plugins.events.models import EventContext
+from app.core.events import EventContext
 
 logger = logging.getLogger(__name__)
 

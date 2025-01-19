@@ -23,8 +23,8 @@ from app.models.recording.events import (
     RecordingEvent,
     RecordingStartRequest,
 )
-from app.plugins.events import bus
-from app.plugins.events.persistence import EventStore
+from app.core.events import ConcreteEventBus as bus
+from app.core.events import EventStore
 from app.plugins.manager import PluginManager
 from app.utils.directory_sync import DirectorySync
 from app.utils.logging_config import setup_logging

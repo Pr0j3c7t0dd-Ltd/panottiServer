@@ -5,7 +5,7 @@ from datetime import datetime
 
 from app.plugins.base import PluginConfig
 from app.plugins.cleanup_files.plugin import CleanupFilesPlugin
-from app.plugins.events.models import Event
+from app.core.events import Event
 from app.models.recording.events import RecordingEvent
 from tests.plugins.test_plugin_interface import BasePluginTest
 

@@ -12,7 +12,7 @@ from app.models.recording.events import (
     RecordingEvent,
     RecordingStartRequest,
 )
-from app.plugins.events.models import Event, EventContext
+from app.core.events import Event, EventContext
 
 
 class JSONFormatter(logging.Formatter):
