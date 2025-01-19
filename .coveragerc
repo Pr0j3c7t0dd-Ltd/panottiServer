@@ -1,4 +1,5 @@
 [run]
+branch = True
 source = app
 omit =
     tests/*
@@ -14,4 +15,11 @@ exclude_lines =
     raise NotImplementedError
     if __name__ == .__main__.:
     pass
-    raise ImportError 
+    raise ImportError
+    except ImportError:
+    \.\.\.
+
+ignore_errors = True
+
+[html]
+directory = coverage/html 
