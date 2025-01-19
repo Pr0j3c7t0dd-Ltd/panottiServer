@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+from unittest.mock import Mock
 
 import pytest
 from openai import AsyncOpenAI
@@ -12,6 +13,13 @@ from tests.plugins.test_plugin_interface import BasePluginTest
 
 class TestMeetingNotesRemotePlugin(BasePluginTest):
     """Test suite for MeetingNotesRemotePlugin"""
+
+    @pytest.fixture
+    def mock_mkdir(self, monkeypatch):
+        """Mock Path.mkdir"""
+        mock = Mock()
+        monkeypatch.setattr(Path, "mkdir", mock)
+        return mock
 
     @pytest.fixture
     def plugin_config(self):
@@ -35,9 +43,18 @@ class TestMeetingNotesRemotePlugin(BasePluginTest):
         )
 
     @pytest.fixture
+    def event_bus(self):
+        """Mock event bus"""
+        mock_bus = Mock()
+        mock_bus.subscribe = AsyncMock()
+        mock_bus.publish = AsyncMock()
+        return mock_bus
+
+    @pytest.fixture
     def plugin(self, plugin_config, event_bus):
         """Meeting notes remote plugin instance"""
-        return MeetingNotesRemotePlugin(plugin_config, event_bus)
+        plugin = MeetingNotesRemotePlugin(plugin_config, event_bus)
+        return plugin
 
     @pytest.fixture
     def sample_transcript(self):
@@ -63,14 +80,14 @@ Speaker 2: I'll prepare the report by next week.
 
     async def test_meeting_notes_remote_initialization(self, plugin):
         """Test meeting notes remote plugin specific initialization"""
-        with patch("os.makedirs") as mock_makedirs:
+        with patch.object(Path, "mkdir") as mock_mkdir:
             await plugin.initialize()
 
-            # Verify directory creation
-            mock_makedirs.assert_called_with(plugin.output_dir, exist_ok=True)
+            # Verify directory creation happened in _initialize
+            mock_mkdir.assert_called_with(parents=True, exist_ok=True)
 
-            # Verify event subscription
-            plugin.event_bus.subscribe.assert_called_once_with(
+            # Verify event subscription happened in _initialize
+            plugin.event_bus.subscribe.assert_awaited_once_with(
                 "transcription_local.completed", plugin.handle_transcription_completed
             )
 
