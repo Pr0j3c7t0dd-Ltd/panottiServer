@@ -2,10 +2,11 @@ import pytest
 import numpy as np
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
+import concurrent.futures
 
 from app.plugins.base import PluginConfig
 from app.plugins.noise_reduction.plugin import NoiseReductionPlugin, AudioPaths
-from app.plugins.events.models import Event
+from app.plugins.events.models import Event, EventContext
 from app.models.recording.events import RecordingEvent
 from tests.plugins.test_plugin_interface import BasePluginTest
 
@@ -38,38 +39,47 @@ class TestNoiseReductionPlugin(BasePluginTest):
     @pytest.fixture
     def plugin(self, plugin_config, event_bus):
         """Noise reduction plugin instance"""
-        return NoiseReductionPlugin(plugin_config, event_bus)
+        plugin = NoiseReductionPlugin(plugin_config, event_bus)
+        plugin._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        return plugin
 
     @pytest.fixture
     def mock_db(self):
         """Mock database manager"""
-        with patch('app.models.database.DatabaseManager') as mock:
-            db_instance = MagicMock()
-            mock.get_instance.return_value = db_instance
-            yield db_instance
+        db_instance = AsyncMock()
+        db_instance.execute = AsyncMock()
+        return db_instance
 
-    async def test_noise_reduction_initialization(self, plugin, mock_db):
+    @pytest.fixture
+    async def initialized_plugin(self, plugin, mock_db):
+        """Plugin instance that's been initialized with mocked dependencies"""
+        with patch('app.models.database.get_db_async', return_value=mock_db):
+            await plugin.initialize()
+            yield plugin
+            await plugin.shutdown()
+
+    async def test_noise_reduction_initialization(self, initialized_plugin, mock_db):
         """Test noise reduction plugin specific initialization"""
         with patch('os.makedirs') as mock_makedirs:
-            await plugin.initialize()
+            await initialized_plugin.initialize()
             
             # Verify directory creation
-            mock_makedirs.assert_any_call(plugin._output_directory, exist_ok=True)
-            mock_makedirs.assert_any_call(plugin._recordings_dir, exist_ok=True)
+            mock_makedirs.assert_any_call(initialized_plugin._output_directory, exist_ok=True)
+            mock_makedirs.assert_any_call(initialized_plugin._recordings_dir, exist_ok=True)
             
             # Verify event subscription
-            plugin.event_bus.subscribe.assert_called_once_with(
+            initialized_plugin.event_bus.subscribe.assert_called_once_with(
                 "recording.ended",
-                plugin.handle_recording_ended
+                initialized_plugin.handle_recording_ended
             )
 
-    async def test_noise_reduction_shutdown(self, plugin):
+    async def test_noise_reduction_shutdown(self, initialized_plugin):
         """Test noise reduction plugin specific shutdown"""
-        await plugin.initialize()
-        await plugin.shutdown()
+        await initialized_plugin.initialize()
+        await initialized_plugin.shutdown()
         
         # Verify thread pool shutdown
-        assert plugin._executor.shutdown.called
+        assert initialized_plugin._executor.shutdown.called
 
     def test_audio_paths_initialization(self):
         """Test AudioPaths class initialization"""
@@ -90,7 +100,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
         )
         assert start_idx >= 1000  # Should detect start after silence
 
-    async def test_handle_recording_ended(self, plugin):
+    async def test_handle_recording_ended(self, initialized_plugin):
         """Test recording ended event handler"""
         event_data = {
             "recording_id": "test_recording",
@@ -100,16 +110,15 @@ class TestNoiseReductionPlugin(BasePluginTest):
             }
         }
 
-        with patch.object(plugin, 'process_recording') as mock_process:
-            await plugin.initialize()
-            await plugin.handle_recording_ended(event_data)
+        with patch.object(initialized_plugin, 'process_recording') as mock_process:
+            await initialized_plugin.handle_recording_ended(event_data)
             
             mock_process.assert_called_once_with(
                 "test_recording",
                 event_data
             )
 
-    async def test_handle_recording_ended_no_audio(self, plugin):
+    async def test_handle_recording_ended_no_audio(self, initialized_plugin):
         """Test recording ended handler with missing audio paths"""
         recording_id = "test_recording"
         event_data = {
@@ -122,12 +131,11 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "metadata": {}
         }
 
-        with patch.object(plugin, '_process_audio_files') as mock_process:
+        with patch.object(initialized_plugin, '_process_audio_files') as mock_process:
             mock_process.return_value = None  # Ensure async mock returns something
-            await plugin.initialize()
             
             # Call handler directly since we're testing the handler itself
-            await plugin.handle_recording_ended(event_data)
+            await initialized_plugin.handle_recording_ended(event_data)
             
             # Verify _process_audio_files was called with correct args
             mock_process.assert_called_once_with(
@@ -137,7 +145,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
                 {}     # metadata
             )
 
-    def test_align_signals_by_fft(self, plugin):
+    def test_align_signals_by_fft(self, initialized_plugin):
         """Test FFT-based signal alignment"""
         # Create test signals with known lag
         sample_rate = 44100
@@ -146,24 +154,113 @@ class TestNoiseReductionPlugin(BasePluginTest):
         lag_samples = 100
         lagged_signal = np.pad(signal, (lag_samples, 0))[:-lag_samples]
         
-        mic_aligned, sys_aligned, lag = plugin._align_signals_by_fft(
+        mic_aligned, sys_aligned, lag = initialized_plugin._align_signals_by_fft(
             lagged_signal, signal, sample_rate
         )
         
         assert abs(lag * sample_rate - lag_samples) < 10  # Allow small alignment error
         assert len(mic_aligned) == len(sys_aligned)
 
-    def test_plugin_configuration(self, plugin):
+    def test_plugin_configuration(self, initialized_plugin):
         """Test plugin configuration parameters"""
-        assert isinstance(plugin._output_directory, Path)
-        assert str(plugin._output_directory) == "data/cleaned_audio"
-        assert plugin._noise_reduce_factor == 0.8
-        assert plugin._wiener_alpha == 2.0
-        assert plugin._highpass_cutoff == 100
-        assert plugin._spectral_floor == 0.05
-        assert plugin._smoothing_factor == 3
-        assert plugin._max_workers == 2
-        assert plugin._time_domain_subtraction is True
-        assert plugin._freq_domain_bleed_removal is True
-        assert plugin._use_fft_alignment is True
-        assert plugin._alignment_chunk_seconds == 5 
+        assert isinstance(initialized_plugin._output_directory, Path)
+        assert str(initialized_plugin._output_directory) == "data/cleaned_audio"
+        assert initialized_plugin._noise_reduce_factor == 0.8
+        assert initialized_plugin._wiener_alpha == 2.0
+        assert initialized_plugin._highpass_cutoff == 100
+        assert initialized_plugin._spectral_floor == 0.05
+        assert initialized_plugin._smoothing_factor == 3
+        assert initialized_plugin._max_workers == 2
+        assert initialized_plugin._time_domain_subtraction is True
+        assert initialized_plugin._freq_domain_bleed_removal is True
+        assert initialized_plugin._use_fft_alignment is True
+        assert initialized_plugin._alignment_chunk_seconds == 5
+
+    async def test_handle_recording_ended_dict_format(self, initialized_plugin):
+        """Test recording ended handler with dictionary event format"""
+        event_data = {
+            "recording_id": "test_recording",
+            "current_event": {
+                "recording": {
+                    "audio_paths": {
+                        "microphone": "mic.wav",
+                        "system": "sys.wav"
+                    }
+                }
+            },
+            "metadata": {"test": "data"},
+            "source_plugin": "other_plugin"
+        }
+
+        with patch.object(initialized_plugin, '_process_audio_files') as mock_process:
+            mock_process.return_value = None
+            await initialized_plugin.handle_recording_ended(event_data)
+            
+            mock_process.assert_called_once_with(
+                "test_recording",
+                "sys.wav",
+                "mic.wav",
+                {"test": "data"}
+            )
+
+    async def test_handle_recording_ended_skip_own_event(self, initialized_plugin):
+        """Test recording ended handler skips events from itself"""
+        event_data = {
+            "recording_id": "test_recording",
+            "current_event": {
+                "recording": {
+                    "audio_paths": {
+                        "microphone": "mic.wav",
+                        "system": "sys.wav"
+                    }
+                }
+            },
+            "source_plugin": "noise_reduction"
+        }
+
+        with patch.object(initialized_plugin, '_process_audio_files') as mock_process:
+            await initialized_plugin.handle_recording_ended(event_data)
+            
+            mock_process.assert_not_called()
+
+    async def test_handle_recording_ended_no_recording_id(self, initialized_plugin):
+        """Test recording ended handler with missing recording_id"""
+        event_data = {
+            "current_event": {
+                "recording": {
+                    "audio_paths": {
+                        "microphone": "mic.wav",
+                        "system": "sys.wav"
+                    }
+                }
+            }
+        }
+
+        with patch.object(initialized_plugin, '_process_audio_files') as mock_process:
+            await initialized_plugin.handle_recording_ended(event_data)
+            
+            mock_process.assert_not_called()
+
+    async def test_handle_recording_ended_event_object(self, initialized_plugin):
+        """Test recording ended handler with Event object"""
+        event = Event(
+            name="recording.ended",
+            data={
+                "recording_id": "test_recording",
+                "microphone_audio_path": "mic.wav",
+                "system_audio_path": "sys.wav",
+                "metadata": {"test": "data"}
+            },
+            context=EventContext(correlation_id="test_id")
+        )
+
+        with patch.object(initialized_plugin, '_process_audio_files') as mock_process:
+            mock_process.return_value = None
+            await initialized_plugin.handle_recording_ended(event)
+            
+            mock_process.assert_called_once_with(
+                "test_recording",
+                "sys.wav",
+                "mic.wav",
+                {"test": "data"}
+            ) 
