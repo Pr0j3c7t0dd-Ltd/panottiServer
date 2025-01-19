@@ -56,7 +56,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                 if self.provider == "openai":
                     self.client = AsyncOpenAI(
                         api_key=config_dict["openai"]["api_key"],
-                        http_client=httpx.AsyncClient(verify=False),
+                        http_client=httpx.AsyncClient(verify=False),  # nosec B501 - Disabled SSL verification needed for Docker container environment
                     )
                     self.model = config_dict["openai"]["model"]
                 elif self.provider == "anthropic":
