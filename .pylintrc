@@ -1,6 +1,6 @@
 [MASTER]
 # Paths to ignore (add more if needed)
-ignore=CVS,.git,__pycache__,build,dist
+ignore=CVS,.git,__pycache__,build,dist,.coveragerc
 
 # Paths to ignore using regex patterns
 ignore-patterns=^.*_test\.py$
