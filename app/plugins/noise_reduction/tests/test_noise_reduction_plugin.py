@@ -59,23 +59,40 @@ class TestNoiseReductionPlugin(BasePluginTest):
             yield plugin
             await plugin.shutdown()
 
-    async def test_noise_reduction_initialization(self, initialized_plugin, mock_db):
+    @pytest.fixture
+    def mock_makedirs(self):
+        """Mock os.makedirs"""
+        with patch("os.makedirs") as mock:
+            yield mock
+
+    @pytest.fixture
+    def mock_event_bus(self):
+        """Mock event bus with mocked subscribe method"""
+        event_bus = AsyncMock()
+        event_bus.subscribe = AsyncMock()
+        return event_bus
+
+    async def test_noise_reduction_initialization(self, plugin_config, mock_event_bus, mock_makedirs):
         """Test noise reduction plugin specific initialization"""
-        with patch("os.makedirs") as mock_makedirs:
-            await initialized_plugin.initialize()
+        # Create a fresh plugin instance for testing initialization
+        plugin = NoiseReductionPlugin(plugin_config, mock_event_bus)
+        await plugin.initialize()
 
-            # Verify directory creation
-            mock_makedirs.assert_any_call(
-                initialized_plugin._output_directory, exist_ok=True
-            )
-            mock_makedirs.assert_any_call(
-                initialized_plugin._recordings_dir, exist_ok=True
-            )
+        # Verify directory creation
+        mock_makedirs.assert_any_call(
+            plugin._output_directory, exist_ok=True
+        )
+        mock_makedirs.assert_any_call(
+            plugin._recordings_dir, exist_ok=True
+        )
 
-            # Verify event subscription
-            initialized_plugin.event_bus.subscribe.assert_called_once_with(
-                "recording.ended", initialized_plugin.handle_recording_ended
-            )
+        # Verify event subscription
+        mock_event_bus.subscribe.assert_called_once_with(
+            "recording.ended", plugin.handle_recording_ended
+        )
+        
+        # Clean up
+        await plugin.shutdown()
 
     async def test_noise_reduction_shutdown(self, initialized_plugin):
         """Test noise reduction plugin specific shutdown"""
