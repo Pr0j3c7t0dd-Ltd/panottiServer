@@ -287,18 +287,21 @@ class TestNoiseReductionPlugin(BasePluginTest):
 
     async def test_handle_recording_ended_event_object(self, initialized_plugin):
         """Test recording ended handler with Event object"""
-        event = Event(
-            name="recording.ended",
-            data={
-                "recording_id": "test_recording",
-                "recording_timestamp": datetime.now(UTC).isoformat(),
-                "system_audio_path": "sys.wav",
-                "microphone_audio_path": "mic.wav",
-                "metadata": {"test": "data"},
-                "event": "recording.ended",
+        event = {
+            "recording_id": "test_recording",
+            "recording_timestamp": datetime.now(UTC).isoformat(),
+            "current_event": {
+                "recording": {
+                    "audio_paths": {
+                        "microphone": "mic.wav",
+                        "system": "sys.wav"
+                    }
+                }
             },
-            context=EventContext(correlation_id="test_id", source_plugin="test_plugin"),
-        )
+            "metadata": {"test": "data"},
+            "event": "recording.ended",
+            "source_plugin": "test_plugin",
+        }
 
         with patch.object(initialized_plugin, "_process_audio_files") as mock_process:
             mock_process.return_value = None
