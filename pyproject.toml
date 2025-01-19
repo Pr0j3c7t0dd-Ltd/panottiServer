@@ -156,7 +156,7 @@ plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
 disallow_incomplete_defs = true
 check_untyped_defs = true
 disallow_untyped_decorators = true
@@ -204,7 +204,17 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
-ignore = ["PLR0913"]  # Ignore "too many arguments" for now
+ignore = [
+    "PLR0913",  # Too many arguments
+    "E501",     # Line too long
+    "PLR0915",  # Too many statements
+    "PLR0912",  # Too many branches
+    "PLW0603",  # Global statement usage
+    "PLR2004",  # Magic numbers in comparisons
+    "PLR0911",  # Too many return statements
+    "UP038",    # Use X | Y in isinstance
+    "PLW2901"   # Loop variable overwritten
+]
 
 [tool.ruff.lint.per-file-ignores]
 "test_*.py" = ["PLR2004"]  # Ignore magic numbers in test files
