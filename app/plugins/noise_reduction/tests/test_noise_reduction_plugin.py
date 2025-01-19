@@ -3,6 +3,7 @@ import numpy as np
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 import concurrent.futures
+from datetime import datetime, UTC
 
 from app.plugins.base import PluginConfig
 from app.plugins.noise_reduction.plugin import NoiseReductionPlugin, AudioPaths
@@ -247,11 +248,16 @@ class TestNoiseReductionPlugin(BasePluginTest):
             name="recording.ended",
             data={
                 "recording_id": "test_recording",
-                "microphone_audio_path": "mic.wav",
+                "recording_timestamp": datetime.now(UTC).isoformat(),
                 "system_audio_path": "sys.wav",
-                "metadata": {"test": "data"}
+                "microphone_audio_path": "mic.wav",
+                "metadata": {"test": "data"},
+                "event": "recording.ended"
             },
-            context=EventContext(correlation_id="test_id")
+            context=EventContext(
+                correlation_id="test_id",
+                source_plugin="test_plugin"
+            )
         )
 
         with patch.object(initialized_plugin, '_process_audio_files') as mock_process:
