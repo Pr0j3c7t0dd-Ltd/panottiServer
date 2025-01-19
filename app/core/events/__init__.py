@@ -4,20 +4,14 @@ from abc import abstractmethod
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from app.models.recording.events import (
-    RecordingEndRequest,
-    RecordingEvent,
-    RecordingStartRequest,
-)
-
 from .bus import EventBus as ConcreteEventBus
-from .models import Event, EventContext, EventPriority
+from .models import Event, EventPriority
 from .persistence import EventProcessingStatus, EventStore
+from .types import EventContext, EventHandler
+from .handlers import handle_recording_ended, handle_recording_started
 
 # Type for any event data
-EventData = (
-    dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest
-)
+EventData = Any  # Simplified to avoid circular import
 
 
 class EventBus(Protocol):
@@ -57,3 +51,9 @@ __all__ = [
     "EventStore",
     "EventProcessingStatus",
 ]
+
+
+async def register_core_handlers(event_bus: ConcreteEventBus) -> None:
+    """Register core event handlers with the event bus."""
+    await event_bus.subscribe("recording.started", handle_recording_started)
+    await event_bus.subscribe("recording.ended", handle_recording_ended)

@@ -7,24 +7,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.models.recording.events import (
-    RecordingEndRequest,
-    RecordingEvent,
-    RecordingStartRequest,
-)
-from app.core.events import Event, EventContext
-
+# Remove core.events imports since they create circular dependencies
+# The _serialize_object method will handle any Pydantic model generically
 
 class JSONFormatter(logging.Formatter):
     def __init__(self) -> None:
         super().__init__()
 
     def _serialize_object(self, obj: Any) -> Any:
-        if isinstance(
-            obj, (RecordingEvent, RecordingStartRequest, RecordingEndRequest, Event)
-        ):
-            return obj.model_dump()
-        if isinstance(obj, EventContext):
+        if hasattr(obj, "model_dump"):  # Handle any Pydantic model
             return obj.model_dump()
         if isinstance(obj, datetime):
             return obj.isoformat()

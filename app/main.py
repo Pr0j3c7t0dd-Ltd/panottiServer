@@ -23,7 +23,7 @@ from app.models.recording.events import (
     RecordingEvent,
     RecordingStartRequest,
 )
-from app.core.events import ConcreteEventBus as bus
+from app.core.events.bus import EventBus
 from app.core.events import EventStore
 from app.plugins.manager import PluginManager
 from app.utils.directory_sync import DirectorySync
@@ -114,7 +114,7 @@ async def startup() -> None:
 
     # Initialize event bus
     logger.info("Initializing event bus")
-    event_bus = bus.EventBus()
+    event_bus = EventBus()
     await event_bus.start()
 
     # Initialize plugin manager

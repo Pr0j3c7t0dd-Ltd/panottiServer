@@ -8,21 +8,13 @@ from collections.abc import Callable, Coroutine
 from datetime import datetime
 from typing import Any
 
-from app.models.recording.events import (
-    RecordingEndRequest,
-    RecordingEvent,
-    RecordingStartRequest,
-)
 from app.utils.logging_config import get_logger
+from .types import EventHandler
 
 logger = get_logger(__name__)
 
-# Type alias for event handler functions
-EventHandler = Callable[
-    [dict[str, Any] | RecordingEvent | RecordingStartRequest | RecordingEndRequest],
-    Coroutine[Any, Any, None],
-]
-
+# Use Any for event types to break circular dependencies
+EventData = Any  # Generic type for event data
 
 class EventBus:
     """Event bus for handling event subscriptions and publishing."""
@@ -33,9 +25,7 @@ class EventBus:
         self._lock = asyncio.Lock()
         self._processed_events: dict[str, datetime] = {}  # event_id -> timestamp
         self._pending_tasks: set[asyncio.Task] = set()
-        self._cleanup_events_task = (
-            None  # Will be initialized when event loop is available
-        )
+        self._cleanup_events_task = None  # Will be initialized when event loop is available
         self._req_id = str(uuid.uuid4())
         logger.info(
             "Event bus initialized",
@@ -263,13 +253,7 @@ class EventBus:
         async with self._lock:
             self._processed_events[event_id] = datetime.utcnow()
 
-    def _get_event_name(
-        self,
-        event: dict[str, Any]
-        | RecordingEvent
-        | RecordingStartRequest
-        | RecordingEndRequest,
-    ) -> str | None:
+    def _get_event_name(self, event: Any) -> str | None:
         """Get event name from event field.
 
         Args:
@@ -283,10 +267,6 @@ class EventBus:
             if isinstance(event, dict):
                 # Try both 'event' and 'name' fields for dict events
                 event_name = event.get("event") or event.get("name")
-            elif isinstance(
-                event, (RecordingEvent, RecordingStartRequest, RecordingEndRequest)
-            ):
-                event_name = event.event
             elif hasattr(event, "event"):
                 event_name = event.event
             elif hasattr(event, "name"):
@@ -301,7 +281,6 @@ class EventBus:
                     "event_name": event_name,
                     "event_data": str(event),
                     "is_dict": isinstance(event, dict),
-                    "is_recording_event": isinstance(event, RecordingEvent),
                     "has_event_attr": hasattr(event, "event"),
                     "has_name_attr": hasattr(event, "name"),
                 },
@@ -321,13 +300,7 @@ class EventBus:
             )
             return None
 
-    def _get_event_id(
-        self,
-        event: dict[str, Any]
-        | RecordingEvent
-        | RecordingStartRequest
-        | RecordingEndRequest,
-    ) -> str:
+    def _get_event_id(self, event: Any) -> str:
         """Get event ID from event field.
 
         Args:
@@ -347,19 +320,6 @@ class EventBus:
                         # Use event type and source only for uniqueness
                         return f"{event_id}_{event_type}_{source}"
                 return str(uuid.uuid4())
-            elif isinstance(
-                event, (RecordingEvent, RecordingStartRequest, RecordingEndRequest)
-            ):
-                # Use event_id if available, otherwise generate a unique one
-                if hasattr(event, "event_id") and event.event_id:
-                    return event.event_id
-                source = (
-                    getattr(event.context, "source_plugin", "unknown")
-                    if hasattr(event, "context")
-                    else "unknown"
-                )
-                # Use recording ID, event type and source for uniqueness
-                return f"{event.recording_id}_{event.event}_{source}"
             elif hasattr(event, "event_id") and event.event_id:
                 return event.event_id
             elif hasattr(event, "recording_id"):
@@ -508,13 +468,7 @@ class EventBus:
                     },
                 )
 
-    async def publish(
-        self,
-        event: dict[str, Any]
-        | RecordingEvent
-        | RecordingStartRequest
-        | RecordingEndRequest,
-    ) -> None:
+    async def publish(self, event: Any) -> None:
         """Publish an event to all subscribers.
 
         Args:

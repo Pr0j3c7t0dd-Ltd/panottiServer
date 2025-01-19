@@ -1,4 +1,4 @@
-"""Event system models."""
+"""Core event models."""
 
 from datetime import datetime
 from enum import Enum
@@ -6,6 +6,8 @@ from typing import Any, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from .types import EventContext
 
 
 class EventPriority(str, Enum):
@@ -15,15 +17,6 @@ class EventPriority(str, Enum):
     NORMAL = "normal"
     HIGH = "high"
     CRITICAL = "critical"
-
-
-class EventContext(BaseModel):
-    """Context information for an event."""
-
-    correlation_id: str = Field(default_factory=lambda: str(uuid4()))
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    source_plugin: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class Event(BaseModel):
