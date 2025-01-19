@@ -1,8 +1,7 @@
 import pytest
-from unittest.mock import AsyncMock
 
-from app.plugins.base import PluginBase, PluginConfig
 from app.core.events import ConcreteEventBus as EventBus
+from app.plugins.base import PluginBase, PluginConfig
 
 
 class BasePluginTest:

@@ -17,14 +17,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 
+from app.core.events import EventStore
+from app.core.events.bus import EventBus
 from app.models.database import DatabaseManager
 from app.models.recording.events import (
     RecordingEndRequest,
     RecordingEvent,
     RecordingStartRequest,
 )
-from app.core.events.bus import EventBus
-from app.core.events import EventStore
 from app.plugins.manager import PluginManager
 from app.utils.directory_sync import DirectorySync
 from app.utils.logging_config import setup_logging

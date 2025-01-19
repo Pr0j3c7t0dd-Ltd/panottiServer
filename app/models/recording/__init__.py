@@ -1,7 +1,11 @@
 """Recording module."""
 
-from .events import RecordingEvent, RecordingStartRequest, RecordingEndRequest
-from app.core.events.handlers.recording import handle_recording_started, handle_recording_ended
+from app.core.events.handlers.recording import (
+    handle_recording_ended,
+    handle_recording_started,
+)
+
+from .events import RecordingEndRequest, RecordingEvent, RecordingStartRequest
 
 __all__ = [
     "RecordingEvent",

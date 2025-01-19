@@ -8,10 +8,10 @@ from typing import Any, cast
 
 import aiohttp
 
-from app.models.recording.events import RecordingEvent
-from app.plugins.base import PluginBase, PluginConfig
 from app.core.events import ConcreteEventBus as EventBus
 from app.core.events import Event, EventContext
+from app.models.recording.events import RecordingEvent
+from app.plugins.base import PluginBase
 from app.utils.logging_config import get_logger
 
 EventData = dict[str, Any] | RecordingEvent

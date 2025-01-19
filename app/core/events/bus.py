@@ -4,17 +4,18 @@ import asyncio
 import traceback
 import uuid
 from collections import defaultdict
-from collections.abc import Callable, Coroutine
 from datetime import datetime
 from typing import Any
 
 from app.utils.logging_config import get_logger
+
 from .types import EventHandler
 
 logger = get_logger(__name__)
 
 # Use Any for event types to break circular dependencies
 EventData = Any  # Generic type for event data
+
 
 class EventBus:
     """Event bus for handling event subscriptions and publishing."""
@@ -25,7 +26,9 @@ class EventBus:
         self._lock = asyncio.Lock()
         self._processed_events: dict[str, datetime] = {}  # event_id -> timestamp
         self._pending_tasks: set[asyncio.Task] = set()
-        self._cleanup_events_task = None  # Will be initialized when event loop is available
+        self._cleanup_events_task = (
+            None  # Will be initialized when event loop is available
+        )
         self._req_id = str(uuid.uuid4())
         logger.info(
             "Event bus initialized",

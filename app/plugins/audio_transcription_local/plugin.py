@@ -531,7 +531,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         # Write transcript to file
-        with open(output_path, "w", encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(f"# {label}'s Transcript\n\n")
             # Add actual transcription logic here
             f.write("Transcript content would go here\n")

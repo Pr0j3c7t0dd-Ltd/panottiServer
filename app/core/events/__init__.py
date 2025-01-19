@@ -5,10 +5,10 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from .bus import EventBus as ConcreteEventBus
+from .handlers import handle_recording_ended, handle_recording_started
 from .models import Event, EventPriority
 from .persistence import EventProcessingStatus, EventStore
-from .types import EventContext, EventHandler
-from .handlers import handle_recording_ended, handle_recording_started
+from .types import EventContext
 
 # Type for any event data
 EventData = Any  # Simplified to avoid circular import

@@ -11,8 +11,8 @@ from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
-from app.models.database import DatabaseManager
 from app.core.events.types import EventContext
+from app.models.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 

@@ -9,8 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from dotenv import load_dotenv
-from app.models.recording.events import RecordingEvent
-from app.plugins.base import PluginBase, PluginConfig
+
 from app.core.events import ConcreteEventBus as EventBus
 
 # Add project root to Python path

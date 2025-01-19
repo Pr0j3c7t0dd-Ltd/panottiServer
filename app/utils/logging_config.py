@@ -10,6 +10,7 @@ from typing import Any
 # Remove core.events imports since they create circular dependencies
 # The _serialize_object method will handle any Pydantic model generically
 
+
 class JSONFormatter(logging.Formatter):
     def __init__(self) -> None:
         super().__init__()

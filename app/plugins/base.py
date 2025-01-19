@@ -6,12 +6,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
+from app.core.events import ConcreteEventBus as EventBus
 from app.models.recording.events import (
     RecordingEndRequest,
     RecordingEvent,
     RecordingStartRequest,
 )
-from app.core.events import ConcreteEventBus as EventBus
 from app.utils.logging_config import get_logger
 
 # Define a type for all possible event types

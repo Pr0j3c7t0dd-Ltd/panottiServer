@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from .models import Event
 from app.utils.logging_config import get_logger
+
+from .models import Event
 
 logger = get_logger(__name__)
 

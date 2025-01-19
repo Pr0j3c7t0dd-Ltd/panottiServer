@@ -1,12 +1,12 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
-from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import Event
 from app.plugins.base import PluginConfig
 from app.plugins.cleanup_files.plugin import CleanupFilesPlugin
-from app.core.events import Event, ConcreteEventBus as EventBus
-from app.models.recording.events import RecordingEvent
 from tests.plugins.test_plugin_interface import BasePluginTest
 
 
@@ -23,8 +23,8 @@ class TestCleanupFilesPlugin(BasePluginTest):
             config={
                 "include_dirs": ["data", "temp"],
                 "exclude_dirs": ["protected"],
-                "cleanup_delay": 5
-            }
+                "cleanup_delay": 5,
+            },
         )
 
     @pytest.fixture
@@ -44,31 +44,31 @@ class TestCleanupFilesPlugin(BasePluginTest):
     async def test_cleanup_files_initialization(self, plugin):
         """Test cleanup files plugin specific initialization"""
         await plugin.initialize()
-        
+
         # Verify thread pool initialization
         assert plugin._executor is not None
-        
+
         # Verify event subscription
         plugin.event_bus.subscribe.assert_called_once_with(
             "desktop_notification.completed",
-            plugin.handle_desktop_notification_completed
+            plugin.handle_desktop_notification_completed,
         )
 
     async def test_cleanup_files_shutdown(self, plugin):
         """Test cleanup files plugin specific shutdown"""
         await plugin.initialize()
-        
+
         # Mock the executor's shutdown method
         plugin._executor.shutdown = MagicMock()
-        
+
         await plugin.shutdown()
-        
+
         # Verify event unsubscription
         plugin.event_bus.unsubscribe.assert_called_once_with(
             "desktop_notification.completed",
-            plugin.handle_desktop_notification_completed
+            plugin.handle_desktop_notification_completed,
         )
-        
+
         # Verify thread pool shutdown
         plugin._executor.shutdown.assert_called_once()
 
@@ -76,19 +76,17 @@ class TestCleanupFilesPlugin(BasePluginTest):
         """Test handling desktop notification completed with dict event"""
         event_data = {
             "recording_id": "test_recording",
-            "data": {
-                "recording_id": "test_recording"
-            }
+            "data": {"recording_id": "test_recording"},
         }
 
-        with patch.object(plugin, '_cleanup_files') as mock_cleanup:
+        with patch.object(plugin, "_cleanup_files") as mock_cleanup:
             mock_cleanup.return_value = ["file1.txt", "file2.txt"]
-            
+
             await plugin.initialize()
             await plugin.handle_desktop_notification_completed(event_data)
-            
+
             mock_cleanup.assert_called_once_with("test_recording")
-            
+
             # Verify completion event was published
             plugin.event_bus.publish.assert_called()
             publish_call = plugin.event_bus.publish.call_args
@@ -103,29 +101,25 @@ class TestCleanupFilesPlugin(BasePluginTest):
         """Test handling desktop notification completed with Event object"""
         event = Event(
             name="desktop_notification.completed",
-            data={
-                "recording_id": "test_recording"
-            }
+            data={"recording_id": "test_recording"},
         )
 
-        with patch.object(plugin, '_cleanup_files') as mock_cleanup:
+        with patch.object(plugin, "_cleanup_files") as mock_cleanup:
             mock_cleanup.return_value = ["file1.txt"]
-            
+
             await plugin.initialize()
             await plugin.handle_desktop_notification_completed(event)
-            
+
             mock_cleanup.assert_called_once_with("test_recording")
 
     async def test_handle_desktop_notification_completed_no_recording_id(self, plugin):
         """Test handling desktop notification completed with missing recording id"""
-        event_data = {
-            "data": {}
-        }
+        event_data = {"data": {}}
 
-        with patch.object(plugin, '_cleanup_files') as mock_cleanup:
+        with patch.object(plugin, "_cleanup_files") as mock_cleanup:
             await plugin.initialize()
             await plugin.handle_desktop_notification_completed(event_data)
-            
+
             mock_cleanup.assert_not_called()
 
     async def test_cleanup_files_config(self, plugin):
@@ -134,11 +128,11 @@ class TestCleanupFilesPlugin(BasePluginTest):
         assert all(isinstance(d, Path) for d in plugin.include_dirs)
         assert str(plugin.include_dirs[0]) == "data"
         assert str(plugin.include_dirs[1]) == "temp"
-        
+
         assert len(plugin.exclude_dirs) == 1
         assert all(isinstance(d, Path) for d in plugin.exclude_dirs)
         assert str(plugin.exclude_dirs[0]) == "protected"
-        
+
         assert plugin.cleanup_delay == 5
 
     async def test_event_bus_methods(self, plugin):
@@ -164,8 +158,10 @@ class TestCleanupFilesPlugin(BasePluginTest):
         plugin.event_bus.publish.assert_called_once_with(test_event)
 
         await plugin.unsubscribe("test_event", test_callback)
-        plugin.event_bus.unsubscribe.assert_called_once_with("test_event", test_callback)
+        plugin.event_bus.unsubscribe.assert_called_once_with(
+            "test_event", test_callback
+        )
 
         assert plugin.event_bus.subscribe.call_count == 1
         assert plugin.event_bus.publish.call_count == 1
-        assert plugin.event_bus.unsubscribe.call_count == 1 
+        assert plugin.event_bus.unsubscribe.call_count == 1

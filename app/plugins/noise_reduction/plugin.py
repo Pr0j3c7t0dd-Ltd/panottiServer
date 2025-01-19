@@ -16,10 +16,10 @@ import soundfile as sf
 from scipy import signal
 from scipy.signal import butter, filtfilt
 
+from app.core.events import ConcreteEventBus as PluginEventBus
 from app.models.database import DatabaseManager, get_db_async
 from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase, PluginConfig
-from app.core.events import ConcreteEventBus as PluginEventBus
 from app.utils.logging_config import get_logger
 
 logger = get_logger("app.plugins.noise_reduction.plugin")

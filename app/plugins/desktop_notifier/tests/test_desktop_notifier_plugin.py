@@ -1,11 +1,11 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 
+import pytest
+
+from app.core.events import Event
 from app.plugins.base import PluginConfig
 from app.plugins.desktop_notifier.plugin import DesktopNotifierPlugin
-from app.core.events import Event
-from app.models.recording.events import RecordingEvent
 from tests.plugins.test_plugin_interface import BasePluginTest
 
 
@@ -25,16 +25,25 @@ class TestDesktopNotifierPlugin(BasePluginTest):
         )
 
     @pytest.fixture
+    def event_bus(self):
+        """Mock event bus fixture with async methods"""
+        mock_bus = AsyncMock()
+        mock_bus.subscribe = AsyncMock()
+        mock_bus.unsubscribe = AsyncMock()
+        mock_bus.publish = AsyncMock()
+        return mock_bus
+
+    @pytest.fixture
     def plugin(self, plugin_config, event_bus):
         """Desktop notifier plugin instance"""
         return DesktopNotifierPlugin(plugin_config, event_bus)
 
     @pytest.fixture
-    def mock_db(self):
+    async def mock_db(self):
         """Mock database manager"""
         with patch('app.models.database.DatabaseManager') as mock:
             db_instance = MagicMock()
-            mock.get_instance.return_value = db_instance
+            mock.get_instance = AsyncMock(return_value=db_instance)
             yield db_instance
 
     async def test_desktop_notifier_initialization(self, plugin, mock_db):
@@ -140,4 +149,25 @@ class TestDesktopNotifierPlugin(BasePluginTest):
             assert any(
                 call.args[0].event == "meeting_notes.error"
                 for call in plugin.event_bus.publish.call_args_list
-            ) 
+            )
+
+    async def test_event_bus_methods(self, plugin, event_bus):
+        """Test event bus integration methods"""
+        test_event = {"name": "test_event", "data": {}}
+
+        # Test subscribe/unsubscribe
+        callback_called = False
+
+        async def test_callback(event):
+            nonlocal callback_called
+            callback_called = True
+
+        await plugin.subscribe("test_event", test_callback)
+        event_bus.subscribe.assert_called_once_with("test_event", test_callback)
+
+        await plugin.publish(test_event)
+        event_bus.publish.assert_called_once_with(test_event)
+
+        # Test unsubscribe
+        await plugin.unsubscribe("test_event", test_callback)
+        event_bus.unsubscribe.assert_called_once_with("test_event", test_callback)
