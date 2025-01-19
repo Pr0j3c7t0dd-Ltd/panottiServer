@@ -5,7 +5,7 @@ import subprocess
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any
 
 from app.core.events import ConcreteEventBus as EventBus
@@ -189,7 +189,7 @@ class DesktopNotifierPlugin(PluginBase):
                         "current_event": {
                             "desktop_notification": {
                                 "status": "completed",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                                 "notification_type": "terminal-notifier",
                                 "settings": {"auto_open_notes": auto_open},
                             }
@@ -225,7 +225,7 @@ class DesktopNotifierPlugin(PluginBase):
             if self.event_bus and "recording_id" in locals():
                 # Emit error event
                 error_event = RecordingEvent(
-                    recording_timestamp=datetime.utcnow().isoformat(),
+                    recording_timestamp=datetime.now(UTC).isoformat(),
                     recording_id=recording_id,
                     event="meeting_notes.error",
                     data={
@@ -234,14 +234,14 @@ class DesktopNotifierPlugin(PluginBase):
                         "current_event": {
                             "desktop_notification": {
                                 "status": "error",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                                 "error": str(e),
                             }
                         },
                     },
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(UTC).isoformat(),
                         source_plugin=self.name,
                     ),
                 )
@@ -331,7 +331,7 @@ class DesktopNotifierPlugin(PluginBase):
             update_values = [
                 status,
                 error_message,
-                datetime.utcnow().isoformat(),
+                datetime.now(UTC).isoformat(),
                 notes_id,
             ]
             cursor.execute(

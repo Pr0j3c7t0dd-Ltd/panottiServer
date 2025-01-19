@@ -5,7 +5,7 @@ import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -233,14 +233,14 @@ class CleanupFilesPlugin(PluginBase):
                         "current_event": {
                             "cleanup_files": {
                                 "status": "completed",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                                 "cleaned_files": cleaned_files,
                             }
                         },
                     },
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(UTC).isoformat(),
                         source_plugin=self.name,
                     ),
                 )
@@ -285,14 +285,14 @@ class CleanupFilesPlugin(PluginBase):
                         "current_event": {
                             "cleanup_files": {
                                 "status": "error",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                                 "error": str(e),
                             }
                         },
                     },
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(UTC).isoformat(),
                         source_plugin=self.name,
                     ),
                 )
@@ -308,7 +308,7 @@ class CleanupFilesPlugin(PluginBase):
             List of cleaned up file paths
         """
         cleaned_files = []
-        scan_start_time = datetime.utcnow()
+        scan_start_time = datetime.now(UTC)
 
         try:
             logger.debug(
@@ -421,7 +421,7 @@ class CleanupFilesPlugin(PluginBase):
                                     exc_info=True,
                                 )
 
-            scan_end_time = datetime.utcnow()
+            scan_end_time = datetime.now(UTC)
             scan_duration = (scan_end_time - scan_start_time).total_seconds()
 
             logger.info(
@@ -448,7 +448,7 @@ class CleanupFilesPlugin(PluginBase):
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "scan_duration": (
-                        datetime.utcnow() - scan_start_time
+                        datetime.now(UTC) - scan_start_time
                     ).total_seconds(),
                 },
                 exc_info=True,

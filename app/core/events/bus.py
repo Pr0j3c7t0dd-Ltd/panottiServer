@@ -4,7 +4,7 @@ import asyncio
 import traceback
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any
 
 from app.utils.logging_config import get_logger
@@ -67,7 +67,7 @@ class EventBus:
         while True:
             try:
                 await asyncio.sleep(3600)  # Clean up every hour
-                now = datetime.utcnow()
+                now = datetime.now(UTC)
                 async with self._lock:
                     # Remove events older than 1 hour
                     old_events = [
@@ -254,7 +254,7 @@ class EventBus:
             event_id: ID of the event to mark
         """
         async with self._lock:
-            self._processed_events[event_id] = datetime.utcnow()
+            self._processed_events[event_id] = datetime.now(UTC)
 
     def _get_event_name(self, event: Any) -> str | None:
         """Get event name from event field.

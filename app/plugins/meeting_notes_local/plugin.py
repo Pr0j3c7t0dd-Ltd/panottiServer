@@ -2,7 +2,7 @@ import asyncio
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, cast
 
@@ -238,12 +238,12 @@ Keep each bullet point concise but informative]
                     "ollama_url": self.ollama_url,
                     "prompt_length": len(prompt),
                     "num_ctx": self.num_ctx,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
 
             async with aiohttp.ClientSession() as session:
-                start_time = datetime.utcnow()
+                start_time = datetime.now(UTC)
                 async with session.post(
                     self.ollama_url,
                     json={
@@ -256,7 +256,7 @@ Keep each bullet point concise but informative]
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()
-                    end_time = datetime.utcnow()
+                    end_time = datetime.now(UTC)
                     duration = (end_time - start_time).total_seconds()
 
                     # Log response details
@@ -324,11 +324,11 @@ Keep each bullet point concise but informative]
                     "output_path": str(output_file),
                     "notes_path": str(output_file),
                     "status": "completed",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "current_event": {
                         "meeting_notes": {
                             "status": "completed",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                             "output_path": str(output_file),
                         }
                     },
@@ -342,7 +342,7 @@ Keep each bullet point concise but informative]
                     data=event_data,
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(UTC).isoformat(),
                         source_plugin=self.name,
                     ),
                     priority="normal",
@@ -383,7 +383,7 @@ Keep each bullet point concise but informative]
                         "recording_id": recording_id,
                         "meeting_notes": {
                             "status": "error",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                             "error": str(e),
                         },
                         # Preserve previous event data
@@ -513,13 +513,13 @@ Keep each bullet point concise but informative]
                     "output_path": str(output_path),
                     "notes_path": str(output_path),
                     "status": "completed",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "plugin_id": self.name,
                     "data": {
                         "current_event": {
                             "meeting_notes": {
                                 "status": "completed",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                                 "output_path": str(output_path),
                             }
                         }

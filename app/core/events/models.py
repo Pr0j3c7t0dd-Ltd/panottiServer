@@ -1,6 +1,6 @@
 """Core event models."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import Any, cast
 from uuid import uuid4
@@ -123,7 +123,7 @@ class EventError(BaseModel):
 
     event_id: int
     error_message: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     stack_trace: str | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

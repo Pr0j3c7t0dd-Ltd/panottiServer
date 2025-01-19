@@ -2,7 +2,7 @@ import asyncio
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Literal
 
@@ -200,13 +200,13 @@ class MeetingNotesRemotePlugin(PluginBase):
                 "output_path": str(output_path),
                 "notes_path": str(output_path),
                 "status": "completed",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "plugin_id": self.name,
                 "data": {
                     "current_event": {
                         "meeting_notes": {
                             "status": "completed",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                             "output_path": str(output_path),
                         }
                     }
@@ -364,7 +364,7 @@ Keep each bullet point concise but informative]
                     "model": self.model,
                     "prompt_length": len(prompt),
                     "num_ctx": self.num_ctx,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
 
@@ -441,11 +441,11 @@ Keep each bullet point concise but informative]
                     "output_path": str(output_file),
                     "notes_path": str(output_file),
                     "status": "completed",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "current_event": {
                         "meeting_notes": {
                             "status": "completed",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                             "output_path": str(output_file),
                         }
                     },
@@ -463,7 +463,7 @@ Keep each bullet point concise but informative]
                     data=event_data,
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(UTC).isoformat(),
                         source_plugin=self.name,
                     ),
                 )
@@ -503,7 +503,7 @@ Keep each bullet point concise but informative]
                         "recording_id": recording_id,
                         "meeting_notes": {
                             "status": "error",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                             "error": str(e),
                         },
                         # Preserve previous event data

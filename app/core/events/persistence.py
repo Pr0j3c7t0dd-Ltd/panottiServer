@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 
 from app.utils.logging_config import get_logger
 
@@ -33,7 +33,7 @@ class EventStore:
         # Initialize event status
         self._status[event.event_id] = {
             "status": EventProcessingStatus.PENDING,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(UTC),
             "error": None,
         }
 
@@ -65,7 +65,7 @@ class EventStore:
                     if success
                     else EventProcessingStatus.FAILED
                 ),
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(UTC),
                 "error": error,
             }
         )
