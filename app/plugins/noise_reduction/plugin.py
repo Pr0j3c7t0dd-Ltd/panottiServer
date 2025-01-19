@@ -705,12 +705,18 @@ class NoiseReductionPlugin(PluginBase):
     async def process_recording(self, recording_id: str, event_data: EventData) -> None:
         """Called from code to process a recording with the configured approach."""
         try:
-            logger.info("Starting audio processing", extra={...})
+            logger.info("Starting audio processing", extra={
+                "recording_id": recording_id,
+                "event_data": str(event_data)
+            })
             # Extract mic/system paths from event_data ...
             # Then call _process_audio_files ...
             pass
         except Exception:
-            logger.error("Failed to process recording", extra={...}, exc_info=True)
+            logger.error("Failed to process recording", extra={
+                "recording_id": recording_id,
+                "event_data": str(event_data)
+            }, exc_info=True)
             raise
 
     def _translate_path_to_container(self, local_path: str | None) -> str | None:
