@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from dotenv import load_dotenv
 
-from app.core.events import ConcreteEventBus as EventBus
+from app.plugins.base import PluginBase, PluginConfig
+from app.core.events.bus import EventBus
 
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
@@ -78,3 +79,32 @@ def mock_db():
         db_instance = MagicMock()
         mock.get_instance.return_value = db_instance
         yield db_instance
+
+
+# Test implementation of PluginBase for testing
+class _TestPluginImpl(PluginBase):
+    async def _initialize(self) -> None:
+        pass
+
+    async def _shutdown(self) -> None:
+        pass
+
+
+@pytest.fixture
+def test_plugin_impl(plugin_config, event_bus):
+    return _TestPluginImpl(plugin_config, event_bus)
+
+
+@pytest.fixture
+def plugin_config():
+    return PluginConfig(
+        name="test_plugin",
+        version="1.0.0",
+        enabled=True,
+        config={"test_key": "test_value"}
+    )
+
+
+@pytest.fixture
+def event_bus():
+    return AsyncMock(spec=EventBus)
