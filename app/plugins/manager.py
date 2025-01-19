@@ -212,7 +212,7 @@ class PluginManager:
                         extra={
                             "req_id": self._req_id,
                             "config_file": str(config_file),
-                            "config": config.dict(),
+                            "config": config.model_dump(),
                         },
                     )
                     self.configs[config.name] = config  # Store in self.configs
@@ -501,8 +501,12 @@ class PluginManager:
             if not plugin_class:
                 raise ValueError(f"No plugin class found in {module_name}")
 
-            # Initialize plugin
-            plugin = plugin_class(self.configs, self.event_bus)
+            # Get plugin config
+            if module_name not in self.configs:
+                raise ValueError(f"No config found for plugin {module_name}")
+
+            # Initialize plugin with its specific config
+            plugin = plugin_class(self.configs[module_name], self.event_bus)
             await plugin._initialize()
 
             self.plugins[module_name] = plugin
