@@ -23,11 +23,10 @@ os.environ["LOG_LEVEL"] = "DEBUG"
 
 
 @pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create an event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def event_loop_policy():
+    """Create and set a test event loop policy."""
+    policy = asyncio.get_event_loop_policy()
+    return policy
 
 
 @pytest.fixture(autouse=True)
