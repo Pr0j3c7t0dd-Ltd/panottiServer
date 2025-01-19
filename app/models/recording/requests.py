@@ -1,6 +1,6 @@
 """Request models for recording endpoints."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -13,7 +13,7 @@ class RecordingEndRequest(BaseModel):
         ..., description="Unique identifier of the recording to end"
     )
     end_time: datetime = Field(
-        default_factory=datetime.utcnow, description="Time when the recording ended"
+        default_factory=lambda: datetime.now(UTC), description="Time when the recording ended"
     )
     metadata: Optional[dict] = Field(
         default=None, description="Optional metadata about the recording"
