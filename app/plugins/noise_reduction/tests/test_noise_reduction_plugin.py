@@ -1,7 +1,8 @@
 import concurrent.futures
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, Mock
+import asyncio
 
 import numpy as np
 import pytest
@@ -41,7 +42,6 @@ class TestNoiseReductionPlugin(BasePluginTest):
     def plugin(self, plugin_config, event_bus):
         """Noise reduction plugin instance"""
         plugin = NoiseReductionPlugin(plugin_config, event_bus)
-        plugin._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         return plugin
 
     @pytest.fixture
@@ -52,12 +52,30 @@ class TestNoiseReductionPlugin(BasePluginTest):
         return db_instance
 
     @pytest.fixture
-    async def initialized_plugin(self, plugin, mock_db):
+    def mock_executor(self):
+        """Mock thread pool executor"""
+        with patch('concurrent.futures.ThreadPoolExecutor') as mock:
+            executor = Mock()
+            executor.shutdown = Mock()  # Use regular Mock since this is called synchronously
+            mock.return_value = executor
+            yield executor
+
+    @pytest.fixture
+    async def initialized_plugin(self, plugin, mock_db, mock_executor):
         """Plugin instance that's been initialized with mocked dependencies"""
         with patch("app.models.database.get_db_async", return_value=mock_db):
-            await plugin.initialize()
-            yield plugin
-            await plugin.shutdown()
+            # Mock run_in_executor to actually call the function
+            loop = asyncio.get_event_loop()
+            async def mock_run_in_executor(executor_or_none, func, *args):
+                if func == mock_executor.shutdown:
+                    func(*args)
+                return None
+            with patch.object(loop, 'run_in_executor', side_effect=mock_run_in_executor):
+                await plugin.initialize()
+                # Set the mock executor on the plugin
+                plugin._executor = mock_executor
+                yield plugin
+                await plugin.shutdown()
 
     @pytest.fixture
     def mock_makedirs(self):
@@ -94,13 +112,19 @@ class TestNoiseReductionPlugin(BasePluginTest):
         # Clean up
         await plugin.shutdown()
 
-    async def test_noise_reduction_shutdown(self, initialized_plugin):
+    async def test_noise_reduction_shutdown(self, initialized_plugin, mock_executor):
         """Test noise reduction plugin specific shutdown"""
-        await initialized_plugin.initialize()
-        await initialized_plugin.shutdown()
+        # Mock run_in_executor to actually call the function
+        loop = asyncio.get_event_loop()
+        async def mock_run_in_executor(executor_or_none, func, *args):
+            if func == mock_executor.shutdown:
+                func(*args)
+            return None
+        with patch.object(loop, 'run_in_executor', side_effect=mock_run_in_executor):
+            await initialized_plugin.shutdown()
 
-        # Verify thread pool shutdown
-        assert initialized_plugin._executor.shutdown.called
+        # Verify thread pool shutdown was called with wait=True
+        mock_executor.shutdown.assert_called_once_with(True)
 
     def test_audio_paths_initialization(self):
         """Test AudioPaths class initialization"""
