@@ -1,17 +1,27 @@
 """Common test utilities for event tests."""
 
+from typing import Any
 from unittest.mock import AsyncMock
 
 
-class TestEvent:
-    """Test event class."""
-    def __init__(self, name: str, data: dict, event_id: str | None = None):
-        self.name = name
-        self.data = data
-        self.event_id = event_id
+def create_test_event(name: str, data: dict | None = None, event_id: str | None = None) -> dict[str, Any]:
+    """Create a test event dictionary.
     
-    def __str__(self) -> str:
-        return f"TestEvent(name={self.name}, data={self.data}, event_id={self.event_id})"
+    Args:
+        name: Event name
+        data: Event data
+        event_id: Optional event ID
+        
+    Returns:
+        dict: Event dictionary
+    """
+    event = {
+        "name": name,
+        "data": data or {"data": "value"},
+    }
+    if event_id:
+        event["event_id"] = event_id
+    return event
 
 
 def create_mock_handler(name: str = "mock_handler") -> AsyncMock:

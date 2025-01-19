@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, Mock, patch
 
 from app.core.events.bus import EventBus
-from .test_events_common import TestEvent, create_mock_handler
+from .test_events_common import create_test_event, create_mock_handler
 
 
 @pytest.fixture
@@ -28,9 +28,9 @@ async def event_bus():
 @pytest.fixture
 def test_event():
     """Create a test event instance."""
-    return lambda name="test.event", data=None, event_id=None: TestEvent(
+    return lambda name="test.event", data=None, event_id=None: create_test_event(
         name=name,
-        data=data or {"data": "value"},
+        data=data,
         event_id=event_id
     )
 
