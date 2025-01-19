@@ -7,7 +7,7 @@ import sqlite3
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -894,7 +894,7 @@ class NoiseReductionPlugin(PluginBase):
                             "original_audio_path": microphone_audio_path,
                             "system_audio_path": system_audio_path,
                             "event_id": f"{recording_id}_noise_reduction_completed",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                             "plugin_id": self.name,
                             "metadata": {
                                 "time_domain_subtraction": self._time_domain_subtraction,
