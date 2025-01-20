@@ -1,8 +1,8 @@
 I want to create a plugin using the plugin architecture in the app that will create meeting notes from a transcription file using a local Ollama LLM.
 
-I want the plugin to listen for the 'transcription.completed' even type (see the /app/plugins/audio_transcription/plugin.py for event info) to trigger the processing. 
+I want the plugin to listen for the 'transcription_local.completed' even type (see the /app/plugins/audio_transcription/plugin.py for event info) to trigger the processing. 
 
- The incoming incoming transcript file is in the event's "output_path". The meeting notes file should be saved in markdown format.  check the event emitted from the 'transcription.completed' to get the file for the final merged transcript file as an input into this plugin.
+ The incoming incoming transcript file is in the event's "output_path". The meeting notes file should be saved in markdown format.  check the event emitted from the 'transcription_local.completed' to get the file for the final merged transcript file as an input into this plugin.
 
 The plugin config should include a directory to store the meeting note files in.  The format of the meeting note filename should be in the same format as the input files, e.g. <recording_id>_meeting_notes.md.  Example: 20241216140128_2096E65E_meeting_notes.md
 

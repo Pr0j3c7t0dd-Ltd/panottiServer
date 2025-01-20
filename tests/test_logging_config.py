@@ -65,7 +65,7 @@ def test_json_formatter_format():
     
     # Add custom attributes
     record.req_id = "test-id"
-    record.extra = {"custom_field": "value"}
+    record.custom_field = "value"
     record.additional = "extra_value"
     
     formatted = formatter.format(record)
@@ -152,10 +152,15 @@ def test_get_logger(reset_logging):
         assert all(isinstance(h, type(rh)) for h, rh in zip(logger.handlers, root_logger.handlers))
 
 
-def test_main_execution():
+@pytest.mark.asyncio  # Mark as async test
+async def test_main_execution():
     with patch("app.utils.logging_config.setup_logging") as mock_setup, \
          patch("app.utils.logging_config.get_logger") as mock_get_logger, \
-         patch("app.utils.logging_config.datetime") as mock_datetime:
+         patch("app.utils.logging_config.datetime") as mock_datetime, \
+         patch("app.core.events.bus.EventBus._cleanup_old_events") as mock_cleanup:  # Mock the cleanup coroutine
+        
+        # Make cleanup return immediately
+        mock_cleanup.return_value = None
         
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger

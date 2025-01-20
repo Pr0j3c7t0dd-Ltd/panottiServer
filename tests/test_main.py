@@ -149,7 +149,7 @@ async def test_validation_exception_handler():
     exc = RequestValidationError(errors=[{"loc": ["body"], "msg": "field required", "type": "value_error.missing"}])
     response = await validation_exception_handler(mock_request, exc)
     assert response.status_code == 422
-    response_body = response.body.decode()
+    response_body = bytes(response.body).decode()
     assert "field required" in response_body
     assert "value_error.missing" in response_body
 

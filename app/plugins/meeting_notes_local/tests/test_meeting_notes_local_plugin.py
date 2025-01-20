@@ -125,7 +125,7 @@ Speaker 2: I'll prepare the report by next week.
         """Test handling transcription completed event"""
         transcript_path = Path("test_transcript.txt")
         event_data = {
-            "event": "transcription.completed",
+            "event": "transcription_local.completed",
             "recording_id": "test_recording",
             "transcript_path": str(transcript_path),
             "data": {

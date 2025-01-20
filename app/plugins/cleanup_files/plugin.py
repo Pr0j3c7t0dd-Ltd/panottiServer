@@ -138,6 +138,7 @@ class CleanupFilesPlugin(PluginBase):
     ) -> None:
         """Handle desktop notification completed event."""
         event_id = str(uuid.uuid4())
+        recording_id = "unknown"  # Initialize recording_id at the start
         try:
             logger.debug(
                 "Raw desktop notification completed event received",
@@ -233,14 +234,14 @@ class CleanupFilesPlugin(PluginBase):
                         "current_event": {
                             "cleanup_files": {
                                 "status": "completed",
-                                "timestamp": datetime.now(UTC).isoformat(),
+                                "timestamp": datetime.now(UTC),
                                 "cleaned_files": cleaned_files,
                             }
                         },
                     },
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.now(UTC).isoformat(),
+                        timestamp=datetime.now(UTC),
                         source_plugin=self.name,
                     ),
                 )
@@ -285,14 +286,14 @@ class CleanupFilesPlugin(PluginBase):
                         "current_event": {
                             "cleanup_files": {
                                 "status": "error",
-                                "timestamp": datetime.now(UTC).isoformat(),
+                                "timestamp": datetime.now(UTC),
                                 "error": str(e),
                             }
                         },
                     },
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.now(UTC).isoformat(),
+                        timestamp=datetime.now(UTC),
                         source_plugin=self.name,
                     ),
                 )
@@ -319,7 +320,7 @@ class CleanupFilesPlugin(PluginBase):
                     "include_dirs": [str(d) for d in self.include_dirs],
                     "exclude_dirs": [str(d) for d in self.exclude_dirs],
                     "cleanup_delay": self.cleanup_delay,
-                    "scan_start_time": scan_start_time.isoformat(),
+                    "scan_start_time": scan_start_time,
                 },
             )
 
@@ -432,8 +433,8 @@ class CleanupFilesPlugin(PluginBase):
                     "num_cleaned_files": len(cleaned_files),
                     "cleaned_files": cleaned_files,
                     "scan_duration_seconds": scan_duration,
-                    "scan_start_time": scan_start_time.isoformat(),
-                    "scan_end_time": scan_end_time.isoformat(),
+                    "scan_start_time": scan_start_time,
+                    "scan_end_time": scan_end_time,
                 },
             )
 

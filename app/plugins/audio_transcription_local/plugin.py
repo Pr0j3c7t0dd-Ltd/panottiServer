@@ -6,10 +6,11 @@ import os
 import threading
 import wave
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.core.events.types import EventContext
 import numpy as np
 import soundfile as sf
 from faster_whisper import WhisperModel
@@ -212,10 +213,12 @@ class AudioTranscriptionLocalPlugin(PluginBase):
 
                 # Get original event data
                 original_event = None
-                if hasattr(event_data, "data") and hasattr(
-                    event_data.data, "current_event"
-                ):
-                    original_event = event_data.data.current_event
+                if hasattr(event_data, "data"):
+                    data = event_data.data
+                    if isinstance(data, dict):
+                        original_event = data.get("current_event")
+                    elif hasattr(data, "current_event"):
+                        original_event = data.current_event
 
                 logger.debug(
                     "Original event data (object)",
@@ -403,11 +406,13 @@ class AudioTranscriptionLocalPlugin(PluginBase):
 
         # Create and emit event
         event = RecordingEvent(
-            recording_timestamp=datetime.utcnow().isoformat(),
+            recording_timestamp=datetime.now(tz=timezone.utc).isoformat(),
             recording_id=recording_id,
             event="transcription_local.completed",
             data=event_data,
-            context=original_event.get("context") if original_event else None,
+            context=EventContext(metadata=original_event.get("context", {}).get("metadata", {}) if original_event and "context" in original_event else {}),
+            system_audio_path=original_event.get("system_audio_path") if original_event else None,
+            microphone_audio_path=original_event.get("microphone_audio_path") if original_event else None,
         )
 
         await self.event_bus.publish(event)
@@ -446,7 +451,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             )
             conn.commit()
 
-    def _update_task_status(
+    async def _update_task_status(
         self,
         recording_id: str,
         status: str,
@@ -455,7 +460,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         error_message: str | None = None,
     ) -> None:
         """Update the status of a processing task in the database"""
-        db = DatabaseManager.get_instance()
+        db = await DatabaseManager.get_instance()
         with db.get_connection() as conn:
             cursor = conn.cursor()
             update_values = [
@@ -477,9 +482,9 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             )
             conn.commit()
 
-    def _create_task(self, recording_id: str, input_paths: list[str]) -> None:
+    async def _create_task(self, recording_id: str, input_paths: list[str]) -> None:
         """Create a new processing task in the database"""
-        db = DatabaseManager.get_instance()
+        db = await DatabaseManager.get_instance()
         with db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -530,13 +535,49 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         # Create output directory if it doesn't exist
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        # Write transcript to file
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(f"# {label}'s Transcript\n\n")
-            # Add actual transcription logic here
-            f.write("Transcript content would go here\n")
+        # Ensure model is initialized
+        if self._model is None:
+            self._init_model()
 
-        return Path(output_path)
+        # Run transcription in thread pool
+        loop = asyncio.get_running_loop()
+        try:
+            segments, _ = await loop.run_in_executor(
+                self._executor,
+                lambda: self._model.transcribe(  # type: ignore[union-attr]
+                    audio_path,
+                    condition_on_previous_text=False,  # Don't condition on previous text for accurate timestamps
+                    word_timestamps=True,  # Get accurate word-level timestamps
+                    vad_filter=True,  # Use voice activity detection
+                    vad_parameters=dict(
+                        min_silence_duration_ms=500,  # Minimum silence duration to split segments
+                        speech_pad_ms=100,  # Padding around speech segments
+                    ),
+                    beam_size=5,  # Increase beam size for better word-level timestamps
+                )
+            )
+
+            # Write transcript to file
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(f"# {label}'s Transcript\n\n")
+                for segment in segments:
+                    # Format timestamp as [MM:SS.mmm]
+                    start_time = str(datetime.utcfromtimestamp(segment.start).strftime("%M:%S.%f"))[:-3]
+                    end_time = str(datetime.utcfromtimestamp(segment.end).strftime("%M:%S.%f"))[:-3]
+                    f.write(f"[{start_time} - {end_time}] {segment.text}\n")
+
+            return Path(output_path)
+        except Exception as e:
+            logger.error(
+                "Failed to transcribe audio",
+                extra={
+                    "plugin": self.name,
+                    "audio_path": audio_path,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
+            raise
 
     def merge_transcripts(
         self,
@@ -634,7 +675,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 text = text.replace(f"{label}: ", "").strip()
 
                 # Clean up transcript if enabled in config
-                if self.config.config.get("clean_up_transcript", False):
+                if hasattr(self.config, "config") and isinstance(self.config.config, dict) and self.config.config.get("clean_up_transcript", False):
                     text = self._transcript_cleaner.clean_transcript(text)
 
                 f.write(f"[{minutes:02d}:{seconds:05.2f}] {label}: {text}\n")
@@ -679,8 +720,12 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         # Run transcription in thread pool
         loop = asyncio.get_running_loop()
 
+        # Ensure model is initialized
+        if self._model is None:
+            self._init_model()
+
         def run_transcription():
-            return self._model.transcribe(
+            return self._model.transcribe( # type: ignore[union-attr]
                 audio_path,
                 condition_on_previous_text=False,  # Don't condition on previous text for accurate timestamps
                 word_timestamps=True,  # Get accurate word-level timestamps
@@ -771,7 +816,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                                 text = " ".join(current_text).strip()
 
                                 # Clean up transcript if enabled in config
-                                if self.config.config.get("clean_up_transcript", False):
+                                if hasattr(self.config, "config") and isinstance(self.config.config, dict) and self.config.config.get("clean_up_transcript", False):
                                     text = self._transcript_cleaner.clean_transcript(
                                         text
                                     )
@@ -797,7 +842,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                             text = " ".join(current_text).strip()
 
                             # Clean up transcript if enabled in config
-                            if self.config.config.get("clean_up_transcript", False):
+                            if hasattr(self.config, "config") and isinstance(self.config.config, dict) and self.config.config.get("clean_up_transcript", False):
                                 text = self._transcript_cleaner.clean_transcript(text)
 
                             f.write(f"{timestamp} {speaker}{text}\n")
@@ -813,7 +858,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                         text = segment.text.strip()
 
                         # Clean up transcript if enabled in config
-                        if self.config.config.get("clean_up_transcript", False):
+                        if hasattr(self.config, "config") and isinstance(self.config.config, dict) and self.config.config.get("clean_up_transcript", False):
                             text = self._transcript_cleaner.clean_transcript(text)
 
                         f.write(f"{timestamp} {speaker}{text}\n")
@@ -842,16 +887,15 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 device_index=0,
                 compute_type="default",
                 download_root=str(model_dir),
-                local_files_only=True,  # Ensure offline mode
+                local_files_only=False,  # Allow downloading if not present
             )
 
             logger.info(
-                "Faster-Whisper model initialized in offline mode",
+                "Faster-Whisper model initialized",
                 extra={
                     "plugin": self.name,
                     "model_name": model_name,
                     "model_dir": str(model_dir),
-                    "offline_mode": True,
                 },
             )
 

@@ -43,8 +43,13 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         return mock
 
     @pytest.fixture
-    def plugin(self, plugin_config, event_bus, mock_db):
+    def plugin(self, plugin_config, event_bus):
         """Audio transcription local plugin instance"""
+        mock_db = AsyncMock()
+        mock_db.get_instance = AsyncMock(return_value=mock_db)
+        mock_db.get_connection = MagicMock()
+        mock_db.execute = AsyncMock()
+        
         with patch("pathlib.Path.mkdir") as mock_mkdir, patch(
             "app.models.database.DatabaseManager.get_instance", return_value=mock_db
         ):

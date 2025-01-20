@@ -1,4 +1,5 @@
-from datetime import datetime, UTC
+from datetime import datetime, timezone
+from typing import TypedDict, Optional
 
 from app.utils.logging_config import get_logger
 
@@ -15,12 +16,19 @@ class EventProcessingStatus:
     FAILED = "failed"
 
 
+class EventStatusDict(TypedDict, total=True):
+    """Type definition for event status dictionary"""
+    status: str
+    timestamp: datetime
+    error: Optional[str]
+
+
 class EventStore:
     """A simple in-memory event store for persisting and retrieving events."""
 
     def __init__(self) -> None:
         self._events: dict[str, list[Event]] = {}
-        self._status: dict[str, dict] = {}  # event_id -> {status, timestamp, error}
+        self._status: dict[str, EventStatusDict] = {}  # event_id -> {status, timestamp, error}
 
     async def store_event(self, event: Event) -> str:
         """Store an event in memory and return its ID."""
@@ -33,7 +41,7 @@ class EventStore:
         # Initialize event status
         self._status[event.event_id] = {
             "status": EventProcessingStatus.PENDING,
-            "timestamp": datetime.now(UTC),
+            "timestamp": datetime.now(timezone.utc),
             "error": None,
         }
 
@@ -65,7 +73,7 @@ class EventStore:
                     if success
                     else EventProcessingStatus.FAILED
                 ),
-                "timestamp": datetime.now(UTC),
+                "timestamp": datetime.now(timezone.utc),
                 "error": error,
             }
         )
@@ -75,7 +83,7 @@ class EventStore:
             extra={
                 "event_id": event_id,
                 "status": self._status[event_id]["status"],
-                "error": error if error else None,
+                "error": str(error) if error is not None else None,
             },
         )
 
@@ -91,7 +99,7 @@ class EventStore:
                     return event
         return None
 
-    async def get_event_status(self, event_id: str) -> dict | None:
+    async def get_event_status(self, event_id: str) -> EventStatusDict | None:
         """Get the processing status of an event."""
         return self._status.get(event_id)
 

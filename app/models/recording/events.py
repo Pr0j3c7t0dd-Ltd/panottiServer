@@ -89,11 +89,15 @@ class RecordingEvent(BaseModel):
         "recording.started",
         "recording.ended",
         "noise_reduction.completed",
-        "transcription.completed",
-        "transcription.error",
-        "meeting_notes.completed",
-        "meeting_notes.error",
+        "noise_reduction.error",
+        "transcription_local.completed",
+        "transcription_local.error",
+        "meeting_notes_local.completed",
+        "meeting_notes_local.error",
+        "meeting_notes_remote.completed",
+        "meeting_notes_remote.error",
         "desktop_notification.completed",
+        "desktop_notification.error",
     ]
     metadata: dict[str, Any] | EventMetadata | None = None
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -329,11 +333,15 @@ class RecordingStartRequest(BaseModel):
         "recording.started",
         "recording.ended",
         "noise_reduction.completed",
-        "transcription.completed",
-        "transcription.error",
-        "meeting_notes.completed",
-        "meeting_notes.error",
+        "noise_reduction.error",
+        "transcription_local.completed",
+        "transcription_local.error",
+        "meeting_notes_local.completed",
+        "meeting_notes_local.error",
+        "meeting_notes_remote.completed",
+        "meeting_notes_remote.error",
         "desktop_notification.completed",
+        "desktop_notification.error",
     ] = Field(default="recording.started")
     metadata: dict[str, Any] | None = None
     system_audio_path: str | None = None
@@ -393,11 +401,15 @@ class RecordingEndRequest(BaseModel):
         "recording.started",
         "recording.ended",
         "noise_reduction.completed",
-        "transcription.completed",
-        "transcription.error",
-        "meeting_notes.completed",
-        "meeting_notes.error",
+        "noise_reduction.error",
+        "transcription_local.completed",
+        "transcription_local.error",
+        "meeting_notes_local.completed",
+        "meeting_notes_local.error",
+        "meeting_notes_remote.completed",
+        "meeting_notes_remote.error",
         "desktop_notification.completed",
+        "desktop_notification.error",
     ] = Field(default="recording.ended")
     metadata: dict[str, Any]
 

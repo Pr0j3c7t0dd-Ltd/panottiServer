@@ -22,7 +22,7 @@ class EventPriority(str, Enum):
 class Event(BaseModel):
     """Base event model."""
 
-    event_id: str = Field(default_factory=lambda: str(uuid4()))
+    event_id: str | None = Field(default_factory=lambda: str(uuid4()))
     plugin_id: str = Field(default="system")
     name: str = Field(...)  # Required field
     data: dict[str, Any] = Field(default_factory=dict)
@@ -34,7 +34,7 @@ class Event(BaseModel):
 
     @field_validator("event_id", mode="before")
     @classmethod
-    def validate_event_id(cls, value: Any) -> str:
+    def validate_event_id(cls, value: Any) -> str | None:
         """Ensure event has an ID."""
         if value is None:
             return str(uuid4())
@@ -100,30 +100,3 @@ def get_event_name(event: Any) -> str:
     elif isinstance(event, dict):
         return str(event.get("event", "unknown"))
     return "unknown"
-
-
-def get_event_id(event: Any) -> str:
-    """Get event ID from event object.
-
-    Args:
-        event: Any object that might contain event ID information
-
-    Returns:
-        str: The event ID or 'unknown' if not found
-    """
-    if hasattr(event, "recording_id"):
-        return str(event.recording_id)
-    elif isinstance(event, dict):
-        return str(event.get("recording_id", "unknown"))
-    return "unknown"
-
-
-class EventError(BaseModel):
-    """Model for event processing errors"""
-
-    event_id: int
-    error_message: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    stack_trace: str | None = None
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)

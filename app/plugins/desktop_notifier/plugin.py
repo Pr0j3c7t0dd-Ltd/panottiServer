@@ -227,7 +227,7 @@ class DesktopNotifierPlugin(PluginBase):
                 error_event = RecordingEvent(
                     recording_timestamp=datetime.now(UTC).isoformat(),
                     recording_id=recording_id,
-                    event="meeting_notes.error",
+                    event="desktop_notification.error",
                     data={
                         "recording_id": recording_id,
                         "error": str(e),

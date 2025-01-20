@@ -119,37 +119,39 @@ class EventBus:
                 extra={
                     "req_id": self._req_id,
                     "component": "event_bus",
-                    "handler": handler.__name__,
-                    "handler_module": handler.__module__,
-                    "handler_qualname": handler.__qualname__,
-                    "handler_id": id(handler),
+                    "handler": getattr(handler, "__name__", str(handler)) if handler else None,
+                    "handler_module": getattr(handler, "__module__", None) if handler else None,
+                    "handler_qualname": getattr(handler, "__qualname__", None) if handler else None,
+                    "handler_id": id(handler) if handler else None,
                     "event_type": type(event).__name__,
                     "event_data": str(event),
                     "event_id": getattr(event, "event_id", None)
                     or getattr(event, "id", None),
                     "event_name": self._get_event_name(event),
-                    "handler_class": handler.__self__.__class__.__name__
-                    if hasattr(handler, "__self__")
-                    else None,
-                    "handler_instance_id": id(handler.__self__)
-                    if hasattr(handler, "__self__")
-                    else None,
+                    "handler_class": getattr(getattr(handler, "__self__", None), "__class__", None).__name__ if hasattr(handler, "__self__") else None, # type: ignore
+                    "handler_instance_id": id(getattr(handler, "__self__", None)) if hasattr(handler, "__self__") else None,
                     "stack_trace": "".join(traceback.format_stack()),
                 },
             )
 
             # Add pre-execution state check
-            if hasattr(handler, "__self__"):
-                logger.debug(
-                    "Handler instance state",
-                    extra={
-                        "req_id": self._req_id,
-                        "component": "event_bus",
-                        "handler": handler.__name__,
-                        "handler_class": handler.__self__.__class__.__name__,
-                        "handler_instance_vars": vars(handler.__self__),
-                    },
-                )
+            handler_info = {
+                "req_id": self._req_id,
+                "component": "event_bus",
+                "handler": getattr(handler, "__name__", str(handler)),
+            }
+            
+            # Check if it's a bound method and add instance info if available
+            if hasattr(handler, "__self__") and handler.__self__ is not None: # type: ignore
+                handler_info.update({
+                    "handler_class": handler.__self__.__class__.__name__, # type: ignore
+                    "handler_instance_vars": vars(handler.__self__), # type: ignore
+                })
+                
+            logger.debug(
+                "Handler instance state",
+                extra=handler_info,
+            )
 
             # Create a task for the handler and don't wait for it
             handler_task = asyncio.create_task(handler(event))
@@ -161,16 +163,16 @@ class EventBus:
                     exc = task.exception()
                     if exc:
                         logger.error(
-                            f"Error in event handler {handler.__name__}",
+                            f"Error in event handler {getattr(handler, '__name__', str(handler))}",
                             extra={
                                 "req_id": self._req_id,
                                 "component": "event_bus",
                                 "error": str(exc),
                                 "error_type": type(exc).__name__,
-                                "handler": handler.__name__,
-                                "handler_module": handler.__module__,
-                                "handler_qualname": handler.__qualname__,
-                                "handler_id": id(handler),
+                                "handler": getattr(handler, "__name__", str(handler)) if handler else None,
+                                "handler_module": getattr(handler, "__module__", None) if handler else None,
+                                "handler_qualname": getattr(handler, "__qualname__", None) if handler else None,
+                                "handler_id": id(handler) if handler else None,
                                 "event_type": type(event).__name__,
                                 "event_data": str(event),
                                 "event_id": getattr(event, "event_id", None)
@@ -186,10 +188,10 @@ class EventBus:
                             extra={
                                 "req_id": self._req_id,
                                 "component": "event_bus",
-                                "handler": handler.__name__,
-                                "handler_module": handler.__module__,
-                                "handler_qualname": handler.__qualname__,
-                                "handler_id": id(handler),
+                                "handler": getattr(handler, "__name__", str(handler)) if handler else None,
+                                "handler_module": getattr(handler, "__module__", None) if handler else None,
+                                "handler_qualname": getattr(handler, "__qualname__", None) if handler else None,
+                                "handler_id": id(handler) if handler else None,
                                 "event_type": type(event).__name__,
                                 "event_data": str(event),
                                 "event_id": getattr(event, "event_id", None)
@@ -205,7 +207,7 @@ class EventBus:
                             "req_id": self._req_id,
                             "component": "event_bus",
                             "error": str(e),
-                            "handler": handler.__name__,
+                            "handler": getattr(handler, "__name__", str(handler)) if handler else None,
                             "event_id": getattr(event, "event_id", None)
                             or getattr(event, "id", None),
                         },
@@ -215,16 +217,16 @@ class EventBus:
 
         except Exception as e:
             logger.error(
-                f"Error setting up event handler {handler.__name__}",
+                f"Error setting up event handler {getattr(handler, '__name__', str(handler))}",
                 extra={
                     "req_id": self._req_id,
                     "component": "event_bus",
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "handler": handler.__name__,
-                    "handler_module": handler.__module__,
-                    "handler_qualname": handler.__qualname__,
-                    "handler_id": id(handler),
+                    "handler": getattr(handler, "__name__", str(handler)) if handler else None,
+                    "handler_module": getattr(handler, "__module__", None) if handler else None,
+                    "handler_qualname": getattr(handler, "__qualname__", None) if handler else None,
+                    "handler_id": id(handler) if handler else None,
                     "event_type": type(event).__name__,
                     "event_data": str(event),
                     "event_id": getattr(event, "event_id", None)
@@ -283,9 +285,6 @@ class EventBus:
                     "event_type": type(event).__name__,
                     "event_name": event_name,
                     "event_data": str(event),
-                    "is_dict": isinstance(event, dict),
-                    "has_event_attr": hasattr(event, "event"),
-                    "has_name_attr": hasattr(event, "name"),
                 },
             )
             return event_name
@@ -418,14 +417,14 @@ class EventBus:
                     "req_id": self._req_id,
                     "component": "event_bus",
                     "event_name": event_name,
-                    "handler": handler.__name__,
-                    "handler_module": handler.__module__,
+                    "handler": getattr(handler, "__name__", str(handler)) if handler else None,
+                    "handler_module": getattr(handler, "__module__", None) if handler else None,
                     "current_handlers": [
-                        {"name": h.__name__, "module": h.__module__}
+                        {"name": getattr(h, "__name__", str(h)), "module": getattr(h, "__module__", None)}
                         for h in self._subscribers.get(event_name, [])
                     ],
                     "all_subscriptions": {
-                        k: [{"name": h.__name__, "module": h.__module__} for h in v]
+                        k: [{"name": getattr(h, "__name__", str(h)), "module": getattr(h, "__module__", None)} for h in v]
                         for k, v in self._subscribers.items()
                     },
                 },
@@ -439,7 +438,7 @@ class EventBus:
                         "req_id": self._req_id,
                         "component": "event_bus",
                         "event_name": event_name,
-                        "handler": handler.__qualname__,
+                        "handler": getattr(handler, "__qualname__", str(handler)) if handler else None,
                         "subscriber_count": len(self._subscribers[event_name]),
                     },
                 )
@@ -450,8 +449,8 @@ class EventBus:
                         "req_id": self._req_id,
                         "component": "event_bus",
                         "event_name": event_name,
-                        "handler": handler.__name__,
-                        "handler_module": handler.__module__,
+                        "handler": getattr(handler, "__name__", str(handler)) if handler else None,
+                        "handler_module": getattr(handler, "__module__", None) if handler else None,
                     },
                 )
 
@@ -471,7 +470,7 @@ class EventBus:
                         "req_id": self._req_id,
                         "component": "event_bus",
                         "event_name": event_name,
-                        "handler": handler.__qualname__,
+                        "handler": getattr(handler, "__qualname__", str(handler)) if handler else None,
                         "subscriber_count": len(self._subscribers[event_name]),
                     },
                 )
@@ -486,17 +485,22 @@ class EventBus:
             dict: Handler information
         """
         try:
+            if not handler:
+                return {
+                    "name": "None",
+                    "module": None,
+                    "qualname": None,
+                    "id": None,
+                    "class": None,
+                    "instance_id": None
+                }
             return {
-                "name": handler.__name__ if handler else "None",
-                "module": handler.__module__ if handler else "None",
-                "qualname": handler.__qualname__ if handler else "None",
-                "id": id(handler) if handler else 0,
-                "class": handler.__self__.__class__.__name__
-                if handler and hasattr(handler, "__self__")
-                else None,
-                "instance_id": id(handler.__self__)
-                if handler and hasattr(handler, "__self__")
-                else None,
+                "name": getattr(handler, "__name__", str(handler)),
+                "module": getattr(handler, "__module__", None),
+                "qualname": getattr(handler, "__qualname__", None),
+                "id": id(handler),
+                "class": getattr(getattr(handler, "__self__", None), "__class__", None).__name__ if hasattr(handler, "__self__") else None, # type: ignore
+                "instance_id": id(getattr(handler, "__self__", None)) if hasattr(handler, "__self__") else None,
             }
         except Exception as e:
             return {
@@ -565,7 +569,7 @@ class EventBus:
                     "event_type": type(event).__name__,
                     "event_data": str(event),
                     "all_subscriptions": {
-                        name: [h.__name__ for h in hs if h]
+                        name: [getattr(h, "__name__", str(h)) for h in hs if h]
                         for name, hs in self._subscribers.items()
                     },
                 },
@@ -596,9 +600,9 @@ class EventBus:
                         "req_id": self._req_id,
                         "component": "event_bus",
                         "event_name": event_name,
-                        "handler": handler.__name__,
-                        "handler_module": handler.__module__,
-                        "handler_id": id(handler),
+                        "handler": getattr(handler, "__name__", str(handler)) if handler else None,
+                        "handler_module": getattr(handler, "__module__", None) if handler else None,
+                        "handler_id": id(handler) if handler else None,
                         "task_id": id(task),
                         "pending_tasks": len(self._pending_tasks),
                     },
@@ -610,7 +614,7 @@ class EventBus:
                         "req_id": self._req_id,
                         "component": "event_bus",
                         "event_name": event_name,
-                        "handler": str(handler),
+                        "handler": getattr(handler, "__name__", str(handler)) if handler else None,
                         "error": str(e),
                     },
                     exc_info=True,

@@ -4,7 +4,7 @@ This plugin automatically generates meeting notes from transcription files using
 
 ## Features
 
-- Listens for 'transcription.completed' events
+- Listens for 'transcription_local.completed' events
 - Processes transcript files using Ollama LLM
 - Generates structured meeting notes in markdown format
 - Supports concurrent processing using multi-threading
@@ -41,7 +41,7 @@ The configuration supports the following options:
 ## Events
 
 ### Subscribed Events
-- `transcription.completed`: Triggered when a transcript is ready for processing
+- `transcription_local.completed`: Triggered when a transcript is ready for processing
 
 ### Emitted Events
 - `meeting_notes.completed`: Emitted when meeting notes generation is complete

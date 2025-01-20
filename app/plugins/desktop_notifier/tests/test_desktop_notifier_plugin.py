@@ -144,7 +144,7 @@ class TestDesktopNotifierPlugin(BasePluginTest):
 
             # Verify error event was published
             assert any(
-                call.args[0].event == "meeting_notes.error"
+                call.args[0].event in ["meeting_notes_local.error", "meeting_notes_remote.error"]
                 for call in plugin.event_bus.publish.call_args_list
             )
 

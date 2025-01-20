@@ -33,7 +33,7 @@ class FileHandler(FileSystemEventHandler):
             )
             return
 
-        source_path = Path(event.src_path)
+        source_path = Path(str(event.src_path))
         if not source_path.exists():
             logger.warning(
                 "Source file does not exist", extra={"source_path": str(source_path)}

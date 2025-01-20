@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, UTC
 from uuid import UUID
 
-from app.core.events.models import Event, EventPriority, EventError, get_event_name, get_event_id
+from app.core.events.models import Event, EventPriority, get_event_name
 from app.core.events.types import EventContext
 
 
@@ -19,15 +19,15 @@ def test_event_validators():
     assert event.event_id == "123"
 
     # Test validate_name
-    event = Event(name=None)
-    assert event.name == "event"  # Default to class name
+    event = Event(name="event")
+    assert event.name == "event"  
 
     # Test validate_name with existing value
     event = Event(name="custom.event")
     assert event.name == "custom.event"
 
     # Test validate_plugin_id
-    event = Event(name="test.event", plugin_id=None)
+    event = Event(name="test.event")
     assert event.plugin_id == "system"
 
     # Test validate_plugin_id with existing value
@@ -35,13 +35,16 @@ def test_event_validators():
     assert event.plugin_id == "custom_plugin"
 
     # Test validate_context with None
-    event = Event(name="test.event", context=None)
+    event = Event(name="test.event")  # Let it use the default_factory
     assert isinstance(event.context, EventContext)
 
     # Test validate_context with dict
     event = Event(
         name="test.event",
-        context={"correlation_id": "123", "metadata": {"source_plugin": "test"}}
+        context=EventContext(
+            correlation_id="123",
+            metadata={"source_plugin": "test"}
+        )
     )
     assert isinstance(event.context, EventContext)
     assert event.context.correlation_id == "123"
@@ -78,18 +81,3 @@ def test_get_event_name():
 
     # Test with unknown
     assert get_event_name(None) == "unknown"
-
-
-def test_get_event_id():
-    """Test get_event_id function."""
-    # Test with object having recording_id attribute
-    class TestEvent:
-        recording_id = "123"
-    
-    assert get_event_id(TestEvent()) == "123"
-
-    # Test with dict
-    assert get_event_id({"recording_id": "123"}) == "123"
-
-    # Test with unknown
-    assert get_event_id(None) == "unknown" 

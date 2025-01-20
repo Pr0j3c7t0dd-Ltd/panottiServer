@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Script to run database migrations."""
 
+import asyncio
 import logging
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ sys.path.append(str(project_root))
 from app.models.database import DatabaseManager  # noqa: E402
 
 
-def main() -> None:
+async def main() -> None:
     """Run database migrations."""
     # Configure logging
     logging.basicConfig(
@@ -23,7 +24,7 @@ def main() -> None:
 
     try:
         # Get database manager instance and run migrations
-        DatabaseManager.get_instance()
+        await DatabaseManager.get_instance()
 
         # The migrations will run automatically during initialization
         logger.info("Database migrations completed successfully")
@@ -34,4 +35,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

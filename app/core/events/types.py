@@ -14,6 +14,7 @@ class EventContext(BaseModel):
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(default_factory=dict)
+    source_plugin: str | None = Field(default=None)
 
 
 @runtime_checkable

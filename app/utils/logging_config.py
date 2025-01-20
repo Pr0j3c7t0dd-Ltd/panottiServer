@@ -3,7 +3,7 @@ import logging
 import logging.config
 import os
 import uuid
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +28,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_record = {
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
             "logger": record.name,
@@ -36,8 +36,33 @@ class JSONFormatter(logging.Formatter):
         }
 
         # Add all extra fields
-        if hasattr(record, "extra"):
-            for key, value in record.extra.items():
+        for key, value in record.__dict__.items():
+            if key not in [
+                "timestamp",
+                "level",
+                "msg",
+                "args",
+                "exc_info",
+                "exc_text",
+                "levelname",
+                "levelno",
+                "pathname",
+                "filename",
+                "module",
+                "stack_info",
+                "lineno",
+                "funcName",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "processName",
+                "process",
+                "message",
+                "name",
+                "req_id",
+            ]:
                 log_record[key] = self._serialize_object(value)
 
         # Add any exception info
