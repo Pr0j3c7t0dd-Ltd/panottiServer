@@ -103,10 +103,6 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_record, default=self._serialize_object)
 
 
-def generate_request_id() -> str:
-    return str(uuid.uuid4())
-
-
 def setup_logging() -> None:
     """Configure logging for the application."""
     # Create logs directory if it doesn't exist

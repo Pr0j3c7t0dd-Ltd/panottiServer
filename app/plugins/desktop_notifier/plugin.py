@@ -168,7 +168,7 @@ class DesktopNotifierPlugin(PluginBase):
 
             # Record notification in database
             if self.db:
-                async with self.db.get_connection_async() as conn:
+                with self.db.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute(
                         """
@@ -178,7 +178,7 @@ class DesktopNotifierPlugin(PluginBase):
                         """,
                         (recording_id, "meeting_notes_complete"),
                     )
-                    await conn.commit()
+                    conn.commit()
 
             # Emit completion event
             if self.event_bus:
@@ -305,7 +305,7 @@ class DesktopNotifierPlugin(PluginBase):
             return
 
         # Create tables using the connection from our db instance
-        with self.db.get_connection() as conn:
+        async with self.db.get_connection_async() as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS notifications (
@@ -340,14 +340,13 @@ class DesktopNotifierPlugin(PluginBase):
             """,
                 update_values,
             )
-            await conn.commit()
+            conn.commit()
 
     async def _create_task_record(self, notes_id: str, notes_path: str) -> None:
         """Create a new notification task record"""
         db = await DatabaseManager.get_instance()
         async with db.get_connection_async() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+            await conn.execute(
                 """
                 INSERT INTO desktop_notification_tasks
                 (notes_id, status, notes_path)

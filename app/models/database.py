@@ -271,6 +271,22 @@ class DatabaseManager:
             self._local.connection = connection
         return cast(sqlite3.Connection, self._local.connection)
 
+    @asynccontextmanager
+    async def get_connection_async(self, name: str = "default") -> AsyncGenerator[Connection, None]:
+        """Get a database connection asynchronously using a context manager.
+        
+        Args:
+            name: Connection name identifier, defaults to "default"
+            
+        Returns:
+            AsyncGenerator[sqlite3.Connection, None]: SQLite database connection object
+        """
+        conn = self.get_connection(name)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
     async def execute(self, sql: str, parameters: tuple = ()) -> None:
         """Execute a SQL query asynchronously."""
         logger.info(

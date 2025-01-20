@@ -66,10 +66,6 @@ class EventMetadata(BaseModel):
     recording_started: str | None = None
     recording_ended: str | None = None
 
-    def to_db_format(self) -> dict[str, Any]:
-        """Convert event to database format."""
-        return dict(json.loads(self.model_dump_json()))
-
 
 T = TypeVar("T")
 
@@ -167,14 +163,6 @@ class RecordingEvent(BaseModel):
                 raise ValueError("recording_timestamp is required")
             return str(timestamp)
         return v
-
-    def _get_metadata_field(self, field: str) -> Any:
-        """Safely get a field from metadata whether it's a dict or EventMetadata."""
-        if isinstance(self.metadata, EventMetadata):
-            return getattr(self.metadata, field, None)
-        elif isinstance(self.metadata, dict):
-            return self.metadata.get(field)
-        return None
 
     async def save(self) -> None:
         """Save the event to the database."""
