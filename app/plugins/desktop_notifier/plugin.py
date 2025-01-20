@@ -103,6 +103,9 @@ class DesktopNotifierPlugin(PluginBase):
                 },
             )
 
+            # Initialize recording_id with default value
+            recording_id = "unknown"
+
             # Extract data based on event type
             if isinstance(event_data, dict):
                 data = event_data
@@ -122,7 +125,6 @@ class DesktopNotifierPlugin(PluginBase):
             recording_id = (
                 data.get("recording_id")
                 or data.get("data", {}).get("recording_id")
-                or "unknown"
             )
 
             output_path = (
@@ -166,8 +168,9 @@ class DesktopNotifierPlugin(PluginBase):
 
             # Record notification in database
             if self.db:
-                with self.db.get_connection() as conn:
-                    conn.execute(
+                async with self.db.get_connection_async() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
                         """
                         INSERT INTO notifications
                         (recording_id, notification_type)
@@ -175,23 +178,21 @@ class DesktopNotifierPlugin(PluginBase):
                         """,
                         (recording_id, "meeting_notes_complete"),
                     )
-                    conn.commit()
+                    await conn.commit()
 
             # Emit completion event
             if self.event_bus:
                 completion_event = Event(
                     name="desktop_notification.completed",
-                    event="desktop_notification.completed",
-                    recording_id=recording_id,
                     data={
-                        "recording_id": recording_id,
-                        "output_path": output_path,
                         "current_event": {
                             "desktop_notification": {
                                 "status": "completed",
                                 "timestamp": datetime.now(UTC).isoformat(),
                                 "notification_type": "terminal-notifier",
                                 "settings": {"auto_open_notes": auto_open},
+                                "recording_id": recording_id,
+                                "output_path": output_path,
                             }
                         },
                     },
@@ -214,7 +215,7 @@ class DesktopNotifierPlugin(PluginBase):
                 error_msg,
                 extra={
                     "plugin": self.name,
-                    "recording_id": recording_id
+                    "recording_id": recording_id  # type: ignore
                     if "recording_id" in locals()
                     else "unknown",
                     "error": str(e),
@@ -224,12 +225,10 @@ class DesktopNotifierPlugin(PluginBase):
 
             if self.event_bus and "recording_id" in locals():
                 # Emit error event
-                error_event = RecordingEvent(
-                    recording_timestamp=datetime.now(UTC).isoformat(),
-                    recording_id=recording_id,
-                    event="desktop_notification.error",
+                error_event = Event(
+                    name="desktop_notification.error",
                     data={
-                        "recording_id": recording_id,
+                        "recording_id": recording_id,  # type: ignore
                         "error": str(e),
                         "current_event": {
                             "desktop_notification": {
@@ -240,10 +239,9 @@ class DesktopNotifierPlugin(PluginBase):
                         },
                     },
                     context=EventContext(
-                        correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.now(UTC).isoformat(),
-                        source_plugin=self.name,
-                    ),
+                        timestamp=datetime.now(UTC),
+                        metadata={"recording_id": recording_id}  # type: ignore
+                    )
                 )
                 await self.event_bus.publish(error_event)
 
@@ -321,12 +319,12 @@ class DesktopNotifierPlugin(PluginBase):
             )
             conn.commit()
 
-    def _update_task_status(
+    async def _update_task_status(
         self, notes_id: str, status: str, error_message: str | None = None
     ) -> None:
         """Update the status of a notification task in the database"""
-        db = DatabaseManager.get_instance()
-        with db.get_connection() as conn:
+        db = await DatabaseManager.get_instance()
+        async with db.get_connection_async() as conn:
             cursor = conn.cursor()
             update_values = [
                 status,
@@ -342,12 +340,12 @@ class DesktopNotifierPlugin(PluginBase):
             """,
                 update_values,
             )
-            conn.commit()
+            await conn.commit()
 
-    def _create_task_record(self, notes_id: str, notes_path: str) -> None:
+    async def _create_task_record(self, notes_id: str, notes_path: str) -> None:
         """Create a new notification task record"""
-        db = DatabaseManager.get_instance()
-        with db.get_connection() as conn:
+        db = await DatabaseManager.get_instance()
+        async with db.get_connection_async() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -357,4 +355,4 @@ class DesktopNotifierPlugin(PluginBase):
             """,
                 (notes_id, "pending", notes_path),
             )
-            conn.commit()
+            await conn.commit()

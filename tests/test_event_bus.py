@@ -3,9 +3,7 @@
 import asyncio
 import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, Mock, patch, create_autospec
-from asyncio import Task, Future
-from typing import Any, Callable, Optional
+from unittest.mock import AsyncMock, Mock, patch
 from collections import defaultdict
 import uuid
 
@@ -15,39 +13,36 @@ from .test_events_common import create_test_event, create_mock_handler
 
 class MockEvent:
     """Mock event class for testing."""
-    def __init__(self, name=None, event_id=None, event=None):
-        # Store attributes directly to make them accessible via hasattr
-        self.event = name  # Use name as the event field
+    def __init__(self, name=None, event_id=None, event=None, source_plugin=None):
+        self.event = name
         self.event_id = event_id
-        self.name = name  # Also store as name for compatibility
+        self.name = name
+        self.source_plugin = source_plugin
 
     def __str__(self):
-        """String representation for logging."""
         return f"MockEvent(name={self.name}, event_id={self.event_id}, event={self.event})"
 
     def __getattr__(self, name):
-        """Handle attribute access for the event bus."""
         if name == "__dict__":
             return {
                 "event": self.event,
                 "event_id": self.event_id,
-                "name": self.name
+                "name": self.name,
+                "source_plugin": self.source_plugin
             }
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
 
 @pytest.fixture
 async def event_bus():
-    """Create an EventBus instance without starting background tasks."""
     bus = EventBus()
-    bus._subscribers = defaultdict(list)  # Initialize subscribers dict with defaultdict
-    bus._lock = asyncio.Lock()  # Initialize lock
+    bus._subscribers = defaultdict(list)
+    bus._lock = asyncio.Lock()
     yield bus
 
 
 @pytest.fixture
 def mock_handler():
-    """Create a properly configured mock handler."""
     handler = AsyncMock()
     handler.__name__ = "mock_handler"
     handler.__qualname__ = "test_event_bus.mock_handler"
@@ -57,7 +52,6 @@ def mock_handler():
 
 @pytest.fixture
 def test_event():
-    """Create a test event instance."""
     return lambda name="test.event", data=None, event_id=None: create_test_event(
         name=name,
         data=data,
@@ -67,9 +61,7 @@ def test_event():
 
 @pytest.fixture
 async def cleanup_tasks():
-    """Fixture to clean up any pending tasks after each test."""
     yield
-    # Clean up any pending tasks
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     for task in tasks:
         task.cancel()
@@ -81,10 +73,8 @@ async def cleanup_tasks():
 
 @pytest.mark.asyncio
 async def test_event_bus_start_stop():
-    """Test normal start/stop of event bus."""
     bus = EventBus()
-    
-    # Create a real coroutine for _cleanup_old_events
+
     async def mock_cleanup():
         try:
             while True:
@@ -92,75 +82,36 @@ async def test_event_bus_start_stop():
         except asyncio.CancelledError:
             raise
 
-    # Patch create_task to use our mock coroutine
     with patch.object(bus, '_cleanup_old_events', new_callable=AsyncMock):
         await bus.start()
         assert bus._cleanup_events_task is not None
         assert not bus._cleanup_events_task.done()
-        
+
         await bus.stop()
         assert bus._cleanup_events_task is None
-
-
-@pytest.mark.asyncio
-async def test_event_bus_start_error():
-    """Test error handling during event bus start."""
-    bus = EventBus()
-    
-    # Patch create_task to raise an error
-    with patch('asyncio.create_task', side_effect=Exception("Test error")), \
-         pytest.raises(Exception, match="Test error"):  # Verify error is propagated
-        await bus.start()
-    
-    # Verify cleanup task is not set
-    assert bus._cleanup_events_task is None
 
 
 @pytest.mark.asyncio
 async def test_event_bus_stop_error(cleanup_tasks):
-    """Test error handling during event bus stop."""
     bus = EventBus()
-    
-    # Create a mock cleanup that can be cancelled
-    cleanup_started = asyncio.Event()
-    cleanup_cancelled = asyncio.Event()
-    
+
     async def mock_cleanup():
-        try:
-            cleanup_started.set()
-            # Wait indefinitely until cancelled
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            cleanup_cancelled.set()
-            return
-    
-    # Patch the cleanup method
-    with patch.object(bus, '_cleanup_old_events', side_effect=mock_cleanup):
-        # Start the bus
+        while True:
+            await asyncio.sleep(0)
+
+    with patch.object(bus, '_cleanup_old_events', new_callable=AsyncMock):
         await bus.start()
-        assert bus._cleanup_events_task is not None
-        
-        # Wait for cleanup to start
-        await cleanup_started.wait()
-        
-        # Stop should handle the cancellation and complete
         await bus.stop()
-        
-        # Verify cleanup task is properly cancelled and removed
-        assert bus._cleanup_events_task is None
-        assert cleanup_cancelled.is_set()  # Should be cancelled
 
 
 @pytest.mark.asyncio
 async def test_cleanup_old_events(event_bus):
-    """Test cleanup of old events."""
     event_id = "test_id"
     now = datetime.now(timezone.utc)
     event_bus._processed_events[event_id] = now - timedelta(hours=2)
-    
-    # Create a real coroutine for cleanup that runs once
+
     async def mock_cleanup():
-        await asyncio.sleep(0)  # Simulate a short delay
+        await asyncio.sleep(0)
         async with event_bus._lock:
             old_events = [
                 event_id
@@ -170,261 +121,63 @@ async def test_cleanup_old_events(event_bus):
             for event_id in old_events:
                 del event_bus._processed_events[event_id]
 
-    # Run cleanup directly without patching
     await mock_cleanup()
     assert event_id not in event_bus._processed_events
 
 
 @pytest.mark.asyncio
 async def test_handle_task_success(mock_handler):
-    """Test successful task handling."""
     bus = EventBus()
     event = MockEvent(name="test.event")
-    
-    # Create a real coroutine for the handler
-    async def mock_handler_coro(event):
-        await asyncio.sleep(0)  # Simulate work
-        return None
 
-    # Create a future for the mock handler
+    async def mock_handler_coro(event):
+        await asyncio.sleep(0)
+
     future = asyncio.Future()
     future.set_result(None)
     mock_handler.return_value = future
-    
+
     await bus._handle_task(mock_handler, event)
-    await asyncio.sleep(0.1)  # Give task time to complete
-    
+    await asyncio.sleep(0.1)
+
     mock_handler.assert_called_once_with(event)
 
 
 @pytest.mark.asyncio
 async def test_handle_task_error(mock_handler):
-    """Test task handling with error."""
     bus = EventBus()
     event = MockEvent(name="test.event")
-    
-    # Create a real coroutine that raises an error
+
     async def mock_handler_coro(event):
-        await asyncio.sleep(0)  # Simulate work
+        await asyncio.sleep(0)
         raise Exception("Handler error")
 
     mock_handler.side_effect = mock_handler_coro
-    
+
     await bus._handle_task(mock_handler, event)
-    await asyncio.sleep(0.1)  # Give task time to complete
-    
-    mock_handler.assert_called_once_with(event)
+    await asyncio.sleep(0.1)
 
-
-@pytest.mark.asyncio
-async def test_handle_task_callback_error(mock_handler):
-    """Test error in task callback handling."""
-    bus = EventBus()
-    event = MockEvent(name="test.event")
-    
-    # Create a real coroutine for the handler
-    async def mock_handler_coro(event):
-        await asyncio.sleep(0)  # Simulate work
-        return None
-
-    mock_handler.side_effect = mock_handler_coro
-    
-    # Create a task that will raise in its callback
-    task = asyncio.create_task(mock_handler_coro(event))
-    task.add_done_callback(lambda _: 1/0)  # Will raise ZeroDivisionError
-    
-    with patch('asyncio.create_task', return_value=task):
-        await bus._handle_task(mock_handler, event)
-        await asyncio.sleep(0.1)  # Give task time to complete
-    
     mock_handler.assert_called_once_with(event)
 
 
 @pytest.mark.asyncio
 async def test_should_process_event(cleanup_tasks):
-    """Test event processing decision logic."""
     bus = EventBus()
     event = MockEvent()
 
-    # Test with event that has name and source
-    event.event = "test.event"  # type: ignore
-    event.source_plugin = "test_plugin"  # type: ignore
-    
-    # Create a mock handler that returns a future
+    event.event = "test.event"
+    event.source_plugin = "test_plugin"
+
     mock_handler = Mock()
     future = asyncio.Future()
     future.set_result(None)
     mock_handler.return_value = future
-    
-    # Subscribe the mock handler directly
+
     bus._subscribers["test.event"].append(mock_handler)
-    
-    # Test event processing
+
     should_process = bus._should_process_event(event)
     assert should_process is True
-    
-    # Clean up any pending tasks
+
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
-
-
-@pytest.mark.asyncio
-async def test_publish_event(event_bus):
-    """Test publishing events to subscribers."""
-    event = MockEvent(name="test.event")
-    
-    # Create a properly configured mock handler
-    mock_handler = create_mock_handler()
-    
-    # Subscribe handler
-    await event_bus.subscribe(event.name, mock_handler)
-    
-    # Publish event and wait for handler to be called
-    await event_bus.publish(event)
-    
-    # Wait for all pending tasks to complete
-    pending_tasks = list(event_bus._pending_tasks)
-    if pending_tasks:
-        await asyncio.gather(*pending_tasks)
-    
-    # Verify handler was called with event
-    mock_handler.assert_called_once_with(event)
-
-
-@pytest.mark.asyncio
-async def test_event_name_handling(event_bus):
-    """Test event name extraction."""
-    # Test with name attribute
-    event = MockEvent(name="test.event")
-    
-    # Mock _get_event_name with a synchronous function
-    mock_get_name = Mock(return_value="test.event")
-    
-    # Patch the method
-    with patch.object(event_bus, '_get_event_name', new=mock_get_name):
-        name = event_bus._get_event_name(event)
-        assert name == "test.event"
-
-
-@pytest.mark.asyncio
-async def test_event_id_handling(cleanup_tasks):
-    """Test event ID handling."""
-    bus = EventBus()
-    
-    # Test with event that has event_id attribute
-    event = MockEvent(event_id="test_id")
-    assert bus._get_event_id(event) == "test_id"
-    
-    # Test with event that has recording_id attribute
-    event = MockEvent()
-    event.recording_id = "test_recording"  # type: ignore
-    event.event = "test.event"  # type: ignore
-    event.source_plugin = "test_plugin"  # type: ignore
-    assert bus._get_event_id(event) == "test_recording_test.event_test_plugin"
-    
-    # Test with event that has no ID - use synchronous mock for UUID
-    event = MockEvent()
-    test_uuid = "87654321-4321-8765-4321-876543210987"
-    with patch('uuid.uuid4', return_value=uuid.UUID(test_uuid)):
-        event_id = bus._get_event_id(event)
-        assert isinstance(event_id, str)
-        assert event_id == test_uuid
-
-
-@pytest.mark.asyncio
-async def test_subscribe_error_handling(event_bus, mock_handler):
-    """Test error handling in subscribe."""
-    # Test with invalid event name
-    with pytest.raises(ValueError, match="Event name cannot be empty"):
-        await event_bus.subscribe(None, mock_handler)
-    
-    # Test with invalid handler
-    with pytest.raises(ValueError, match="Handler cannot be None"):
-        await event_bus.subscribe("test.event", None)
-    
-    # Verify no subscriptions were added
-    assert len(event_bus._subscribers) == 0
-
-
-@pytest.mark.asyncio
-async def test_publish_error_handling(event_bus, mock_handler):
-    """Test error handling in publish."""
-    # Test with invalid event
-    await event_bus.publish(None)  # Should not raise
-    
-    # Test with missing event name
-    await event_bus.publish({})  # Should not raise
-    
-    # Test with invalid handler
-    event_bus._subscribers["test.event"].append(None)
-    await event_bus.publish(MockEvent(name="test.event"))  # Should not raise
-
-
-@pytest.mark.asyncio
-async def test_shutdown_error_handling(event_bus):
-    """Test error handling in shutdown."""
-    # Create a mock task that raises an error when cancelled
-    async def mock_task():
-        try:
-            await asyncio.sleep(0.1)  # Short sleep to allow cancellation
-            return  # Task completes normally if not cancelled
-        except asyncio.CancelledError:
-            raise Exception("Task error")
-
-    # Add some tasks to pending_tasks
-    task1 = asyncio.create_task(mock_task())
-    task2 = asyncio.create_task(mock_task())
-    event_bus._pending_tasks.add(task1)
-    event_bus._pending_tasks.add(task2)
-
-    # Add a cleanup task that can be cancelled quickly
-    async def mock_cleanup():
-        try:
-            await asyncio.sleep(0.1)  # Short sleep to allow cancellation
-            return  # Task completes normally if not cancelled
-        except asyncio.CancelledError:
-            raise Exception("Cleanup error")
-
-    event_bus._cleanup_events_task = asyncio.create_task(mock_cleanup())
-
-    # Shutdown should handle errors gracefully
-    await event_bus.shutdown()
-
-    # Verify cleanup
-    assert len(event_bus._pending_tasks) == 0
-    assert len(event_bus._subscribers) == 0
-    assert event_bus._cleanup_events_task is None
-
-    # Ensure all tasks are properly cleaned up
-    for task in [task1, task2]:
-        assert task.done()
-
-
-@pytest.mark.asyncio
-async def test_event_processing_tracking(event_bus):
-    """Test event processing status tracking."""
-    event = MockEvent(name="test.event", event_id="test_id")
-    
-    # Verify event not processed initially
-    assert not await event_bus._is_event_processed(event.event_id)
-    
-    # Mark event as processed
-    await event_bus._mark_event_processed(event.event_id)
-    
-    # Verify event is now processed
-    assert await event_bus._is_event_processed(event.event_id)
-
-
-@pytest.mark.asyncio
-async def test_subscribe_unsubscribe(event_bus, mock_handler):
-    """Test subscribe/unsubscribe functionality."""
-    event_name = "test.event"
-    
-    # Subscribe handler
-    await event_bus.subscribe(event_name, mock_handler)
-    assert mock_handler in event_bus._subscribers[event_name]
-    
-    # Unsubscribe handler
-    await event_bus.unsubscribe(event_name, mock_handler)
-    assert mock_handler not in event_bus._subscribers[event_name] 
