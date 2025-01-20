@@ -174,7 +174,7 @@ class RecordingEvent(BaseModel):
 
     async def save(self) -> None:
         """Save the event to the database."""
-        db = await DatabaseManager.get_instance()
+        db = await DatabaseManager.get_instance_async()
 
         # Create tasks for database operations
         tasks = []
@@ -286,7 +286,7 @@ class RecordingEvent(BaseModel):
     @classmethod
     async def get_by_recording_id(cls, recording_id: str) -> list["RecordingEvent"]:
         """Retrieve all events for a specific recording."""
-        db = DatabaseManager.get_instance()
+        db = await DatabaseManager.get_instance()
         rows = await db.fetch_all(
             """
             SELECT * FROM recording_events
@@ -325,7 +325,16 @@ class RecordingStartRequest(BaseModel):
     timestamp: str | None = None
     recording_timestamp: str | None = None
     recording_id: str = Field(..., alias="recordingId")
-    event: str = Field(default="recording.started")
+    event: Literal[
+        "recording.started",
+        "recording.ended",
+        "noise_reduction.completed",
+        "transcription.completed",
+        "transcription.error",
+        "meeting_notes.completed",
+        "meeting_notes.error",
+        "desktop_notification.completed",
+    ] = Field(default="recording.started")
     metadata: dict[str, Any] | None = None
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
@@ -380,7 +389,16 @@ class RecordingEndRequest(BaseModel):
     recording_id: str = Field(..., alias="recordingId")
     system_audio_path: str = Field(..., alias="systemAudioPath")
     microphone_audio_path: str = Field(..., alias="microphoneAudioPath")
-    event: str = Field(default="recording.ended")
+    event: Literal[
+        "recording.started",
+        "recording.ended",
+        "noise_reduction.completed",
+        "transcription.completed",
+        "transcription.error",
+        "meeting_notes.completed",
+        "meeting_notes.error",
+        "desktop_notification.completed",
+    ] = Field(default="recording.ended")
     metadata: dict[str, Any]
 
     @model_validator(mode="before")

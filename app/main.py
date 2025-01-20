@@ -9,7 +9,7 @@ import weakref
 from collections.abc import Callable
 from datetime import datetime, UTC
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
@@ -38,6 +38,12 @@ HTTP_BAD_REQUEST = 400
 HTTP_UNAUTHORIZED = 403
 HTTP_UNPROCESSABLE_ENTITY = 422
 
+# Global variables
+event_bus = None
+plugin_manager = None
+directory_sync = None
+background_tasks = weakref.WeakSet()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application startup and shutdown."""
@@ -55,7 +61,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database")
 
     # Get database instance and test connection
-    db = await DatabaseManager.get_instance()
+    db = await DatabaseManager.get_instance_async()
     await db.execute("SELECT 1")
 
     # Initialize directory sync
@@ -141,7 +147,7 @@ async def lifespan(app: FastAPI):
             # Close database connections last
             logger.info("Closing database connections")
             try:
-                db = await DatabaseManager.get_instance()
+                db = await DatabaseManager.get_instance_async()
                 await asyncio.shield(asyncio.wait_for(db.close(), timeout=5.0))
             except asyncio.TimeoutError:
                 logger.warning("Database shutdown timed out after 5 seconds")
@@ -159,7 +165,7 @@ async def lifespan(app: FastAPI):
                 if plugin_manager:
                     await plugin_manager.shutdown_plugins()
                 # Only get database instance since it's a singleton
-                db = await DatabaseManager.get_instance()
+                db = await DatabaseManager.get_instance_async()
                 await db.close()
             except Exception as e:
                 logger.error(f"Error during emergency cleanup: {e!s}")
@@ -193,17 +199,10 @@ app.add_middleware(
 
 # Initialize static components
 event_store = EventStore()
-plugin_manager = None
-event_bus = None
-directory_sync = None  # Add directory sync component
 
 # API key security
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
-
-# Track background tasks
-background_tasks = weakref.WeakSet()
-
 
 async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
     """Validate API key from request header.
@@ -227,7 +226,7 @@ async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
 
 @app.middleware("http")
 async def api_logging_middleware(
-    request: Request, call_next: Callable[[Request], Response]
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
     """Middleware to log requests with detailed API endpoint information."""
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
@@ -400,6 +399,10 @@ async def process_event(event: RecordingEvent) -> None:
             return
 
         # Create tasks for parallel execution
+        if event_bus is None:
+            logger.error("Event bus not initialized")
+            raise RuntimeError("Event bus not initialized. Server may still be starting up.")
+            
         save_task = asyncio.create_task(event.save())
         publish_task = asyncio.create_task(event_bus.publish(event))
 

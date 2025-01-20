@@ -2,13 +2,13 @@ import asyncio
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, UTC
+from datetime import datetime as dt, timezone as tz
 from pathlib import Path
 from typing import Any, cast
 
 import aiohttp
 
-from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import ConcreteEventBus as EventBus, EventPriority
 from app.core.events import Event, EventContext
 from app.models.recording.events import RecordingEvent
 from app.plugins.base import PluginBase
@@ -24,7 +24,7 @@ class MeetingNotesLocalPlugin(PluginBase):
 
     def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin"""
-        super().__init__(config, event_bus)
+        super().__init__(config=config, event_bus=event_bus)
         self._req_id = str(uuid.uuid4())
 
         # Default values
@@ -70,11 +70,11 @@ class MeetingNotesLocalPlugin(PluginBase):
     async def _initialize(self) -> None:
         """Initialize plugin"""
         if not self.event_bus:
-            logger.warning(
-                "No event bus available for plugin",
+            logger.error(
+                "Event bus is required for meeting notes plugin",
                 extra={"req_id": self._req_id, "plugin_name": self.name},
             )
-            return
+            raise RuntimeError("Event bus is required for meeting notes plugin")
 
         try:
             logger.debug(
@@ -238,12 +238,12 @@ Keep each bullet point concise but informative]
                     "ollama_url": self.ollama_url,
                     "prompt_length": len(prompt),
                     "num_ctx": self.num_ctx,
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "timestamp": dt.now(tz.utc),
                 },
             )
 
             async with aiohttp.ClientSession() as session:
-                start_time = datetime.now(UTC)
+                start_time = dt.now(tz.utc)
                 async with session.post(
                     self.ollama_url,
                     json={
@@ -256,7 +256,7 @@ Keep each bullet point concise but informative]
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()
-                    end_time = datetime.now(UTC)
+                    end_time = dt.now(tz.utc)
                     duration = (end_time - start_time).total_seconds()
 
                     # Log response details
@@ -268,7 +268,7 @@ Keep each bullet point concise but informative]
                             "duration_seconds": duration,
                             "response_length": len(result.get("response", "")),
                             "model": self.model,
-                            "timestamp": end_time.isoformat(),
+                            "timestamp": end_time,
                         },
                     )
 
@@ -317,18 +317,18 @@ Keep each bullet point concise but informative]
 
             # Emit completion event
             if self.event_bus:
-                from datetime import datetime
+                from datetime import datetime as dt
 
                 event_data = {
                     "recording_id": recording_id,
                     "output_path": str(output_file),
                     "notes_path": str(output_file),
                     "status": "completed",
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "timestamp": dt.now(tz.utc),
                     "current_event": {
                         "meeting_notes": {
                             "status": "completed",
-                            "timestamp": datetime.now(UTC).isoformat(),
+                            "timestamp": dt.now(tz.utc),
                             "output_path": str(output_file),
                         }
                     },
@@ -342,10 +342,10 @@ Keep each bullet point concise but informative]
                     data=event_data,
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.now(UTC).isoformat(),
-                        source_plugin=self.name,
+                        timestamp=dt.now(tz.utc),
+                        metadata={"source_plugin": self.name}
                     ),
-                    priority="normal",
+                    priority=EventPriority.NORMAL,
                 )
 
                 await self.event_bus.publish(event)
@@ -383,7 +383,7 @@ Keep each bullet point concise but informative]
                         "recording_id": recording_id,
                         "meeting_notes": {
                             "status": "error",
-                            "timestamp": datetime.now(UTC).isoformat(),
+                            "timestamp": dt.now(tz.utc),
                             "error": str(e),
                         },
                         # Preserve previous event data
@@ -394,29 +394,29 @@ Keep each bullet point concise but informative]
                         "recording": original_event.data.get("recording", {}),
                     },
                     context=original_event.context,
-                    priority="normal",
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(event)
 
-    async def handle_event(self, event: Event) -> None:
+    async def handle_event(self, event_data: Event) -> None:
         """Handle an event"""
-        if not isinstance(event, Event) or event.name != "transcript_ready":
+        if not isinstance(event_data, Event) or event_data.name != "transcript_ready":
             return
 
         transcript_text = (
-            event.payload.get("transcript_text") if event.payload else None
+            event_data.payload.get("transcript_text") if event_data.payload else None
         )
         if not transcript_text:
             logger.warning("No transcript text in event")
             return
 
         recording_id = (
-            event.payload.get("recording_id", "unknown") if event.payload else "unknown"
+            event_data.payload.get("recording_id", "unknown") if event_data.payload else "unknown"
         )
 
         try:
             if self._executor:
-                await self._process_transcript(recording_id, transcript_text, event)
+                await self._process_transcript(recording_id, transcript_text, event_data)
         except Exception as e:
             logger.error("Failed to handle transcript event: %s", str(e), exc_info=True)
 
@@ -513,18 +513,29 @@ Keep each bullet point concise but informative]
                     "output_path": str(output_path),
                     "notes_path": str(output_path),
                     "status": "completed",
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "timestamp": dt.now(tz.utc),
                     "plugin_id": self.name,
                     "data": {
                         "current_event": {
                             "meeting_notes": {
                                 "status": "completed",
-                                "timestamp": datetime.now(UTC).isoformat(),
+                                "timestamp": dt.now(tz.utc),
                                 "output_path": str(output_path),
                             }
                         }
                     },
                 }
+
+                if self.event_bus is None:
+                    logger.error(
+                        "Cannot publish event: event bus is not initialized",
+                        extra={
+                            "plugin": self.name,
+                            "event_name": completion_event["event"],
+                            "recording_id": recording_id,
+                        },
+                    )
+                    return
 
                 logger.debug(
                     "Publishing completion event",

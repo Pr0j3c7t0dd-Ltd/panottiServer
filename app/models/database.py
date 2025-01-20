@@ -9,10 +9,10 @@ import threading
 import uuid
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from pathlib import Path
 from sqlite3 import Connection
-from typing import Any, TypeVar, cast
+from typing import Any, AsyncGenerator, TypeVar, cast
 
 T = TypeVar("T")
 
@@ -55,12 +55,22 @@ class DatabaseManager:
 
     @classmethod
     async def get_instance(cls) -> DatabaseManager:
-        """Get singleton instance of DatabaseManager."""
-        async with cls._lock:
-            if cls._instance is None:
-                cls._instance = cls()
-                await cls._instance.initialize()
-            return cls._instance
+        """Get singleton instance of DatabaseManager asynchronously."""
+        if not cls._instance:
+            async with cls._lock:
+                if not cls._instance:
+                    cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    async def get_instance_async(cls) -> DatabaseManager:
+        """Get singleton instance of DatabaseManager asynchronously."""
+        if not cls._instance:
+            async with cls._lock:
+                if not cls._instance:
+                    cls._instance = cls()
+                    await cls._instance.initialize()
+        return cls._instance
 
     async def initialize(self) -> None:
         """Initialize database connection."""
@@ -430,10 +440,10 @@ class DatabaseManager:
             cls._instance = None
 
 
-@contextmanager
-def get_db() -> Generator[Connection, None, None]:
+@asynccontextmanager
+async def get_db() -> AsyncGenerator[Connection, None]:
     """Get a database connection from the manager."""
-    db = DatabaseManager.get_instance()
+    db = await DatabaseManager.get_instance()
     try:
         yield db.get_connection()
     finally:
@@ -442,6 +452,11 @@ def get_db() -> Generator[Connection, None, None]:
             del db._local.connection
 
 
-async def get_db_async() -> DatabaseManager:
+@asynccontextmanager
+async def get_db_async() -> AsyncGenerator[Connection, None]:
     """Get a database manager instance asynchronously."""
-    return DatabaseManager.get_instance()
+    db = await DatabaseManager.get_instance_async()
+    try:
+        yield db.get_connection()
+    finally:
+        await db.close()

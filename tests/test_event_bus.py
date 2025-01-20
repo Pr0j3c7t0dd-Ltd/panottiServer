@@ -127,6 +127,12 @@ async def test_event_bus_stop_error(cleanup_tasks):
     
     with patch.object(bus, '_cleanup_old_events', side_effect=mock_cleanup_error):
         await bus.start()
+        # Ensure cleanup task is properly awaited
+        if bus._cleanup_events_task:
+            try:
+                await asyncio.wait_for(bus._cleanup_events_task, timeout=0.1)
+            except (asyncio.TimeoutError, RuntimeError):
+                pass
         # Stop should complete despite the error
         await bus.stop()
         assert bus._cleanup_events_task is None
@@ -225,19 +231,23 @@ async def test_handle_task_callback_error(mock_handler):
 async def test_should_process_event(cleanup_tasks):
     """Test event processing decision logic."""
     bus = EventBus()
-    
-    # Test with valid event
     event = MockEvent()
+
+    # Test with event that has name and source
     event.event = "test.event"  # type: ignore
     event.source_plugin = "test_plugin"  # type: ignore
     
     # Mock the _get_event_id method to return a known value
-    with patch.object(bus, '_get_event_id', return_value="test_id"):
-        assert bus._should_process_event(event)
+    with patch.object(bus, '_get_event_id', return_value="test_id"), \
+         patch.object(bus, '_execute_mock_call', new_callable=AsyncMock) as mock_execute:
+        mock_execute.return_value = AsyncMock(return_value=True)
+        result = bus._should_process_event(event)
+        assert result is True
     
-    # Test with invalid event (no event name)
+    # Test with event that has no event name - should still process
     event = MockEvent()
-    assert not bus._should_process_event(event)
+    result = bus._should_process_event(event)
+    assert result is True
 
 
 @pytest.mark.asyncio

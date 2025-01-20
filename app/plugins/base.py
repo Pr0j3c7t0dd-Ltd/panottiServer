@@ -1,12 +1,13 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Coroutine
 from uuid import uuid4
 
 from pydantic import BaseModel
 
-from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import ConcreteEventBus as EventBus, EventData
+from app.core.events.types import EventHandler
 from app.models.recording.events import (
     RecordingEndRequest,
     RecordingEvent,
@@ -141,14 +142,23 @@ class PluginBase(ABC):
         return value
 
     async def subscribe(
-        self, event_type: str, callback: Callable[[EventType], Any]
+        self, event_type: str, callback: EventHandler
     ) -> None:
         """Subscribe to events safely."""
-        if self.event_bus is not None:
-            await self.event_bus.subscribe(event_type, callback)
+        if self.event_bus is None:
+            self.logger.warning(
+                "Cannot subscribe to events: no event bus available",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "event_type": event_type,
+                },
+            )
+            return
+        await self.event_bus.subscribe(event_type, callback)
 
     async def unsubscribe(
-        self, event_type: str, callback: Callable[[EventType], Any]
+        self, event_type: str, callback: EventHandler
     ) -> None:
         """Unsubscribe from events safely."""
         if self.event_bus is not None:
