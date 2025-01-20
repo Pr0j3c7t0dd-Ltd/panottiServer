@@ -23,7 +23,6 @@ class DatabaseManager:
     _instance = None
     _lock = asyncio.Lock()
     _local = threading.local()
-    _executor = ThreadPoolExecutor(max_workers=4)
 
     def __init__(self) -> None:
         if DatabaseManager._instance is not None:
@@ -38,6 +37,7 @@ class DatabaseManager:
 
         self.db_path = str(data_dir / "panotti.db")
         self._req_id = str(uuid.uuid4())
+        self._executor = ThreadPoolExecutor(max_workers=4)
         self._init_db()
 
     def __enter__(self) -> Connection:
@@ -364,20 +364,23 @@ class DatabaseManager:
         await asyncio.get_event_loop().run_in_executor(self._executor, _commit)
 
     async def close(self) -> None:
-        """Close all database connections."""
+        """Close database connections and shutdown thread pool."""
+        logger.info(
+            "Closing database connections",
+            extra={"req_id": self._req_id, "db_path": self.db_path},
+        )
+
         try:
-            # Close thread pool executor
-            self._executor.shutdown(wait=True)
+            # Close connections
+            self.close_connections()
 
-            # Close any remaining connections
-            if hasattr(self._local, "connection"):
+            # Shutdown thread pool
+            if hasattr(self, "_executor"):
+                self._executor.shutdown(wait=True)
+                delattr(self, "_executor")
 
-                def _close() -> None:
-                    if hasattr(self._local, "connection"):
-                        self._local.connection.close()
-                        del self._local.connection
-
-                await asyncio.get_event_loop().run_in_executor(None, _close)
+            # Clear instance
+            DatabaseManager._instance = None
 
             logger.info(
                 "Database connections closed",
@@ -386,7 +389,11 @@ class DatabaseManager:
         except Exception as e:
             logger.error(
                 "Error closing database connections",
-                extra={"req_id": self._req_id, "error": str(e)},
+                extra={
+                    "req_id": self._req_id,
+                    "db_path": self.db_path,
+                    "error": str(e),
+                },
             )
             raise
 
