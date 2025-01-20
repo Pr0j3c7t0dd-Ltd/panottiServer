@@ -10,6 +10,7 @@ from collections.abc import Callable
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
+from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -37,11 +38,148 @@ HTTP_BAD_REQUEST = 400
 HTTP_UNAUTHORIZED = 403
 HTTP_UNPROCESSABLE_ENTITY = 422
 
-# Initialize FastAPI app
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI application startup and shutdown."""
+    # Startup
+    global event_bus, plugin_manager, directory_sync
+
+    # Setup logging first
+    setup_logging()
+
+    # Set log level from environment
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    print(f"Setting log level to: {log_level}")
+    logging.basicConfig(level=log_level)
+
+    logger.info("Initializing database")
+
+    # Get database instance and test connection
+    db = await DatabaseManager.get_instance()
+    await db.execute("SELECT 1")
+
+    # Initialize directory sync
+    logger.info("Initializing directory sync")
+    app_root = Path(__file__).parent.parent
+    directory_sync = DirectorySync(app_root)
+    directory_sync.start_monitoring()
+
+    # Initialize event bus
+    logger.info("Initializing event bus")
+    event_bus = EventBus()
+    await event_bus.start()
+
+    # Initialize plugin manager
+    logger.info("Initializing plugin manager")
+    plugin_dir = os.path.join(os.path.dirname(__file__), "plugins")
+    plugin_manager = PluginManager(plugin_dir, event_bus=event_bus)
+
+    logger.info("Initializing plugins")
+    await plugin_manager.discover_plugins()
+    await plugin_manager.initialize_plugins()
+
+    logger.info("Startup complete")
+
+    try:
+        yield
+    finally:
+        # Shutdown
+        logger.info("Starting application shutdown")
+
+        try:
+            # Cancel all background tasks
+            tasks = list(background_tasks)
+            if tasks:
+                logger.info(f"Cancelling {len(tasks)} background tasks")
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+
+                # Wait for tasks to complete with timeout
+                try:
+                    await asyncio.wait(tasks, timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Some tasks did not complete within timeout")
+
+            # Stop directory sync
+            if directory_sync:
+                logger.info("Stopping directory sync")
+                directory_sync.stop_monitoring()
+                directory_sync = None
+
+            # First stop accepting new requests
+            logger.info("Stopping event bus to prevent new events")
+            if event_bus:
+                await event_bus.stop()
+
+            # Then shutdown plugins
+            if plugin_manager:
+                logger.info("Shutting down plugins")
+                try:
+                    await asyncio.shield(
+                        asyncio.wait_for(plugin_manager.shutdown_plugins(), timeout=5.0)
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Plugin shutdown timed out after 5 seconds")
+                except asyncio.CancelledError:
+                    logger.warning("Plugin shutdown cancelled")
+                plugin_manager = None
+
+            # Finally shutdown event bus completely
+            if event_bus:
+                logger.info("Shutting down event bus")
+                try:
+                    await asyncio.shield(
+                        asyncio.wait_for(event_bus.shutdown(), timeout=5.0)
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Event bus shutdown timed out after 5 seconds")
+                except asyncio.CancelledError:
+                    logger.warning("Event bus shutdown cancelled")
+                event_bus = None
+
+            # Close database connections last
+            logger.info("Closing database connections")
+            try:
+                db = await DatabaseManager.get_instance()
+                await asyncio.shield(asyncio.wait_for(db.close(), timeout=5.0))
+            except asyncio.TimeoutError:
+                logger.warning("Database shutdown timed out after 5 seconds")
+            except asyncio.CancelledError:
+                logger.warning("Database shutdown cancelled")
+            except Exception as e:
+                logger.error(f"Error closing database: {e!s}")
+
+        except asyncio.CancelledError:
+            logger.info("Shutdown cancelled - cleaning up remaining resources")
+            try:
+                # Ensure critical cleanup still happens
+                if event_bus:
+                    await event_bus.stop()
+                if plugin_manager:
+                    await plugin_manager.shutdown_plugins()
+                # Only get database instance since it's a singleton
+                db = await DatabaseManager.get_instance()
+                await db.close()
+            except Exception as e:
+                logger.error(f"Error during emergency cleanup: {e!s}")
+            finally:
+                logger.info("Emergency cleanup complete")
+
+        except Exception as e:
+            logger.error(
+                "Error during shutdown",
+                extra={"error": str(e), "traceback": traceback.format_exc()},
+            )
+        finally:
+            logger.info("Shutdown complete")
+
+# Initialize FastAPI app with lifespan
 app = FastAPI(
     title="Recording Events API",
     description="API for handling start and end recording events",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Add CORS middleware
@@ -85,144 +223,6 @@ async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
         status_code=HTTP_UNAUTHORIZED,
         detail="Could not validate API key",
     )
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    """Initialize application state."""
-    global event_bus, plugin_manager, directory_sync
-
-    # Setup logging first
-    setup_logging()
-
-    # Set log level from environment
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    print(f"Setting log level to: {log_level}")
-    logging.basicConfig(level=log_level)
-
-    logger.info("Initializing database")
-
-    # Get database instance and test connection
-    db = await DatabaseManager.get_instance()
-    await db.execute("SELECT 1")
-
-    # Initialize directory sync
-    logger.info("Initializing directory sync")
-    app_root = Path(__file__).parent.parent
-    directory_sync = DirectorySync(app_root)
-    directory_sync.start_monitoring()
-
-    # Initialize event bus
-    logger.info("Initializing event bus")
-    event_bus = EventBus()
-    await event_bus.start()
-
-    # Initialize plugin manager
-    logger.info("Initializing plugin manager")
-    plugin_dir = os.path.join(os.path.dirname(__file__), "plugins")
-    plugin_manager = PluginManager(plugin_dir, event_bus=event_bus)
-
-    logger.info("Initializing plugins")
-    await plugin_manager.discover_plugins()
-    await plugin_manager.initialize_plugins()
-
-    logger.info("Startup complete")
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    """Clean up application components."""
-    global event_bus, plugin_manager, directory_sync
-
-    logger.info("Starting application shutdown")
-
-    try:
-        # Cancel all background tasks
-        tasks = list(background_tasks)
-        if tasks:
-            logger.info(f"Cancelling {len(tasks)} background tasks")
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-
-            # Wait for tasks to complete with timeout
-            try:
-                await asyncio.wait(tasks, timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.warning("Some tasks did not complete within timeout")
-
-        # Stop directory sync
-        if directory_sync:
-            logger.info("Stopping directory sync")
-            directory_sync.stop_monitoring()
-            directory_sync = None
-
-        # First stop accepting new requests
-        logger.info("Stopping event bus to prevent new events")
-        if event_bus:
-            await event_bus.stop()
-
-        # Then shutdown plugins
-        if plugin_manager:
-            logger.info("Shutting down plugins")
-            try:
-                await asyncio.shield(
-                    asyncio.wait_for(plugin_manager.shutdown_plugins(), timeout=5.0)
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Plugin shutdown timed out after 5 seconds")
-            except asyncio.CancelledError:
-                logger.warning("Plugin shutdown cancelled")
-            plugin_manager = None
-
-        # Finally shutdown event bus completely
-        if event_bus:
-            logger.info("Shutting down event bus")
-            try:
-                await asyncio.shield(
-                    asyncio.wait_for(event_bus.shutdown(), timeout=5.0)
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Event bus shutdown timed out after 5 seconds")
-            except asyncio.CancelledError:
-                logger.warning("Event bus shutdown cancelled")
-            event_bus = None
-
-        # Close database connections last
-        logger.info("Closing database connections")
-        try:
-            db = await DatabaseManager.get_instance()
-            await asyncio.shield(asyncio.wait_for(db.close(), timeout=5.0))
-        except asyncio.TimeoutError:
-            logger.warning("Database shutdown timed out after 5 seconds")
-        except asyncio.CancelledError:
-            logger.warning("Database shutdown cancelled")
-        except Exception as e:
-            logger.error(f"Error closing database: {e!s}")
-
-    except asyncio.CancelledError:
-        logger.info("Shutdown cancelled - cleaning up remaining resources")
-        try:
-            # Ensure critical cleanup still happens
-            if event_bus:
-                await event_bus.stop()
-            if plugin_manager:
-                await plugin_manager.shutdown_plugins()
-            # Only get database instance since it's a singleton
-            db = await DatabaseManager.get_instance()
-            await db.close()
-        except Exception as e:
-            logger.error(f"Error during emergency cleanup: {e!s}")
-        finally:
-            logger.info("Emergency cleanup complete")
-
-    except Exception as e:
-        logger.error(
-            "Error during shutdown",
-            extra={"error": str(e), "traceback": traceback.format_exc()},
-        )
-    finally:
-        logger.info("Shutdown complete")
 
 
 @app.middleware("http")

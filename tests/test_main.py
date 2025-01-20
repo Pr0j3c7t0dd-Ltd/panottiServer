@@ -20,9 +20,8 @@ from app.main import (
     process_event,
     recording_ended,
     recording_started,
-    shutdown,
-    startup,
     validation_exception_handler,
+    lifespan,
 )
 from app.models.recording.events import RecordingEndRequest, RecordingStartRequest, RecordingEvent
 
