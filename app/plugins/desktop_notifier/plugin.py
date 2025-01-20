@@ -346,7 +346,7 @@ class DesktopNotifierPlugin(PluginBase):
         """Create a new notification task record"""
         db = await DatabaseManager.get_instance()
         async with db.get_connection_async() as conn:
-            await conn.execute(
+            conn.execute(
                 """
                 INSERT INTO desktop_notification_tasks
                 (notes_id, status, notes_path)
@@ -354,4 +354,4 @@ class DesktopNotifierPlugin(PluginBase):
             """,
                 (notes_id, "pending", notes_path),
             )
-            await conn.commit()
+            conn.commit()

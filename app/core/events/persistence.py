@@ -39,7 +39,8 @@ class EventStore:
         self._events[plugin_id].append(event)
 
         # Initialize event status
-        self._status[event.event_id] = {
+        if event.event_id is not None:
+            self._status[event.event_id] = {
             "status": EventProcessingStatus.PENDING,
             "timestamp": datetime.now(timezone.utc),
             "error": None,
@@ -53,7 +54,7 @@ class EventStore:
                 "event_name": event.name,
             },
         )
-        return event.event_id
+        return event.event_id if event.event_id is not None else ""
 
     async def mark_processed(
         self, event_id: str, success: bool = True, error: str | None = None
