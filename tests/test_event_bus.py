@@ -65,6 +65,20 @@ def test_event():
     )
 
 
+@pytest.fixture
+async def cleanup_tasks():
+    """Fixture to clean up any pending tasks after each test."""
+    yield
+    # Clean up any pending tasks
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for task in tasks:
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
 @pytest.mark.asyncio
 async def test_event_bus_start_stop():
     """Test normal start/stop of event bus."""
@@ -103,37 +117,19 @@ async def test_event_bus_start_error():
 
 
 @pytest.mark.asyncio
-async def test_event_bus_stop_error():
+async def test_event_bus_stop_error(cleanup_tasks):
     """Test error handling during event bus stop."""
     bus = EventBus()
     
-    # Create a real coroutine that raises on cancel
-    async def mock_cleanup():
-        try:
-            while True:
-                await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            raise Exception("Cancel error")
-
-    # Create a task for the mock coroutine and patch the cleanup method
-    cleanup_task = asyncio.create_task(mock_cleanup())
-    bus._cleanup_events_task = cleanup_task
+    # Mock cleanup to raise an error
+    async def mock_cleanup_error():
+        raise RuntimeError("Test error")
     
-    # Ensure we await any pending tasks
-    try:
+    with patch.object(bus, '_cleanup_old_events', side_effect=mock_cleanup_error):
+        await bus.start()
+        # Stop should complete despite the error
         await bus.stop()
-    except Exception:
-        pass  # We expect an error here
-    
-    # Ensure cleanup task is properly cancelled
-    if not cleanup_task.done():
-        cleanup_task.cancel()
-        try:
-            await cleanup_task
-        except (asyncio.CancelledError, Exception):
-            pass
-    
-    assert bus._cleanup_events_task is None
+        assert bus._cleanup_events_task is None
 
 
 @pytest.mark.asyncio
@@ -226,24 +222,22 @@ async def test_handle_task_callback_error(mock_handler):
 
 
 @pytest.mark.asyncio
-async def test_should_process_event(event_bus):
-    """Test event processing check."""
-    event_id = "test_id"
-    now = datetime.now(timezone.utc)
+async def test_should_process_event(cleanup_tasks):
+    """Test event processing decision logic."""
+    bus = EventBus()
     
-    # Test with unprocessed event
-    result = await event_bus._is_event_processed(event_id)
-    assert not result
+    # Test with valid event
+    event = MockEvent()
+    event.event = "test.event"  # type: ignore
+    event.source_plugin = "test_plugin"  # type: ignore
     
-    # Test with recently processed event
-    event_bus._processed_events[event_id] = now
-    result = await event_bus._is_event_processed(event_id)
-    assert result
+    # Mock the _get_event_id method to return a known value
+    with patch.object(bus, '_get_event_id', return_value="test_id"):
+        assert bus._should_process_event(event)
     
-    # Test with old processed event
-    event_bus._processed_events[event_id] = now - timedelta(hours=2)
-    result = await event_bus._is_event_processed(event_id)
-    assert result
+    # Test with invalid event (no event name)
+    event = MockEvent()
+    assert not bus._should_process_event(event)
 
 
 @pytest.mark.asyncio
@@ -284,7 +278,7 @@ async def test_event_name_handling(event_bus):
 
 
 @pytest.mark.asyncio
-async def test_event_id_handling():
+async def test_event_id_handling(cleanup_tasks):
     """Test event ID handling."""
     bus = EventBus()
     
@@ -292,33 +286,20 @@ async def test_event_id_handling():
     event = MockEvent(event_id="test_id")
     assert bus._get_event_id(event) == "test_id"
     
-    # Test with event that has id attribute
+    # Test with event that has recording_id attribute
     event = MockEvent()
-    event.id = "test_id_2"  # type: ignore
+    event.recording_id = "test_recording"  # type: ignore
+    event.event = "test.event"  # type: ignore
+    event.source_plugin = "test_plugin"  # type: ignore
+    assert bus._get_event_id(event) == "test_recording_test.event_test_plugin"
     
-    # Mock uuid generation to return a known value
-    mock_uuid = uuid.UUID('12345678-1234-5678-1234-567812345678')
-    with patch('uuid.uuid4', return_value=mock_uuid):
+    # Test with event that has no ID - use synchronous mock for UUID
+    event = MockEvent()
+    test_uuid = "87654321-4321-8765-4321-876543210987"
+    with patch('uuid.uuid4', return_value=uuid.UUID(test_uuid)):
         event_id = bus._get_event_id(event)
         assert isinstance(event_id, str)
-        assert event_id == str(mock_uuid)
-    
-    # Test with event that has no ID
-    event = MockEvent()
-    mock_uuid = uuid.UUID('87654321-4321-8765-4321-876543210987')
-    with patch('uuid.uuid4', return_value=mock_uuid):
-        event_id = bus._get_event_id(event)
-        assert isinstance(event_id, str)
-        assert event_id == str(mock_uuid)
-    
-    # Clean up any pending tasks
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    for task in tasks:
-        task.cancel()
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
+        assert event_id == test_uuid
 
 
 @pytest.mark.asyncio
