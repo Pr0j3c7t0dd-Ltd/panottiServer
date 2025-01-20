@@ -476,6 +476,34 @@ class EventBus:
                     },
                 )
 
+    def _get_handler_info(self, handler: Any) -> dict:
+        """Get handler information for logging.
+
+        Args:
+            handler: Event handler to get info for
+
+        Returns:
+            dict: Handler information
+        """
+        try:
+            return {
+                "name": handler.__name__ if handler else "None",
+                "module": handler.__module__ if handler else "None",
+                "qualname": handler.__qualname__ if handler else "None",
+                "id": id(handler) if handler else 0,
+                "class": handler.__self__.__class__.__name__
+                if handler and hasattr(handler, "__self__")
+                else None,
+                "instance_id": id(handler.__self__)
+                if handler and hasattr(handler, "__self__")
+                else None,
+            }
+        except Exception as e:
+            return {
+                "name": str(handler),
+                "error": str(e)
+            }
+
     async def publish(self, event: Any) -> None:
         """Publish an event to all subscribers.
 
@@ -523,21 +551,7 @@ class EventBus:
                 "component": "event_bus",
                 "event_name": event_name,
                 "subscriber_count": len(handlers),
-                "handlers": [
-                    {
-                        "name": handler.__name__,
-                        "module": handler.__module__,
-                        "qualname": handler.__qualname__,
-                        "id": id(handler),
-                        "class": handler.__self__.__class__.__name__
-                        if hasattr(handler, "__self__")
-                        else None,
-                        "instance_id": id(handler.__self__)
-                        if hasattr(handler, "__self__")
-                        else None,
-                    }
-                    for handler in handlers
-                ],
+                "handlers": [self._get_handler_info(handler) for handler in handlers],
             },
         )
 
@@ -551,7 +565,7 @@ class EventBus:
                     "event_type": type(event).__name__,
                     "event_data": str(event),
                     "all_subscriptions": {
-                        name: [h.__name__ for h in hs]
+                        name: [h.__name__ for h in hs if h]
                         for name, hs in self._subscribers.items()
                     },
                 },
@@ -560,23 +574,47 @@ class EventBus:
 
         # Create tasks for each handler but don't wait for them
         for handler in handlers:
-            task = asyncio.create_task(self._handle_task(handler, event))
-            task.add_done_callback(self._cleanup_task)
-            self._pending_tasks.add(task)
+            if not handler:
+                logger.warning(
+                    "Skipping None handler",
+                    extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
+                        "event_name": event_name,
+                    },
+                )
+                continue
 
-            logger.debug(
-                "Created handler task",
-                extra={
-                    "req_id": self._req_id,
-                    "component": "event_bus",
-                    "event_name": event_name,
-                    "handler": handler.__name__,
-                    "handler_module": handler.__module__,
-                    "handler_id": id(handler),
-                    "task_id": id(task),
-                    "pending_tasks": len(self._pending_tasks),
-                },
-            )
+            try:
+                task = asyncio.create_task(self._handle_task(handler, event))
+                task.add_done_callback(self._cleanup_task)
+                self._pending_tasks.add(task)
+
+                logger.debug(
+                    "Created handler task",
+                    extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
+                        "event_name": event_name,
+                        "handler": handler.__name__,
+                        "handler_module": handler.__module__,
+                        "handler_id": id(handler),
+                        "task_id": id(task),
+                        "pending_tasks": len(self._pending_tasks),
+                    },
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to create handler task",
+                    extra={
+                        "req_id": self._req_id,
+                        "component": "event_bus",
+                        "event_name": event_name,
+                        "handler": str(handler),
+                        "error": str(e),
+                    },
+                    exc_info=True,
+                )
 
         logger.debug(
             "All handler tasks created",
@@ -604,8 +642,10 @@ class EventBus:
             self._cleanup_events_task.cancel()
             try:
                 await self._cleanup_events_task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
                 pass
+            finally:
+                self._cleanup_events_task = None
 
         # Cancel all pending tasks
         pending_tasks = list(self._pending_tasks)
