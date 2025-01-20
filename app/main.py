@@ -7,7 +7,7 @@ import traceback
 import uuid
 import weakref
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -231,11 +231,11 @@ async def api_logging_middleware(
 ) -> Response:
     """Middleware to log requests with detailed API endpoint information."""
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-    start_time = datetime.utcnow()
+    start_time = datetime.now(UTC)
 
     try:
         response = await call_next(request)
-        duration = (datetime.utcnow() - start_time).total_seconds()
+        duration = (datetime.now(UTC) - start_time).total_seconds()
 
         logger.info(
             "API request completed",

@@ -743,3 +743,5 @@ pip freeze > requirements.txt
 ```
 
 Note: Be sure to test your application thoroughly after upgrading packages as new versions may introduce breaking changes.
+
+© 2025 Pr0j3ctTodd Ltd. All rights reserved.
