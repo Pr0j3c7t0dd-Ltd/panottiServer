@@ -220,7 +220,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "output_path": str(output_path),
                 },
             )
-            await self.event_bus.publish(completion_event)
+            if self.event_bus is not None:
+                await self.event_bus.publish(completion_event)
 
             # Add verification log after publishing
             logger.info(
