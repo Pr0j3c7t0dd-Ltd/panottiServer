@@ -468,6 +468,12 @@ async def process_event(event: RecordingEvent) -> None:
         )
 
 
+@app.get("/health")
+async def health_check(api_key: str = Depends(get_api_key)):
+    """Health check endpoint."""
+    return {"status": "ok"}
+
+
 if __name__ == "__main__":
     import uvicorn
 
