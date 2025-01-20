@@ -407,6 +407,9 @@ async def process_event(event: RecordingEvent) -> None:
         background_tasks.add(save_task)
         background_tasks.add(publish_task)
 
+        # Wait for both tasks to complete
+        await asyncio.gather(save_task, publish_task)
+
         # Add callbacks for logging and cleanup
         def task_done_callback(task: asyncio.Task) -> None:
             try:

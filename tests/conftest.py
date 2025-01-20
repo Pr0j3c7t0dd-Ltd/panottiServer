@@ -3,7 +3,6 @@
 import asyncio
 import os
 import sys
-from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,11 +22,77 @@ os.environ["API_KEY"] = "test_api_key"
 os.environ["LOG_LEVEL"] = "DEBUG"
 
 
-@pytest.fixture(scope="session")
-def event_loop_policy():
-    """Create and set a test event loop policy."""
-    policy = asyncio.get_event_loop_policy()
-    return policy
+@pytest.fixture(autouse=True)
+def mock_threadpool():
+    """Mock ThreadPoolExecutor to prevent shutdown issues."""
+    with patch("concurrent.futures.ThreadPoolExecutor") as mock_executor:
+        # Configure executor mock
+        mock_executor_instance = MagicMock()
+        mock_executor.return_value = mock_executor_instance
+        mock_executor_instance._shutdown = False
+        
+        # Create a real Future object for the submit method to return
+        def submit_side_effect(*args, **kwargs):
+            future = asyncio.Future()
+            future.set_result(None)
+            return future
+            
+        mock_executor_instance.submit.side_effect = submit_side_effect
+        yield mock_executor_instance
+
+
+@pytest.fixture(autouse=True)
+def mock_asyncio_sleep():
+    """Mock asyncio.sleep globally."""
+    async def immediate_sleep(*args, **kwargs):
+        return None
+        
+    with patch("asyncio.sleep", side_effect=immediate_sleep):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def mock_event_bus():
+    """Mock event bus fixture"""
+    mock_bus = AsyncMock(spec=EventBus)
+    mock_bus.start = AsyncMock()
+    mock_bus.stop = AsyncMock()
+    mock_bus.publish = AsyncMock()
+    mock_bus._cleanup_task = None
+    
+    with patch("app.main.event_bus", mock_bus):
+        yield mock_bus
+
+
+@pytest.fixture(autouse=True)
+def mock_db():
+    """Mock database fixture"""
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.close = AsyncMock()
+    mock_db.initialize = AsyncMock()
+    mock_db._init_db = MagicMock()
+    mock_db._run_migrations = MagicMock()
+    mock_db.get_connection = MagicMock()
+    
+    with patch("app.models.database.DatabaseManager") as mock_manager:
+        mock_manager._instance = None
+        mock_manager._lock = asyncio.Lock()
+        mock_manager.get_instance = AsyncMock(return_value=mock_db)
+        yield mock_db
+
+
+@pytest.fixture(autouse=True)
+def mock_sqlite():
+    """Mock sqlite3 to prevent actual database operations."""
+    mock_conn = MagicMock()
+    mock_conn.execute = MagicMock()
+    mock_conn.executescript = MagicMock()
+    mock_conn.commit = MagicMock()
+    mock_conn.close = MagicMock()
+    
+    with patch("sqlite3.connect", return_value=mock_conn):
+        yield mock_conn
 
 
 @pytest.fixture(autouse=True)
@@ -55,30 +120,6 @@ def load_test_env():
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
     yield
-
-    # Optional: Clean up test directories after tests
-    # Uncomment if you want to clean up after tests
-    # for dir_path in test_dirs:
-    #     shutil.rmtree(dir_path, ignore_errors=True)
-
-
-@pytest.fixture
-def mock_event_bus():
-    """Mock event bus fixture"""
-    event_bus = EventBus()
-    event_bus.subscribe = AsyncMock()
-    event_bus.unsubscribe = AsyncMock()
-    event_bus.publish = AsyncMock()
-    return event_bus
-
-
-@pytest.fixture
-def mock_db():
-    """Mock database fixture"""
-    with patch("app.models.database.DatabaseManager") as mock:
-        db_instance = MagicMock()
-        mock.get_instance.return_value = db_instance
-        yield db_instance
 
 
 # Test implementation of PluginBase for testing

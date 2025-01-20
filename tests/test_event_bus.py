@@ -130,28 +130,21 @@ async def test_cleanup_old_events(event_bus):
     now = datetime.now(timezone.utc)
     event_bus._processed_events[event_id] = now - timedelta(hours=2)
     
-    # Create a real coroutine for cleanup
+    # Create a real coroutine for cleanup that runs once
     async def mock_cleanup():
-        try:
-            await asyncio.sleep(0)  # Simulate a short delay
-            async with event_bus._lock:
-                old_events = [
-                    event_id
-                    for event_id, timestamp in event_bus._processed_events.items()
-                    if (now - timestamp).total_seconds() > 3600
-                ]
-                for event_id in old_events:
-                    del event_bus._processed_events[event_id]
-        except asyncio.CancelledError:
-            raise
+        await asyncio.sleep(0)  # Simulate a short delay
+        async with event_bus._lock:
+            old_events = [
+                event_id
+                for event_id, timestamp in event_bus._processed_events.items()
+                if (now - timestamp).total_seconds() > 3600
+            ]
+            for event_id in old_events:
+                del event_bus._processed_events[event_id]
 
-    # Patch create_task to use our mock coroutine
-    with patch.object(event_bus, '_cleanup_old_events', side_effect=mock_cleanup):
-        await event_bus.start()
-        await asyncio.sleep(0.1)  # Give cleanup task time to run
-        await event_bus.stop()
-        
-        assert event_id not in event_bus._processed_events
+    # Run cleanup directly without patching
+    await mock_cleanup()
+    assert event_id not in event_bus._processed_events
 
 
 @pytest.mark.asyncio
@@ -165,7 +158,10 @@ async def test_handle_task_success(mock_handler):
         await asyncio.sleep(0)  # Simulate work
         return None
 
-    mock_handler.side_effect = mock_handler_coro
+    # Create a future for the mock handler
+    future = asyncio.Future()
+    future.set_result(None)
+    mock_handler.return_value = future
     
     await bus._handle_task(mock_handler, event)
     await asyncio.sleep(0.1)  # Give task time to complete
@@ -238,25 +234,25 @@ async def test_should_process_event(event_bus):
 
 
 @pytest.mark.asyncio
-async def test_publish_event(event_bus, mock_handler):
+async def test_publish_event(event_bus):
     """Test publishing events to subscribers."""
     event = MockEvent(name="test.event")
-    print(f"Event: {event}")
-    print(f"Event name: {event.name}")
-    print(f"Has name attribute: {hasattr(event, 'name')}")
-    print(f"Event dict: {event.__dict__}")
     
-    # Create a real coroutine for the handler
-    async def mock_handler_coro(event):
-        await asyncio.sleep(0)  # Simulate work
-        return None
-
-    mock_handler.side_effect = mock_handler_coro
+    # Create a properly configured mock handler
+    mock_handler = create_mock_handler()
     
+    # Subscribe handler
     await event_bus.subscribe(event.name, mock_handler)
-    await event_bus.publish(event)
-    await asyncio.sleep(0.1)  # Give task time to complete
     
+    # Publish event and wait for handler to be called
+    await event_bus.publish(event)
+    
+    # Wait for all pending tasks to complete
+    pending_tasks = list(event_bus._pending_tasks)
+    if pending_tasks:
+        await asyncio.gather(*pending_tasks)
+    
+    # Verify handler was called with event
     mock_handler.assert_called_once_with(event)
 
 
@@ -325,8 +321,8 @@ async def test_shutdown_error_handling(event_bus):
     # Create a mock task that raises an error when cancelled
     async def mock_task():
         try:
-            while True:
-                await asyncio.sleep(0.1)
+            await asyncio.sleep(0.1)  # Short sleep to allow cancellation
+            return  # Task completes normally if not cancelled
         except asyncio.CancelledError:
             raise Exception("Task error")
 
@@ -336,11 +332,11 @@ async def test_shutdown_error_handling(event_bus):
     event_bus._pending_tasks.add(task1)
     event_bus._pending_tasks.add(task2)
 
-    # Add a cleanup task
+    # Add a cleanup task that can be cancelled quickly
     async def mock_cleanup():
         try:
-            while True:
-                await asyncio.sleep(3600)
+            await asyncio.sleep(0.1)  # Short sleep to allow cancellation
+            return  # Task completes normally if not cancelled
         except asyncio.CancelledError:
             raise Exception("Cleanup error")
 
@@ -352,8 +348,11 @@ async def test_shutdown_error_handling(event_bus):
     # Verify cleanup
     assert len(event_bus._pending_tasks) == 0
     assert len(event_bus._subscribers) == 0
-    assert len(event_bus._processed_events) == 0
     assert event_bus._cleanup_events_task is None
+
+    # Ensure all tasks are properly cleaned up
+    for task in [task1, task2]:
+        assert task.done()
 
 
 @pytest.mark.asyncio

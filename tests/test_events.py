@@ -3,6 +3,7 @@
 import pytest
 from typing import Any, Callable, cast
 from unittest.mock import AsyncMock, Mock, call
+import asyncio
 
 from app.core.events import (
     ConcreteEventBus,
@@ -156,6 +157,10 @@ async def test_event_bus_emit_implementation_direct():
         async def publish(self, event: Any) -> None:
             self.publish_called = True
             self.published_event = event
+            # Return a completed future to avoid coroutine warning
+            future = asyncio.Future()
+            future.set_result(None)
+            return future
 
     bus = TestEventBus()
     mock_event = Event(name="test.event", data={})
