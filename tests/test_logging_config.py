@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import BaseModel
 
-from app.utils.logging_config import JSONFormatter, setup_logging, get_logger, generate_request_id
+from app.utils.logging_config import JSONFormatter, setup_logging, get_logger
 
 
 @pytest.fixture
@@ -88,13 +88,6 @@ def test_json_formatter_format():
         log_dict = json.loads(formatted)
         assert "exc_info" in log_dict
         assert "ValueError: Test error" in log_dict["exc_info"]
-
-
-def test_generate_request_id():
-    request_id = generate_request_id()
-    assert isinstance(request_id, str)
-    # Verify UUID format
-    assert len(request_id.split("-")) == 5
 
 
 @pytest.fixture
@@ -184,7 +177,6 @@ async def test_main_execution():
             "setup_logging": mock_setup,
             "get_logger": mock_get_logger,
             "JSONFormatter": JSONFormatter,
-            "generate_request_id": generate_request_id,
         }
         
         # Execute the main block

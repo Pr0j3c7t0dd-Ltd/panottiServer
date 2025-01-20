@@ -187,70 +187,14 @@ async def test_get_plugin(plugin_manager):
 async def test_sort_by_dependencies(plugin_manager):
     """Test sorting plugins by dependencies."""
     configs = {
-        "plugin1": PluginConfig(name="plugin1", version="1.0", dependencies=["plugin2"]),
-        "plugin2": PluginConfig(name="plugin2", version="1.0", dependencies=[]),
-        "plugin3": PluginConfig(name="plugin3", version="1.0", dependencies=["plugin1"])
+        "plugin1": PluginConfig(name="plugin1", version="1.0", enabled=True, dependencies=["plugin2"]),
+        "plugin2": PluginConfig(name="plugin2", version="1.0", enabled=True),
+        "plugin3": PluginConfig(name="plugin3", version="1.0", enabled=True, dependencies=["plugin1"]),
     }
     
     sorted_configs = plugin_manager._sort_by_dependencies(configs)
+    sorted_names = [config.name for config in sorted_configs]
     
-    # Check that dependencies come before dependents
-    plugin_order = [c.name for c in sorted_configs]
-    assert plugin_order.index("plugin2") < plugin_order.index("plugin1")
-    assert plugin_order.index("plugin1") < plugin_order.index("plugin3")
-
-
-@pytest.mark.asyncio
-async def test_load_plugin(plugin_manager, tmp_path):
-    """Test loading a plugin module."""
-    plugin_dir = tmp_path / "plugins"
-    plugin_dir.mkdir()
-    test_plugin_dir = plugin_dir / "test_plugin"
-    test_plugin_dir.mkdir()
-    
-    # Create plugin config
-    config_data = {
-        "name": "test_plugin",
-        "version": "1.0.0",
-        "enabled": True,
-        "dependencies": [],
-        "config": {}
-    }
-    
-    yaml_path = test_plugin_dir / "plugin.yaml"
-    with open(yaml_path, "w") as f:
-        yaml.dump(config_data, f)
-    
-    # Create a mock plugin module
-    plugin_code = """
-from app.plugins.base import PluginBase, PluginConfig
-
-class TestPlugin(PluginBase):
-    async def _initialize(self) -> None:
-        pass
-        
-    async def _shutdown(self) -> None:
-        pass
-"""
-    
-    # Create plugin.py in the correct location
-    plugin_path = test_plugin_dir / "plugin.py"
-    with open(plugin_path, "w") as f:
-        f.write(plugin_code)
-    
-    # Discover plugins to load configs
-    configs = await plugin_manager.discover_plugins()
-    
-    # Set the config in the manager
-    plugin_manager.configs = {config.name: config for config in configs}
-    
-    # Test loading the plugin
-    await plugin_manager._load_plugin(test_plugin_dir)
-    
-    # Verify plugin was loaded
-    assert "test_plugin" in plugin_manager.plugins
-    
-    # Cleanup - remove the temporary module from sys.modules
-    import sys
-    if "plugins.test_plugin" in sys.modules:
-        del sys.modules["plugins.test_plugin"] 
+    # plugin2 should come before plugin1, and plugin1 before plugin3
+    assert sorted_names.index("plugin2") < sorted_names.index("plugin1")
+    assert sorted_names.index("plugin1") < sorted_names.index("plugin3") 

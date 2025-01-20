@@ -1,13 +1,34 @@
-"""Core plugin system interfaces and base classes."""
+"""Core plugin system interfaces and protocols."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Protocol
 
 from app.core.events import EventBus
 
 
+class PluginProtocol(Protocol):
+    """Protocol defining the plugin interface."""
+    
+    @property
+    def name(self) -> str:
+        """The name of the plugin."""
+        ...
+    
+    @property
+    def is_initialized(self) -> bool:
+        """Whether the plugin has been initialized."""
+        ...
+    
+    async def initialize(self) -> None:
+        """Initialize the plugin."""
+        ...
+    
+    async def shutdown(self) -> None:
+        """Shutdown the plugin."""
+        ...
+
 class PluginBase(ABC):
-    """Base class for all plugins."""
+    """Abstract base class for plugins implementing core functionality."""
 
     def __init__(self, config: Any, event_bus: EventBus | None = None) -> None:
         """Initialize the plugin.

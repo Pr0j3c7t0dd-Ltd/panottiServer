@@ -40,7 +40,7 @@ class ExamplePlugin(PluginBase):
             )
 
             # Initialize thread pool for processing
-            max_workers = self.config.config.get("max_concurrent_tasks", 4)
+            max_workers = self.get_config("max_concurrent_tasks", 4)
             self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
             # Subscribe to events
@@ -76,20 +76,23 @@ class ExamplePlugin(PluginBase):
             )
             raise
 
-    async def _handle_recording_ended(self, event: EventData) -> None:
+    async def _handle_recording_ended(self, event_data: EventData) -> None:
         """Handle recording.ended event.
 
         This is an example event handler that demonstrates how to process events.
 
         Args:
-            event: Event data containing both event data and context
+            event_data: Event data containing both event data and context
         """
         try:
+            # Initialize context as None
+            context = None
+            
             # Extract context from event
             context = (
-                event.get("context")
-                if isinstance(event, dict)
-                else getattr(event, "context", None)
+                event_data.get("context")
+                if isinstance(event_data, dict)
+                else getattr(event_data, "context", None)
             )
             if not context:
                 logger.warning("No context found in event")
@@ -104,8 +107,8 @@ class ExamplePlugin(PluginBase):
             )
 
             # Example processing
-            debug_mode = self.config.config.get("debug_mode", False)
-            example_setting = self.config.config.get("example_setting")
+            debug_mode = self.get_config("debug_mode", False)
+            example_setting = self.get_config("example_setting")
 
             logger.info(
                 "Example plugin processed recording.ended event",
@@ -120,7 +123,7 @@ class ExamplePlugin(PluginBase):
             logger.error(
                 "Error handling recording.ended event",
                 extra={
-                    "event_id": getattr(context, "event_id", None) if context else None,
+                    "event_id": getattr(context, "event_id", None) if context else None, # type: ignore
                     "error": str(e),
                     "error_type": type(e).__name__,
                 },
