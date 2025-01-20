@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 import google.generativeai as genai
 import httpx
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic  # Update import statement
 from openai import AsyncOpenAI
 
 from app.core.events import ConcreteEventBus as EventBus
@@ -61,9 +61,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                     self.model = config_dict["openai"]["model"]
                 elif self.provider == "anthropic":
                     # Anthropic SDK doesn't support custom http client configuration
-                    self.client = AsyncAnthropic(
-                        api_key=config_dict["anthropic"]["api_key"]
-                    )
+                    self.client = AsyncAnthropic(api_key=config_dict["anthropic"]["api_key"])
                     self.model = config_dict["anthropic"]["model"]
                 elif self.provider == "google":
                     # Standard configuration for Google GenerativeAI
@@ -243,56 +241,89 @@ class MeetingNotesRemotePlugin(PluginBase):
             )
             raise
 
-    async def _generate_meeting_notes_from_text(self, transcript_text: str) -> str:
-        """Generate meeting notes using Ollama LLM"""
-        if not transcript_text:
-            return "No transcript text found to generate notes from."
+    async def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
+        """Extract transcript path from event."""
+        # Handle RecordingEvent type
+        if isinstance(event, RecordingEvent):
+            if event.output_file:
+                return Path(event.output_file)
+            return None
 
-        # Log LLM request details
-        logger.info(
-            "Preparing LLM request",
-            extra={
-                "plugin_name": self.name,
-                "model": self.model,
-                "provider": self.provider,
-                "model": self.model,
-                "num_ctx": self.num_ctx,
-                "transcript_length": len(transcript_text),
-            },
-        )
+        # Handle generic Event type
+        if hasattr(event, "payload") and isinstance(event.payload, dict):
+            transcript_path = event.payload.get("transcript_path") or event.payload.get(
+                "output_file"
+            )
+            if transcript_path:
+                return Path(transcript_path)
 
-        # Extract metadata section
-        metadata_section = ""
-        transcript_content = transcript_text
-        if "## Metadata" in transcript_text:
-            parts = transcript_text.split("## Metadata", 1)
-            if len(parts) > 1:
-                metadata_parts = parts[1].split(
-                    "```", 3
-                )  # Split into 3 parts to handle both json and transcript sections
-                if len(metadata_parts) > 2:
-                    metadata_section = (
-                        metadata_parts[1].replace("json", "").strip()
-                    )  # Get the JSON content
-                    # Get the transcript section after metadata
-                    transcript_content = (
-                        "## Transcript" + metadata_parts[2].split("## Transcript", 1)[1]
-                        if "## Transcript" in metadata_parts[2]
-                        else ""
-                    )
+        return None
 
-        logger.debug(
-            "Extracted metadata and transcript",
-            extra={
-                "plugin_name": self.name,
-                "has_metadata": bool(metadata_section),
-                "metadata_length": len(metadata_section),
-                "transcript_length": len(transcript_content),
-            },
-        )
+    async def _read_transcript(self, transcript_path: str | Path) -> str:
+        """Read transcript file contents"""
+        try:
+            # Convert string path to Path object if needed
+            path = (
+                Path(transcript_path)
+                if isinstance(transcript_path, str)
+                else transcript_path
+            )
 
-        # Prepare prompt with explicit metadata handling
-        prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format. The transcript includes METADATA in JSON format that you should use for the meeting title and information section.
+            # Run file read in thread pool
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(self._executor, path.read_text)
+
+        except Exception as e:
+            logger.error(
+                "Failed to read transcript",
+                extra={
+                    "plugin_name": self.name,
+                    "transcript_path": str(transcript_path),
+                    "error": str(e),
+                    "req_id": self._req_id,
+                },
+                exc_info=True,
+            )
+            raise
+
+    async def _generate_notes_with_llm(
+        self, transcript: str, event_id: str
+    ) -> str | None:
+        """Generate meeting notes using the configured LLM provider"""
+        try:
+            # Extract metadata section
+            metadata_section = ""
+            transcript_content = transcript
+            if "## Metadata" in transcript:
+                parts = transcript.split("## Metadata", 1)
+                if len(parts) > 1:
+                    metadata_parts = parts[1].split(
+                        "```", 3
+                    )  # Split into 3 parts to handle both json and transcript sections
+                    if len(metadata_parts) > 2:
+                        metadata_section = (
+                            metadata_parts[1].replace("json", "").strip()
+                        )  # Get the JSON content
+                        # Get the transcript section after metadata
+                        transcript_content = (
+                            "## Transcript" + metadata_parts[2].split("## Transcript", 1)[1]
+                            if "## Transcript" in metadata_parts[2]
+                            else ""
+                        )
+
+            logger.debug(
+                "Extracted metadata and transcript",
+                extra={
+                    "plugin_name": self.name,
+                    "has_metadata": bool(metadata_section),
+                    "metadata_length": len(metadata_section),
+                    "transcript_length": len(transcript_content),
+                },
+            )
+
+            system_prompt = """You are a professional meeting notes taker. Your task is to analyze the meeting transcript and create clear, concise, and well-structured meeting notes."""
+
+            user_prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format. The transcript includes METADATA in JSON format that you should use for the meeting title and information section.
 
 Please ensure the notes are clear, concise, and well-organized using markdown formatting.
 
@@ -346,243 +377,7 @@ Keep each bullet point concise but informative]
 [List specific decisions or conclusions reached during the meeting]
 
 ## Next Steps
-[Outline any planned next steps or future actions discussed]
-"""
-
-        logger.debug(
-            "Generated prompt for meeting notes",
-            extra={"plugin_name": self.name, "prompt": prompt},
-        )
-
-        try:
-            # Log request parameters
-            logger.debug(
-                "Sending request to LLM provider",
-                extra={
-                    "req_id": self._req_id,
-                    "provider": self.provider,
-                    "model": self.model,
-                    "prompt_length": len(prompt),
-                    "num_ctx": self.num_ctx,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                },
-            )
-
-            try:
-                if self.provider == "openai":
-                    response = await self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "system", "content": self.SYSTEM_PROMPT},
-                            {"role": "user", "content": prompt},
-                        ],
-                        temperature=0,
-                    )
-                    return response.choices[0].message.content
-
-                elif self.provider == "anthropic":
-                    response = await self.client.messages.create(
-                        model=self.model,
-                        system=self.SYSTEM_PROMPT,
-                        messages=[{"role": "user", "content": prompt}],
-                        max_tokens=4096,  # Maximum allowed response length
-                    )
-                    return response.content[0].text
-
-                elif self.provider == "google":
-                    response = await self.client.generate_content_async(
-                        f"{self.SYSTEM_PROMPT}\n\n{prompt}",
-                        generation_config=genai.types.GenerationConfig(temperature=0),
-                    )
-                    return response.text
-
-            except Exception as e:
-                logger.error(
-                    f"Error calling {self.provider} API",
-                    extra={"req_id": self._req_id, "error": str(e)},
-                    exc_info=True,
-                )
-                return None
-
-        except Exception as e:
-            logger.error(
-                "Failed to generate meeting notes",
-                extra={
-                    "plugin_name": self.name,
-                    "error_type": type(e).__name__,
-                    "error": str(e),
-                    "transcript_length": len(transcript_text),
-                    "model": self.model,
-                },
-                exc_info=True,
-            )
-            return f"Error generating meeting notes: {e}"
-
-    async def _process_transcript(
-        self, recording_id: str, transcript_text: str, original_event: Event
-    ) -> None:
-        """Process transcript and generate meeting notes"""
-        try:
-            # Generate meeting notes synchronously since the API call is blocking
-            meeting_notes = await self._generate_meeting_notes_from_text(
-                transcript_text
-            )
-
-            # Save to file
-            output_file = self.output_dir / f"{recording_id}_notes.md"
-            output_file.write_text(meeting_notes)
-
-            # Emit completion event
-            if self.event_bus:
-                from datetime import datetime
-
-                event_data = {
-                    "recording_id": recording_id,
-                    "output_path": str(output_file),
-                    "notes_path": str(output_file),
-                    "status": "completed",
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "current_event": {
-                        "meeting_notes": {
-                            "status": "completed",
-                            "timestamp": datetime.now(UTC).isoformat(),
-                            "output_path": str(output_file),
-                        }
-                    },
-                    "event_history": {},
-                    "transcription": original_event.payload.get("transcription", {}),
-                    "noise_reduction": original_event.payload.get(
-                        "noise_reduction", {}
-                    ),
-                    "recording": original_event.payload.get("recording", {}),
-                }
-
-                event = Event(
-                    event_id=str(uuid.uuid4()),
-                    event="meeting_notes_remote.completed",
-                    data=event_data,
-                    context=EventContext(
-                        correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.now(UTC).isoformat(),
-                        source_plugin=self.name,
-                    ),
-                )
-
-                await self.event_bus.publish(event)
-
-                logger.info(
-                    "Meeting notes completion event published",
-                    extra={
-                        "plugin_name": self.name,
-                        "event_name": "meeting_notes_remote.completed",
-                        "recording_id": recording_id,
-                        "output_path": str(output_file),
-                    },
-                )
-
-        except Exception as e:
-            error_msg = f"Failed to process transcript: {e!s}"
-            logger.error(
-                error_msg,
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id,
-                    "error": str(e),
-                    "event_id": original_event.event_id,
-                },
-                exc_info=True,
-            )
-
-            if self.event_bus:
-                # Emit error event with preserved chain
-                event = Event(
-                    event_id=str(uuid.uuid4()),
-                    name="meeting_notes.error",
-                    event_data={
-                        "recording_id": recording_id,
-                        "meeting_notes": {
-                            "status": "error",
-                            "timestamp": datetime.now(UTC).isoformat(),
-                            "error": str(e),
-                        },
-                        # Preserve previous event data
-                        "transcription": original_event.payload.get(
-                            "transcription", {}
-                        ),
-                        "noise_reduction": original_event.payload.get(
-                            "noise_reduction", {}
-                        ),
-                        "recording": original_event.payload.get("recording", {}),
-                    },
-                    context=EventContext(
-                        recording_id=recording_id,
-                        plugin_name=self.name,
-                        req_id=self._req_id,
-                    ),
-                )
-                await self.event_bus.publish(event)
-
-    async def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
-        """Extract transcript path from event."""
-        # Handle RecordingEvent type
-        if isinstance(event, RecordingEvent):
-            if event.output_file:
-                return Path(event.output_file)
-            return None
-
-        # Handle generic Event type
-        if hasattr(event, "payload") and isinstance(event.payload, dict):
-            transcript_path = event.payload.get("transcript_path") or event.payload.get(
-                "output_file"
-            )
-            if transcript_path:
-                return Path(transcript_path)
-
-        return None
-
-    async def _read_transcript(self, transcript_path: str | Path) -> str:
-        """Read transcript file contents"""
-        try:
-            # Convert string path to Path object if needed
-            path = (
-                Path(transcript_path)
-                if isinstance(transcript_path, str)
-                else transcript_path
-            )
-
-            # Run file read in thread pool
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(self._executor, path.read_text)
-
-        except Exception as e:
-            logger.error(
-                "Failed to read transcript",
-                extra={
-                    "plugin_name": self.name,
-                    "transcript_path": str(transcript_path),
-                    "error": str(e),
-                    "req_id": self._req_id,
-                },
-                exc_info=True,
-            )
-            raise
-
-    async def _generate_notes_with_llm(
-        self, transcript: str, event_id: str
-    ) -> str | None:
-        """Generate meeting notes using the configured LLM provider"""
-        try:
-            system_prompt = """You are a professional meeting notes taker. Your task is to analyze the meeting transcript and create clear, concise, and well-structured meeting notes. Focus on:
-1. Key discussion points
-2. Action items and decisions
-3. Important deadlines or dates mentioned
-4. Main participants and their contributions
-5. Follow-up tasks
-
-Format the notes with clear headings and bullet points. Be concise but comprehensive."""
-
-            user_prompt = f"Please analyze this meeting transcript and create professional meeting notes:\n\n{transcript}"
+[Outline any planned next steps or future actions discussed]"""
 
             logger.info(
                 "Sending request to LLM provider",
@@ -595,30 +390,32 @@ Format the notes with clear headings and bullet points. Be concise but comprehen
 
             try:
                 if self.provider == "openai":
-                    response = await self.client.chat.completions.create(
+                    response = await self.client.chat.completions.create( # type: ignore
                         model=self.model,
                         messages=[
                             {"role": "system", "content": self.SYSTEM_PROMPT},
                             {"role": "user", "content": user_prompt},
                         ],
-                        temperature=0.3,
+                        temperature=0,
                     )
                     return response.choices[0].message.content
 
                 elif self.provider == "anthropic":
-                    response = await self.client.messages.create(
+                    response = await self.client.messages.create( # type: ignore
+                        max_tokens=4000,
+                        messages=[
+                            {"role": "user", "content": user_prompt}
+                        ],
                         model=self.model,
                         system=self.SYSTEM_PROMPT,
-                        messages=[{"role": "user", "content": user_prompt}],
-                        temperature=0.3,
-                        max_tokens=4000,
+                        temperature=0,
                     )
-                    return response.content[0].text
+                    return response.content[0].text # type: ignore
 
                 elif self.provider == "google":
-                    response = await self.client.generate_content_async(
+                    response = await self.client.generate_content_async( # type: ignore
                         f"{self.SYSTEM_PROMPT}\n\n{user_prompt}",
-                        generation_config=genai.types.GenerationConfig(temperature=0.3),
+                        generation_config=genai.types.GenerationConfig(temperature=0),
                     )
                     return response.text
 

@@ -383,7 +383,7 @@ Keep each bullet point concise but informative]
                         "recording_id": recording_id,
                         "meeting_notes": {
                             "status": "error",
-                            "timestamp": dt.now(tz.utc),
+                            "timestamp": dt.now(tz.utc), # type: ignore
                             "error": str(e),
                         },
                         # Preserve previous event data
