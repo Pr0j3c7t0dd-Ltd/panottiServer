@@ -154,9 +154,9 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         try:
             # Extract event type
             if isinstance(event_data, dict):
-                event_type = event_data.get("event")
+                event_type = event_data.get("name")
             else:
-                event_type = getattr(event_data, "event", None)
+                event_type = getattr(event_data, "name", None)
 
             logger.debug(
                 "Received noise reduction completed event",

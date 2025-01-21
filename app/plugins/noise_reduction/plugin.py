@@ -611,44 +611,70 @@ class NoiseReductionPlugin(PluginBase):
             max_retries = 5  # Increased from 3
             retry_delay = 2.0  # Increased from 1.0
 
-            for attempt in range(max_retries):
-                try:
-                    db = await DatabaseManager.get_instance_async()
-                    await db.execute(
-                        """
-                        INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
-                        VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                        ON CONFLICT(recording_id, plugin_name)
-                        DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-                        """,
-                        (recording_id, self.name),
-                    )
-                    await db.commit()
-                    break
-                except sqlite3.OperationalError as e:
-                    if "database is locked" in str(e) and attempt < max_retries - 1:
-                        await asyncio.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
-                    else:
-                        raise
-                except sqlite3.IntegrityError as e:
-                    if "FOREIGN KEY constraint failed" in str(e):
-                        logger.warning(
-                            "Recording not yet in database, retrying...",
-                            extra={
-                                "req_id": event_id,
-                                "plugin_name": self.name,
-                                "recording_id": recording_id,
-                                "attempt": attempt + 1,
-                                "max_retries": max_retries,
-                                "retry_delay": retry_delay,
-                                "total_delay": retry_delay * (2**attempt),
-                            },
+            try:
+                for attempt in range(max_retries):
+                    try:
+                        db = await DatabaseManager.get_instance_async()
+                        await db.execute(
+                            """
+                            INSERT INTO plugin_tasks (recording_id, plugin_name, status, created_at, updated_at)
+                            VALUES (?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            ON CONFLICT(recording_id, plugin_name)
+                            DO UPDATE SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+                            """,
+                            (recording_id, self.name),
                         )
-                        await asyncio.sleep(retry_delay)
-                        retry_delay *= 2
+                        await db.commit()
+                        break
+                    except sqlite3.OperationalError as e:
+                        if "database is locked" in str(e) and attempt < max_retries - 1:
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            raise
+                    except sqlite3.IntegrityError as e:
+                        if "FOREIGN KEY constraint failed" in str(e):
+                            logger.warning(
+                                "Recording not yet in database, retrying...",
+                                extra={
+                                    "req_id": event_id,
+                                    "plugin_name": self.name,
+                                    "recording_id": recording_id,
+                                    "attempt": attempt + 1,
+                                    "max_retries": max_retries,
+                                    "retry_delay": retry_delay,
+                                    "total_delay": retry_delay * (2**attempt),
+                                },
+                            )
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2
+                        else:
+                            raise
                         continue
-                    raise
+            except asyncio.CancelledError:
+                logger.info(
+                    "Task cancelled during database operation",
+                    extra={"recording_id": recording_id, "plugin": self.name},
+                )
+                raise  # Re-raise to allow proper cleanup
+            except sqlite3.IntegrityError as e:
+                if "FOREIGN KEY constraint failed" in str(e):
+                    logger.warning(
+                        "Recording not yet in database, retrying...",
+                        extra={
+                            "req_id": event_id,
+                            "plugin_name": self.name,
+                            "recording_id": recording_id,
+                            "attempt": attempt + 1,
+                            "max_retries": max_retries,
+                            "retry_delay": retry_delay,
+                            "total_delay": retry_delay * (2**attempt),
+                        },
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                    pass
+                raise
 
             await self._process_audio_files(recording_id, sys_path, mic_path, metadata)
 

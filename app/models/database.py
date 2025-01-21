@@ -302,7 +302,11 @@ class DatabaseManager:
             conn.execute(sql, parameters)
             conn.commit()
 
-        await asyncio.get_event_loop().run_in_executor(self._executor, _execute)
+        try:
+            await asyncio.get_event_loop().run_in_executor(self._executor, _execute)
+        except asyncio.CancelledError:
+            logger.info("Database operation cancelled", extra={"req_id": self._req_id})
+            raise  # Re-raise to allow proper cancellation handling
 
     async def execute_fetchall(
         self, sql: str, parameters: tuple = ()
