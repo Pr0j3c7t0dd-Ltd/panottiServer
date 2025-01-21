@@ -298,58 +298,21 @@ class DesktopNotifierPlugin(PluginBase):
             raise
 
     async def _init_database(self) -> None:
-        """Initialize database tables."""
-        if not self.db:
+        """Initialize database tables"""
+        if not self.db or self._db_initialized:
             return
 
-        # Create tables using the connection from our db instance
-        async with self.db.get_connection_async() as conn:
-            conn.execute(
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS notifications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     recording_id TEXT NOT NULL,
                     notification_type TEXT NOT NULL,
-                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (recording_id) REFERENCES recordings(recording_id)
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """
-            )
-            conn.commit()
-
-    async def _update_task_status(
-        self, notes_id: str, status: str, error_message: str | None = None
-    ) -> None:
-        """Update the status of a notification task in the database"""
-        db = await DatabaseManager.get_instance()
-        async with db.get_connection_async() as conn:
-            cursor = conn.cursor()
-            update_values = [
-                status,
-                error_message,
-                datetime.now(UTC).isoformat(),
-                notes_id,
-            ]
-            cursor.execute(
                 """
-                UPDATE desktop_notification_tasks
-                SET status = ?, error_message = ?, updated_at = ?
-                WHERE notes_id = ?
-            """,
-                update_values,
             )
             conn.commit()
-
-    async def _create_task_record(self, notes_id: str, notes_path: str) -> None:
-        """Create a new notification task record"""
-        db = await DatabaseManager.get_instance()
-        async with db.get_connection_async() as conn:
-            conn.execute(
-                """
-                INSERT INTO desktop_notification_tasks
-                (notes_id, status, notes_path)
-                VALUES (?, ?, ?)
-            """,
-                (notes_id, "pending", notes_path),
-            )
-            conn.commit()
+            self._db_initialized = True
