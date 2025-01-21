@@ -205,3 +205,40 @@ def test_directory_sync_stop_monitoring(app_root):
         mock_observer.stop.assert_called_once()
         mock_observer.join.assert_called_once()
         assert not sync.observers
+
+
+def test_directory_sync_stop_monitoring_timeout(app_root):
+    """Test case where observer doesn't stop within timeout"""
+    pairs = [{"source": "src", "destination": "dest"}]
+    with patch.dict(
+        os.environ,
+        {"DIRECTORY_SYNC_ENABLED": "true", "DIRECTORY_SYNC_PAIRS": json.dumps(pairs)},
+    ):
+        sync = DirectorySync(app_root)
+        mock_observer = MagicMock(spec=Observer)
+        mock_observer.is_alive.return_value = True  # Observer didn't stop within timeout
+        sync.observers["src"] = mock_observer
+
+        sync.stop_monitoring()
+
+        mock_observer.stop.assert_called_once()
+        mock_observer.join.assert_called_once_with(timeout=10.0)
+        assert not sync.observers
+
+
+def test_directory_sync_stop_monitoring_error(app_root):
+    """Test error handling in stop_monitoring"""
+    pairs = [{"source": "src", "destination": "dest"}]
+    with patch.dict(
+        os.environ,
+        {"DIRECTORY_SYNC_ENABLED": "true", "DIRECTORY_SYNC_PAIRS": json.dumps(pairs)},
+    ):
+        sync = DirectorySync(app_root)
+        mock_observer = MagicMock(spec=Observer)
+        mock_observer.stop.side_effect = Exception("Test error")
+        sync.observers["src"] = mock_observer
+
+        with pytest.raises(Exception, match="Test error"):
+            sync.stop_monitoring()
+
+        mock_observer.stop.assert_called_once()
