@@ -26,9 +26,15 @@ While this server is open source and compatible with any client that implements 
 
 ## Plugin Architecture
 
-panottiServer features an extensible plugin architecture that allows you to create custom plugins to support your specific workflows. Whether you need to integrate with your team's tools, add custom processing steps, or implement unique features, you can easily extend the server's functionality through plugins.
+panottiServer features an extensible plugin architecture that allows you to create custom plugins to support your specific workflows. The server includes several built-in plugins:
 
-Check out the [Plugin Development](#plugin-development) section below for a guide on creating your own plugins. In the future, we'll launch a community plugin repository where users can share and discover plugins built by the Panotti community.
+- `audio_transcription_local`: Handles audio transcription using OpenAI Whisper
+- `cleanup_files`: Manages file cleanup with safe deletion and notifications
+- `desktop_notifier`: Provides desktop notifications for important events
+- `events`: Core event system for plugin communication
+- `meeting_notes_local`: Generates meeting notes using local Ollama LLM
+- `meeting_notes_remote`: Generates meeting notes using remote LLM services
+- `noise_reduction`: Audio preprocessing and noise reduction
 
 ## Requirements
 
@@ -37,12 +43,15 @@ Check out the [Plugin Development](#plugin-development) section below for a guid
 - Poetry (dependency management)
 - Ollama (for meeting notes generation)
 - OpenAI Whisper (for audio transcription)
-- Minimum 8GB RAM available for Docker operations (model downloads and runtime)
+- Minimum 8GB RAM available for Docker operations
 - Docker with memory allocation:
-  - Minimum: 12GB reserved, 24GB limit for running llama3.1:latest
-  - Recommended: 16GB reserved, 32GB limit for better performance
+  - Minimum: 12GB reserved, 24GB limit
+  - Recommended: 16GB reserved, 32GB limit
 
-Note: The memory requirements are primarily driven by the LLM model size and operations. The application uses Docker resource limits to manage memory allocation and prevent system instability.
+System Dependencies (installed via setup script):
+- `openai-whisper`: Audio transcription
+- `terminal-notifier`: Desktop notifications (macOS)
+- `ollama`: Local LLM processing
 
 ## Installation
 
@@ -397,6 +406,22 @@ Content-Type: application/json
 
 ## Plugin Development
 
+To create a custom plugin:
+
+1. Create a new directory in `app/plugins/`
+2. Implement the plugin interface
+3. Subscribe to relevant events using the EventBus
+4. Add configuration in `plugin.yaml`
+
+Example plugin structure:
+```
+your_plugin/
+├── __init__.py
+├── plugin.yaml    # Plugin configuration
+├── models.py      # Data models
+└── handlers.py    # Event handlers
+```
+
 ### System Architecture
 
 The application follows a modular, plugin-based architecture:
@@ -421,6 +446,17 @@ app/
 │   │   └── plugin.yaml
 │   └── ...                # Other plugins
 ```
+
+### Event System
+
+The event system uses a publish-subscribe pattern with the following components:
+
+- **EventBus**: Central message broker that handles event distribution
+- **EventContext**: Provides metadata and priority for each event
+- **EventPriority**: Defines priority levels (LOW, NORMAL, HIGH)
+
+Events are handled asynchronously, with error handling to ensure one failed handler doesn't affect others.
+
 
 ### Creating a New Plugin
 

@@ -225,7 +225,7 @@ class EnhancedEventBus(EventBus):
         
         try:
             # Process event
-            await super().emit(event)
+            await super().publish(event)
             # Mark as processed
             await self.event_store.mark_processed(event_id)
         except Exception as e:

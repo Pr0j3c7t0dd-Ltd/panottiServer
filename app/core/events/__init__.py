@@ -36,11 +36,6 @@ class EventBus(Protocol):
         """Publish an event to all subscribers."""
         pass
 
-    @abstractmethod
-    async def emit(self, event: EventData) -> None:
-        """Emit an event (alias for publish)."""
-        await self.publish(event)
-
 
 __all__ = [
     "EventBus",  # Protocol
