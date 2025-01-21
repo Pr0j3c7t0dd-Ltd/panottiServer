@@ -18,7 +18,7 @@ from scipy import signal
 from scipy.signal import butter, filtfilt
 
 from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import EventData
+from app.core.events import EventData, Event, EventPriority
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.database import DatabaseManager, get_db_async
 from app.utils.logging_config import get_logger
@@ -676,6 +676,7 @@ class NoiseReductionPlugin(PluginBase):
                     "recording_id": recording_id,
                     "system_audio_path": system_audio_path,
                     "microphone_audio_path": microphone_audio_path,
+                    "correlation_id": event_metadata.get("correlation_id") if event_metadata else str(uuid.uuid4()),
                 },
             )
 
@@ -695,13 +696,14 @@ class NoiseReductionPlugin(PluginBase):
                         "system_path": system_audio_path,
                         "mic_path": microphone_audio_path,
                         "is_docker": os.path.exists("/.dockerenv"),
+                        "correlation_id": event_metadata.get("correlation_id") if event_metadata else str(uuid.uuid4()),
                     },
                 )
                 # Emit error event with preserved data
                 if self.event_bus:
-                    error_event = {
-                        "event": "noise_reduction.error",
-                        "data": {
+                    error_event = Event.create(
+                        name="noise_reduction.error",
+                        data={
                             "recording": {
                                 "recording_id": recording_id,
                                 "audio_paths": {
@@ -712,7 +714,7 @@ class NoiseReductionPlugin(PluginBase):
                             },
                             "noise_reduction": {
                                 "status": "error",
-                                "timestamp": datetime.now(tz=UTC).isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                                 "error": "Missing or invalid audio files",
                                 "config": {
                                     "time_domain_subtraction": self._time_domain_subtraction,
@@ -722,8 +724,10 @@ class NoiseReductionPlugin(PluginBase):
                                 }
                             }
                         },
-                        "metadata": event_metadata or {},
-                    }
+                        correlation_id=(event_metadata.get("correlation_id") if event_metadata and event_metadata.get("correlation_id") else str(uuid.uuid4())), # type: ignore
+                        source_plugin=self.__class__.__name__,
+                        priority=EventPriority.NORMAL
+                    )
                     await self.event_bus.publish(error_event)
                 return None
 
@@ -786,61 +790,60 @@ class NoiseReductionPlugin(PluginBase):
                     (recording_id, self.name),
                 )
 
-            # Emit completion event with preserved data
-            if self.event_bus and final_output:
-                completion_event = {
-                    "event": "noise_reduction.completed",
-                    "data": {
-                        # Preserve original recording data
-                        "recording": {
-                            "recording_id": recording_id,
-                            "audio_paths": {
-                                "system": system_audio_path,
-                                "microphone": microphone_audio_path,
-                            },
-                            "metadata": event_metadata or {},
-                        },
-                        # Add noise reduction data
-                        "noise_reduction": {
-                            "status": "completed",
-                            "timestamp": datetime.now(tz=UTC).isoformat(),
-                            "output_path": str(final_output),
-                            "method": "frequency_domain" if self._freq_domain_bleed_removal else 
-                                    "time_domain" if self._time_domain_subtraction else 
-                                    "spectral",
-                            "config": {
-                                "time_domain_subtraction": self._time_domain_subtraction,
-                                "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
-                                "noise_reduce_factor": self._noise_reduce_factor,
-                                "wiener_alpha": self._wiener_alpha,
-                                "highpass_cutoff": self._highpass_cutoff,
-                                "spectral_floor": self._spectral_floor,
-                                "smoothing_factor": self._smoothing_factor,
-                            }
-                        }
-                    },
-                    # Preserve original metadata
-                    "metadata": event_metadata or {},
-                    # Add input/output paths
-                    "input_paths": {
-                        "system": system_audio_path,
-                        "microphone": microphone_audio_path,
-                    },
-                    "output_paths": {
-                        "cleaned_audio": str(final_output)
-                    }
-                }
-                await self.event_bus.publish(completion_event)
-
-                logger.info(
-                    "Audio processing completed successfully",
-                    extra={
-                        "req_id": self._req_id,
-                        "plugin_name": self.name,
+            # Emit completion event
+            completion_event = Event.create(
+                name="noise_reduction.completed",
+                data={
+                    # Preserve original recording data
+                    "recording": {
                         "recording_id": recording_id,
-                        "output_path": str(final_output),
+                        "audio_paths": {
+                            "system": system_audio_path,
+                            "microphone": microphone_audio_path,
+                        },
+                        "metadata": event_metadata or {},
                     },
-                )
+                    # Add noise reduction data
+                    "noise_reduction": {
+                        "status": "completed",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "output_path": str(final_output),
+                        "method": "frequency_domain" if self._freq_domain_bleed_removal else 
+                                "time_domain" if self._time_domain_subtraction else 
+                                "spectral",
+                        "config": {
+                            "time_domain_subtraction": self._time_domain_subtraction,
+                            "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
+                            "noise_reduce_factor": self._noise_reduce_factor,
+                            "wiener_alpha": self._wiener_alpha,
+                            "highpass_cutoff": self._highpass_cutoff,
+                            "spectral_floor": self._spectral_floor,
+                            "smoothing_factor": self._smoothing_factor,
+                        },
+                        "input_paths": {
+                            "system": system_audio_path,
+                            "microphone": microphone_audio_path,
+                        },
+                        "output_paths": {
+                            "cleaned_audio": str(final_output)
+                        }
+                    }
+                },
+                correlation_id=(event_metadata.get("correlation_id") if event_metadata and event_metadata.get("correlation_id") else str(uuid.uuid4())), # type: ignore
+                source_plugin=self.__class__.__name__,
+                priority=EventPriority.NORMAL
+            )
+            await self.event_bus.publish(completion_event) # type: ignore
+
+            logger.info(
+                "Audio processing completed successfully",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "output_path": str(final_output),
+                },
+            )
 
         except Exception as e:
             logger.error(
@@ -850,13 +853,14 @@ class NoiseReductionPlugin(PluginBase):
                     "plugin_name": self.name,
                     "recording_id": recording_id,
                     "error": str(e),
+                    "correlation_id": (event_metadata.get("correlation_id") if event_metadata and event_metadata.get("correlation_id") else str(uuid.uuid4())),
                 },
             )
             # Emit error event with preserved data
             if self.event_bus:
-                error_event = {
-                    "event": "noise_reduction.error",
-                    "data": {
+                error_event = Event.create(
+                    name="noise_reduction.error",
+                    data={
                         # Preserve original recording data
                         "recording": {
                             "recording_id": recording_id,
@@ -869,24 +873,24 @@ class NoiseReductionPlugin(PluginBase):
                         # Add noise reduction error data
                         "noise_reduction": {
                             "status": "error",
-                            "timestamp": datetime.now(tz=UTC).isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                             "error": str(e),
                             "config": {
                                 "time_domain_subtraction": self._time_domain_subtraction,
                                 "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
                                 "noise_reduce_factor": self._noise_reduce_factor,
                                 "wiener_alpha": self._wiener_alpha,
+                            },
+                            "input_paths": {
+                                "system": system_audio_path,
+                                "microphone": microphone_audio_path,
                             }
                         }
                     },
-                    # Preserve original metadata
-                    "metadata": event_metadata or {},
-                    # Add input paths
-                    "input_paths": {
-                        "system": system_audio_path,
-                        "microphone": microphone_audio_path,
-                    }
-                }
+                    correlation_id=(event_metadata.get("correlation_id") if event_metadata and event_metadata.get("correlation_id") else str(uuid.uuid4())), # type: ignore
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
+                )
                 await self.event_bus.publish(error_event)
             raise
 

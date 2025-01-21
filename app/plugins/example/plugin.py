@@ -7,7 +7,7 @@ from typing import Any
 from datetime import datetime
 from pytz import UTC
 
-from app.core.events import EventContext
+from app.core.events import Event, EventContext, EventPriority
 from app.core.plugins import PluginBase, PluginConfig
 from app.utils.logging_config import get_logger
 
@@ -114,9 +114,9 @@ class ExamplePlugin(PluginBase):
 
             # Example of emitting a completion event with preserved event chain
             if self.event_bus:
-                completion_event = {
-                    "event": "example.completed",
-                    "data": {
+                completion_event = Event.create(
+                    name="example.completed",
+                    data={
                         # Preserve original event data
                         "recording": event_data.get("data", {}).get("recording", {}),
                         # Add current event data
@@ -125,14 +125,13 @@ class ExamplePlugin(PluginBase):
                             "timestamp": datetime.now(UTC).isoformat(),
                             "debug_mode": debug_mode,
                             "example_setting": example_setting,
-                            "event_id": getattr(context, "event_id", None),
+                            "event_id": getattr(context, "event_id", None)
                         }
                     },
-                    # Preserve original event metadata
-                    "metadata": event_data.get("metadata", {}),
-                    # Preserve input/output paths
-                    "input_paths": event_data.get("input_paths", {}),
-                }
+                    correlation_id=getattr(context, "correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
+                )
                 await self.event_bus.publish(completion_event)
 
             logger.info(
@@ -156,9 +155,9 @@ class ExamplePlugin(PluginBase):
 
             # Example of emitting an error event with preserved event chain
             if self.event_bus:
-                error_event = {
-                    "event": "example.error",
-                    "data": {
+                error_event = Event.create(
+                    name="example.error",
+                    data={
                         # Preserve original event data
                         "recording": event_data.get("data", {}).get("recording", {}),
                         # Add current event data
@@ -168,14 +167,13 @@ class ExamplePlugin(PluginBase):
                             "error": str(e),
                             "debug_mode": debug_mode,
                             "example_setting": example_setting,
-                            "event_id": getattr(context, "event_id", None),
+                            "event_id": getattr(context, "event_id", None)
                         }
                     },
-                    # Preserve original event metadata
-                    "metadata": event_data.get("metadata", {}),
-                    # Preserve input/output paths
-                    "input_paths": event_data.get("input_paths", {}),
-                }
+                    correlation_id=getattr(context, "correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
+                )
                 await self.event_bus.publish(error_event)
             raise
 

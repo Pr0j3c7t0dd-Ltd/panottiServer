@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any
+import uuid
 
 import numpy as np
 import soundfile as sf
@@ -20,6 +21,7 @@ from app.models.database import DatabaseManager
 from app.models.recording.events import RecordingEvent
 from app.plugins.audio_transcription_local.transcript_cleaner import TranscriptCleaner
 from app.utils.logging_config import get_logger
+from app.core.events import Event, EventPriority
 
 logger = get_logger("app.plugins.audio_transcription_local.plugin")
 
@@ -315,56 +317,39 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             )
 
             # Create enriched event data
-            enriched_event = {
-                "event": "transcription_local.completed",
-                "recording_id": recording_id,
-                "output_path": str(merged_transcript),
-                "input_paths": {
-                    "microphone": processed_mic_audio,
-                    "system": original_sys_audio,
-                },
-                "transcript_paths": {
-                    "microphone": str(mic_transcript),
-                    "system": str(sys_transcript) if sys_transcript else None,
-                    "merged": str(merged_transcript),
-                },
-                "transcript_path": str(merged_transcript),
-                "event_id": f"{recording_id}_transcription_completed",
-                "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-                "plugin_id": self.name,
-                "metadata": metadata,
-                "data": {
-                    "current_event": {
-                        "recording": {
-                            "audio_paths": {
-                                "system": original_sys_audio,
-                                "microphone": processed_mic_audio,
-                            },
-                            "metadata": metadata,
+            event = Event.create(
+                name="transcription_local.completed",
+                data={
+                    "recording": {
+                        "audio_paths": {
+                            "system": original_sys_audio,
+                            "microphone": processed_mic_audio,
                         },
-                        "transcription": {
-                            "status": "completed",
-                            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-                            "transcript_paths": {
-                                "microphone": str(mic_transcript),
-                                "system": str(sys_transcript)
-                                if sys_transcript
-                                else None,
-                                "merged": str(merged_transcript),
-                            },
-                            "transcript_path": str(merged_transcript),
-                            "speaker_labels": {
-                                "microphone": mic_label,
-                                "system": sys_label,
-                            },
+                        "metadata": metadata,
+                    },
+                    "transcription": {
+                        "status": "completed",
+                        "timestamp": datetime.now().isoformat(),
+                        "transcript_paths": {
+                            "microphone": str(mic_transcript),
+                            "system": str(sys_transcript) if sys_transcript else None,
+                            "merged": str(merged_transcript),
                         },
+                        "transcript_path": str(merged_transcript),
+                        "speaker_labels": {
+                            "microphone": mic_label,
+                            "system": sys_label,
+                        }
                     }
                 },
-            }
+                correlation_id=metadata.get("correlation_id", str(uuid.uuid4())),
+                source_plugin=self.__class__.__name__,
+                priority=EventPriority.NORMAL
+            )
 
             # Emit enriched event
             if self.event_bus:
-                await self.event_bus.publish(enriched_event)
+                await self.event_bus.publish(event)
             else:
                 logger.warning("No event bus available to publish transcription event")
 
@@ -384,59 +369,51 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         original_event: dict | None = None,
     ) -> None:
         """Emit transcription event."""
-        event_data = {
-            "status": status,
-            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "output_file": output_file if output_file else None,
-        }
-
         if error:
-            event_data["error"] = error
-
-        # Preserve event chain data
-        if original_event:
-            # Preserve recording data
-            if "recording" in original_event:
-                event_data["recording"] = original_event["recording"]
-            
-            # Preserve noise reduction data
-            if "noise_reduction" in original_event:
-                event_data["noise_reduction"] = original_event["noise_reduction"]
-            
-            # Add transcription data
-            event_data["transcription"] = {
-                "status": status,
-                "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-                "output_file": output_file,
-                "error": error if error else None,
-                "model": self.get_config("model", "base"),
-                "language": self.get_config("language", "en"),
-                "speaker_labels": {
-                    "microphone": original_event.get("metadata", {}).get("microphoneLabel", "Microphone"),
-                    "system": original_event.get("metadata", {}).get("systemLabel", "System")
-                }
-            }
-
-            # Preserve paths
-            event_data["input_paths"] = original_event.get("input_paths", {})
-            if output_file:
-                event_data["output_paths"] = {
-                    "transcript": output_file
-                }
-
-        # Create and emit event with preserved context
-        event = {
-            "event": "transcription_local.completed" if not error else "transcription_local.error",
-            "data": event_data,
-            "context": EventContext(
-                metadata=original_event.get("context", {}).get("metadata", {})
-                if original_event and "context" in original_event
-                else {}
-            ),
-            "metadata": original_event.get("metadata", {}) if original_event else {},
-            "system_audio_path": original_event.get("system_audio_path") if original_event else None,
-            "microphone_audio_path": original_event.get("microphone_audio_path") if original_event else None,
-        }
+            event = Event.create(
+                name="transcription_local.error",
+                data={
+                    "recording": original_event.get("recording", {}) if original_event else {},
+                    "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
+                    "transcription": {
+                        "status": "error",
+                        "timestamp": datetime.now().isoformat(),
+                        "output_file": output_file,
+                        "error": error,
+                        "model": self.get_config("model", "base"),
+                        "language": self.get_config("language", "en"),
+                        "speaker_labels": {
+                            "microphone": original_event.get("metadata", {}).get("microphoneLabel", "Microphone") if original_event else "Microphone",
+                            "system": original_event.get("metadata", {}).get("systemLabel", "System") if original_event else "System"
+                        }
+                    }
+                },
+                correlation_id=original_event.get("context", {}).get("correlation_id", str(uuid.uuid4())) if original_event else str(uuid.uuid4()),
+                source_plugin=self.__class__.__name__,
+                priority=EventPriority.NORMAL
+            )
+        else:
+            event = Event.create(
+                name="transcription_local.completed",
+                data={
+                    "recording": original_event.get("recording", {}) if original_event else {},
+                    "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
+                    "transcription": {
+                        "status": "completed",
+                        "timestamp": datetime.now().isoformat(),
+                        "output_file": output_file,
+                        "model": self.get_config("model", "base"),
+                        "language": self.get_config("language", "en"),
+                        "speaker_labels": {
+                            "microphone": original_event.get("metadata", {}).get("microphoneLabel", "Microphone") if original_event else "Microphone",
+                            "system": original_event.get("metadata", {}).get("systemLabel", "System") if original_event else "System"
+                        }
+                    }
+                },
+                correlation_id=original_event.get("context", {}).get("correlation_id", str(uuid.uuid4())) if original_event else str(uuid.uuid4()),
+                source_plugin=self.__class__.__name__,
+                priority=EventPriority.NORMAL
+            )
 
         if self.event_bus:
             await self.event_bus.publish(event)
@@ -447,7 +424,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         log_data = {
             "plugin": self.name,
             "recording_id": recording_id,
-            "event": "transcription_local.completed" if not error else "transcription_local.error",
+            "event": event.name,
             "status": status,
         }
         if output_file:

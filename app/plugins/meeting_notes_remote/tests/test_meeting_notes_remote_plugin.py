@@ -111,9 +111,11 @@ Speaker 2: I'll prepare the report by next week.
 
             plugin_with_mock_bus.event_bus.publish.assert_called_once()
             call_args = plugin_with_mock_bus.event_bus.publish.call_args[0][0]
-            assert call_args["event"] == "meeting_notes_remote.completed"
-            assert call_args["recording_id"] == "test_recording"
-            assert call_args["status"] == "completed"
+            assert call_args.name == "meeting_notes_remote.completed"
+            assert call_args.data["meeting_notes_remote"]["recording_id"] == "test_recording"
+            assert call_args.data["meeting_notes_remote"]["status"] == "completed"
+            assert call_args.data["meeting_notes_remote"]["output_path"] == "output.md"
+            assert call_args.data["meeting_notes_remote"]["notes_path"] == "output.md"
 
     async def test_handle_transcription_completed_no_path(self, plugin_with_mock_bus):
         """Test handling transcription completed event with no transcript path"""

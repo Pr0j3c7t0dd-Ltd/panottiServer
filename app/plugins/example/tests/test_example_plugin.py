@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.core.events import Event, EventContext
 from app.core.plugins import PluginConfig
 from app.plugins.example.plugin import ExamplePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
@@ -42,7 +43,7 @@ class TestExamplePlugin(BasePluginTest):
                 mock_bus.subscriptions[event_type].remove(callback)
 
         async def mock_publish(event):
-            event_type = event.get("name")
+            event_type = event.name if isinstance(event, Event) else event.get("name")
             if event_type in mock_bus.subscriptions:
                 for callback in mock_bus.subscriptions[event_type]:
                     await callback(event)
@@ -87,7 +88,7 @@ class TestExamplePlugin(BasePluginTest):
 
     async def test_handle_recording_ended(self, plugin):
         """Test recording ended event handler"""
-        # Mock event data
+        # Mock event data as dictionary since plugin expects EventData type
         event = {
             "context": {"event_id": "test_id", "event_type": "recording.ended"},
             "data": {"recording_id": "test_recording"},
@@ -102,6 +103,7 @@ class TestExamplePlugin(BasePluginTest):
 
     async def test_handle_recording_ended_no_context(self, plugin):
         """Test recording ended handler with missing context"""
+        # Mock event data as dictionary since plugin expects EventData type
         event = {"data": {"recording_id": "test_recording"}}
 
         # Initialize plugin

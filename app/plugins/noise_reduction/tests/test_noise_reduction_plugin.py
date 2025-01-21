@@ -382,6 +382,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
         recording_id = "test_recording"
         system_path = "system.wav"
         mic_path = "mic.wav"
+        metadata = {"correlation_id": "test-correlation-id"}
 
         # Mock the event loop's run_in_executor
         loop = asyncio.get_running_loop()
@@ -413,9 +414,9 @@ class TestNoiseReductionPlugin(BasePluginTest):
             initialized_plugin._time_domain_subtraction = True
             initialized_plugin._freq_domain_bleed_removal = False
 
-            # Call the function
+            # Call the function with metadata
             await initialized_plugin._process_audio_files(
-                recording_id, system_path, mic_path
+                recording_id, system_path, mic_path, metadata
             )
 
             # Verify the appropriate method was called
@@ -435,6 +436,26 @@ class TestNoiseReductionPlugin(BasePluginTest):
             mock_process.return_value = None
             await initialized_plugin.handle_recording_ended(event_data)
             mock_process.assert_called_once_with(recording_id, None, None, {})
+
+    @pytest.mark.asyncio
+    async def test_process_audio_files_error_handling(self, initialized_plugin):
+        """Test error handling in _process_audio_files"""
+        recording_id = "test_recording"
+        system_path = "nonexistent_system.wav"
+        mic_path = "nonexistent_mic.wav"
+        metadata = {"correlation_id": "test-correlation-id"}
+
+        with patch.object(
+            initialized_plugin, "_translate_path_to_container"
+        ) as mock_translate:
+            mock_translate.side_effect = lambda x: x
+
+            # Test with nonexistent files and metadata
+            await initialized_plugin._process_audio_files(
+                recording_id, system_path, mic_path, metadata
+            )
+
+            # Verify no error is raised and function completes
 
     def test_translate_path_to_container(self, initialized_plugin):
         """Test path translation for container paths"""
@@ -475,25 +496,6 @@ class TestNoiseReductionPlugin(BasePluginTest):
         assert filtered_spec.shape == spec.shape
         assert filtered_spec.dtype == np.complex128
         assert not np.array_equal(filtered_spec, spec)  # Should modify the input
-
-    @pytest.mark.asyncio
-    async def test_process_audio_files_error_handling(self, initialized_plugin):
-        """Test error handling in _process_audio_files"""
-        recording_id = "test_recording"
-        system_path = "nonexistent_system.wav"
-        mic_path = "nonexistent_mic.wav"
-
-        with patch.object(
-            initialized_plugin, "_translate_path_to_container"
-        ) as mock_translate:
-            mock_translate.side_effect = lambda x: x
-
-            # Test with nonexistent files
-            await initialized_plugin._process_audio_files(
-                recording_id, system_path, mic_path
-            )
-
-            # Verify no error is raised and function completes
 
     def test_align_signals_by_fft(self, initialized_plugin):
         """Test FFT-based signal alignment"""

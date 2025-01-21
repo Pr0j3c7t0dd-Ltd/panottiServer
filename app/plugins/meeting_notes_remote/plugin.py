@@ -12,7 +12,7 @@ from anthropic import AsyncAnthropic  # Update import statement
 from openai import AsyncOpenAI
 
 from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import Event
+from app.core.events import Event, EventPriority
 from app.core.plugins import PluginBase  # Updated import path
 from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
@@ -194,43 +194,39 @@ class MeetingNotesRemotePlugin(PluginBase):
             )
 
             # Emit completion event
-            completion_event = {
-                "event": "meeting_notes_remote.completed",
-                "recording_id": recording_id,
-                "output_path": str(output_path),
-                "notes_path": str(output_path),
-                "status": "completed",
-                "timestamp": datetime.now(UTC).isoformat(),
-                "plugin_id": self.name,
-                "data": {
+            completion_event = Event.create(
+                name="meeting_notes_remote.completed",
+                data={
                     # Preserve original event data
                     "recording": event_data.get("recording", {}), # type: ignore
                     "noise_reduction": event_data.get("noise_reduction", {}), # type: ignore
                     "transcription": event_data.get("transcription", {}), # type: ignore
                     # Add current event data
-                    "meeting_notes": {
+                    "meeting_notes_remote": {
                         "status": "completed",
                         "timestamp": datetime.now(UTC).isoformat(),
+                        "recording_id": recording_id,
                         "output_path": str(output_path),
+                        "notes_path": str(output_path),
                         "provider": self.provider,
-                        "model": self.model
+                        "model": self.model,
+                        "input_paths": {
+                            "microphone": event_data.get("input_paths", {}).get("microphone"), # type: ignore
+                            "system": event_data.get("input_paths", {}).get("system"), # type: ignore
+                        },
+                        "transcript_paths": event_data.get("transcript_paths", {}) # type: ignore
                     }
                 },
-                # Preserve original event metadata
-                "metadata": event_data.get("metadata", {}), # type: ignore
-                # Preserve input/output paths from previous steps
-                "input_paths": {
-                    "microphone": event_data.get("input_paths", {}).get("microphone"), # type: ignore
-                    "system": event_data.get("input_paths", {}).get("system"), # type: ignore
-                },
-                "transcript_paths": event_data.get("transcript_paths", {}) # type: ignore
-            }
+                correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                source_plugin=self.__class__.__name__,
+                priority=EventPriority.NORMAL
+            )
 
             logger.debug(
                 "Publishing completion event",
                 extra={
                     "plugin": self.name,
-                    "event_name": completion_event["event"],
+                    "event_name": "meeting_notes_remote.completed",
                     "recording_id": recording_id,
                     "output_path": str(output_path),
                 },
@@ -243,7 +239,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                 "Meeting notes completion event published",
                 extra={
                     "plugin_name": self.name,
-                    "event_name": completion_event["event"],
+                    "event_name": "meeting_notes_remote.completed",
                     "recording_id": recording_id,
                     "output_path": str(output_path),
                 },
@@ -255,6 +251,31 @@ class MeetingNotesRemotePlugin(PluginBase):
                 extra={"plugin_name": self.name, "error": str(e)},
                 exc_info=True,
             )
+            
+            # Emit error event
+            if self.event_bus:
+                error_event = Event.create(
+                    name="meeting_notes_remote.error",
+                    data={
+                        # Preserve original event data
+                        "recording": event_data.get("recording", {}), # type: ignore
+                        "noise_reduction": event_data.get("noise_reduction", {}), # type: ignore
+                        "transcription": event_data.get("transcription", {}), # type: ignore
+                        # Add current event data
+                        "meeting_notes_remote": {
+                            "status": "error",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "recording_id": recording_id,
+                            "error": str(e),
+                            "provider": self.provider,
+                            "model": self.model
+                        }
+                    },
+                    correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
+                )
+                await self.event_bus.publish(error_event)
             raise
 
     async def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:

@@ -376,28 +376,26 @@ Keep each bullet point concise but informative]
 
             if self.event_bus:
                 # Emit error event with preserved chain
-                event = Event(
-                    event_id=str(uuid.uuid4()),
-                    plugin_id=self.name,
+                error_event = Event.create(
                     name="meeting_notes_local.error",
                     data={
-                        "recording_id": recording_id,
-                        "meeting_notes": {
-                            "status": "error",
-                            "timestamp": dt.now(UTC),  # type: ignore
-                            "error": str(e),
-                        },
-                        # Preserve previous event data
-                        "transcription": original_event.data.get("transcription", {}),
-                        "noise_reduction": original_event.data.get(
-                            "noise_reduction", {}
-                        ),
+                        # Preserve original event data
                         "recording": original_event.data.get("recording", {}),
+                        "noise_reduction": original_event.data.get("noise_reduction", {}),
+                        "transcription": original_event.data.get("transcription", {}),
+                        # Add current event data
+                        "meeting_notes_local": {
+                            "status": "error",
+                            "timestamp": dt.now(UTC).isoformat(),
+                            "recording_id": recording_id,
+                            "error": str(e)
+                        }
                     },
-                    context=original_event.context,
-                    priority=EventPriority.NORMAL,
+                    correlation_id=getattr(original_event.context, "correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
                 )
-                await self.event_bus.publish(event)
+                await self.event_bus.publish(error_event)
 
     async def handle_event(self, event_data: Event) -> None:
         """Handle an event"""
@@ -512,42 +510,38 @@ Keep each bullet point concise but informative]
                 )
 
                 # Publish completion event
-                completion_event = {
-                    "event": "meeting_notes_local.completed",
-                    "recording_id": recording_id,
-                    "output_path": str(output_path),
-                    "notes_path": str(output_path),
-                    "status": "completed",
-                    "timestamp": dt.now(UTC),
-                    "plugin_id": self.name,
-                    "data": {
+                completion_event = Event.create(
+                    name="meeting_notes_local.completed",
+                    data={
                         # Preserve original event data
                         "recording": event_data.data.get("recording", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("recording", {}),
                         "noise_reduction": event_data.data.get("noise_reduction", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("noise_reduction", {}),
                         "transcription": event_data.data.get("transcription", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("transcription", {}),
                         # Add current event data
-                        "meeting_notes": {
+                        "meeting_notes_local": {
                             "status": "completed",
-                            "timestamp": dt.now(UTC),
+                            "timestamp": dt.now(UTC).isoformat(),
+                            "recording_id": recording_id,
                             "output_path": str(output_path),
+                            "notes_path": str(output_path),
+                            "input_paths": {
+                                "microphone": event_data.data.get("input_paths", {}).get("microphone") if isinstance(event_data, RecordingEvent) else event_data.get("input_paths", {}).get("microphone"),
+                                "system": event_data.data.get("input_paths", {}).get("system") if isinstance(event_data, RecordingEvent) else event_data.get("input_paths", {}).get("system"),
+                            },
+                            "transcript_paths": event_data.data.get("transcript_paths", {}) if isinstance(event_data, RecordingEvent) else event_data.get("transcript_paths", {})
                         }
                     },
-                    # Preserve original event metadata
-                    "metadata": event_data.data.get("metadata", {}) if isinstance(event_data, RecordingEvent) else event_data.get("metadata", {}),
-                    # Preserve input/output paths from previous steps
-                    "input_paths": {
-                        "microphone": event_data.data.get("input_paths", {}).get("microphone") if isinstance(event_data, RecordingEvent) else event_data.get("input_paths", {}).get("microphone"),
-                        "system": event_data.data.get("input_paths", {}).get("system") if isinstance(event_data, RecordingEvent) else event_data.get("input_paths", {}).get("system"),
-                    },
-                    "transcript_paths": event_data.data.get("transcript_paths", {}) if isinstance(event_data, RecordingEvent) else event_data.get("transcript_paths", {}),
-                }
+                    correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
+                )
 
                 if self.event_bus is None:
                     logger.error(
                         "Cannot publish event: event bus is not initialized",
                         extra={
                             "plugin": self.name,
-                            "event_name": completion_event["event"],
+                            "event_name": "meeting_notes_local.completed",
                             "recording_id": recording_id,
                         },
                     )
@@ -557,7 +551,7 @@ Keep each bullet point concise but informative]
                     "Publishing completion event",
                     extra={
                         "plugin": self.name,
-                        "event_name": completion_event["event"],
+                        "event_name": "meeting_notes_local.completed",
                         "recording_id": recording_id,
                         "output_path": str(output_path),
                     },
@@ -569,7 +563,7 @@ Keep each bullet point concise but informative]
                     "Meeting notes completion event published",
                     extra={
                         "plugin_name": self.name,
-                        "event_name": completion_event["event"],
+                        "event_name": "meeting_notes_local.completed",
                         "recording_id": recording_id,
                         "output_path": str(output_path),
                     },
