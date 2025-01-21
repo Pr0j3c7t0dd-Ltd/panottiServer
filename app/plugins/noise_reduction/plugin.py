@@ -7,7 +7,7 @@ import sqlite3
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from sqlite3 import Connection
 from typing import Any

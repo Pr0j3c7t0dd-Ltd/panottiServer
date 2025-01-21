@@ -6,7 +6,7 @@ import os
 import threading
 import wave
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -330,7 +330,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 },
                 "transcript_path": str(merged_transcript),
                 "event_id": f"{recording_id}_transcription_completed",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(tz=timezone.utc).isoformat(),
                 "plugin_id": self.name,
                 "metadata": metadata,
                 "data": {
@@ -344,7 +344,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                         },
                         "transcription": {
                             "status": "completed",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
                             "transcript_paths": {
                                 "microphone": str(mic_transcript),
                                 "system": str(sys_transcript)
@@ -386,7 +386,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         """Emit transcription event."""
         event_data = {
             "status": status,
-            "timestamp": datetime.now(tz=UTC).isoformat(),
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
             "output_file": output_file if output_file else None,
         }
 
@@ -406,7 +406,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             # Add transcription data
             event_data["transcription"] = {
                 "status": status,
-                "timestamp": datetime.now(tz=UTC).isoformat(),
+                "timestamp": datetime.now(tz=timezone.utc).isoformat(),
                 "output_file": output_file,
                 "error": error if error else None,
                 "model": self.get_config("model", "base"),
@@ -494,7 +494,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 json.dumps(output_paths) if output_paths else None,
                 merged_output_path,
                 error_message,
-                datetime.utcnow().isoformat(),
+                datetime.now(tz=timezone.utc).isoformat(),
                 recording_id,
             ]
             cursor.execute(
@@ -589,10 +589,10 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 for segment in segments:
                     # Format timestamp as [MM:SS.mmm]
                     start_time = str(
-                        datetime.utcfromtimestamp(segment.start).strftime("%M:%S.%f")
+                        datetime.fromtimestamp(segment.start, tz=timezone.utc).strftime("%M:%S.%f")
                     )[:-3]
                     end_time = str(
-                        datetime.utcfromtimestamp(segment.end).strftime("%M:%S.%f")
+                        datetime.fromtimestamp(segment.end, tz=timezone.utc).strftime("%M:%S.%f")
                     )[:-3]
                     f.write(f"[{start_time} - {end_time}] {segment.text}\n")
 
@@ -684,7 +684,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "attendees": original_event.get("eventAttendees", []),
                 },
                 "speakers": labels,
-                "transcriptionCompleted": datetime.utcnow().isoformat(),
+                "transcriptionCompleted": datetime.now(tz=timezone.utc).isoformat(),
             }
 
             # Write metadata as JSON in markdown code block
@@ -803,7 +803,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                             ),
                             self._current_event_metadata.get("systemLabel", "System"),
                         ],
-                        "transcriptionCompleted": datetime.utcnow().isoformat(),
+                        "transcriptionCompleted": datetime.now(tz=timezone.utc).isoformat(),
                     }
                     f.write("## Metadata\n\n```json\n")
                     f.write(json.dumps(metadata, indent=2))

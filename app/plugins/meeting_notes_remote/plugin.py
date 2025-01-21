@@ -204,9 +204,9 @@ class MeetingNotesRemotePlugin(PluginBase):
                 "plugin_id": self.name,
                 "data": {
                     # Preserve original event data
-                    "recording": event_data.get("recording", {}),
-                    "noise_reduction": event_data.get("noise_reduction", {}),
-                    "transcription": event_data.get("transcription", {}),
+                    "recording": event_data.get("recording", {}), # type: ignore
+                    "noise_reduction": event_data.get("noise_reduction", {}), # type: ignore
+                    "transcription": event_data.get("transcription", {}), # type: ignore
                     # Add current event data
                     "meeting_notes": {
                         "status": "completed",
@@ -217,13 +217,13 @@ class MeetingNotesRemotePlugin(PluginBase):
                     }
                 },
                 # Preserve original event metadata
-                "metadata": event_data.get("metadata", {}),
+                "metadata": event_data.get("metadata", {}), # type: ignore
                 # Preserve input/output paths from previous steps
                 "input_paths": {
-                    "microphone": event_data.get("input_paths", {}).get("microphone"),
-                    "system": event_data.get("input_paths", {}).get("system"),
+                    "microphone": event_data.get("input_paths", {}).get("microphone"), # type: ignore
+                    "system": event_data.get("input_paths", {}).get("system"), # type: ignore
                 },
-                "transcript_paths": event_data.get("transcript_paths", {})
+                "transcript_paths": event_data.get("transcript_paths", {}) # type: ignore
             }
 
             logger.debug(

@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+import os
 
 import pytest
 
@@ -160,15 +161,32 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
             mock_transcribe.assert_not_called()
 
     async def test_transcribe_audio(self, plugin, mock_whisper):
-        """Test audio transcription"""
-        audio_path = "/path/to/audio.wav"
-        output_path = str(Path(plugin._output_dir) / "test_recording.txt")
-        label = "Test Audio"
+        """Test audio transcription functionality"""
+        audio_path = "test.wav"
+        output_path = os.path.join("test_output", "output.md")
+        label = "Speaker"
+
+        # Create a segment object with the required attributes
+        class MockSegment:
+            def __init__(self, text, start, end):
+                self.text = text
+                self.start = start
+                self.end = end
+
+        mock_segments = [
+            MockSegment("Transcript content would go here", 0.0, 1.0)
+        ]
+
+        # Create a mock loop with run_in_executor
+        mock_loop = AsyncMock()
+        mock_loop.run_in_executor.return_value = (mock_segments, "en")
 
         with patch("wave.open") as mock_wave, patch(
             "builtins.open", mock_open()
         ) as mock_file, patch.object(plugin, "_init_model"), patch.object(
             plugin, "_model", mock_whisper
+        ), patch("os.makedirs") as mock_makedirs, patch(
+            "asyncio.get_running_loop", return_value=mock_loop
         ):
             mock_wave.return_value.__enter__.return_value = MagicMock(
                 getnchannels=lambda: 1,
@@ -181,9 +199,16 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
             result = await plugin.transcribe_audio(audio_path, output_path, label)
 
             assert result == Path(output_path)
+            mock_makedirs.assert_called_once_with("test_output", exist_ok=True)
             mock_file.assert_called_with(output_path, "w", encoding="utf-8")
             mock_file().write.assert_any_call(f"# {label}'s Transcript\n\n")
-            mock_file().write.assert_any_call("Transcript content would go here\n")
+            mock_file().write.assert_any_call("[00:00.000 - 00:01.000] Transcript content would go here\n")
+
+            # Verify run_in_executor was called correctly
+            mock_loop.run_in_executor.assert_called_once()
+            executor_args = mock_loop.run_in_executor.call_args[0]
+            assert executor_args[0] == plugin._executor  # First arg should be the executor
+            assert callable(executor_args[1])  # Second arg should be the lambda function
 
     def test_plugin_configuration(self, plugin):
         """Test plugin configuration parameters"""

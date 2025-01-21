@@ -5,12 +5,11 @@ import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
-from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import Event, EventContext
+from app.core.events import ConcreteEventBus as EventBus, Event, EventContext, EventPriority
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
@@ -225,29 +224,26 @@ class CleanupFilesPlugin(PluginBase):
 
             # Emit completion event
             if self.event_bus:
-                completion_event = Event(
+                completion_event = Event.create(
                     name="cleanup_files.completed",
                     data={
-                        # Preserve original event data
                         "recording": data.get("data", {}).get("recording", {}),
                         "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
                         "transcription": data.get("data", {}).get("transcription", {}),
                         "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
                         "desktop_notification": data.get("data", {}).get("desktop_notification", {}),
-                        # Add current event data
                         "cleanup_files": {
                             "status": "completed",
-                            "timestamp": datetime.now(UTC).isoformat(),
+                            "timestamp": datetime.now().isoformat(),
                             "cleaned_files": cleaned_files,
                             "include_dirs": [str(d) for d in self.include_dirs],
                             "exclude_dirs": [str(d) for d in self.exclude_dirs],
                             "cleanup_delay": self.cleanup_delay
                         }
                     },
-                    # Preserve input/output paths from previous steps
-                    input_paths=event_data.data.get("paths", {}).get("input", {}),
-                    # Include additional metadata if available
-                    extra_metadata=event_data.context.metadata if hasattr(event_data.context, 'metadata') else {}
+                    correlation_id=data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
                 )
 
                 logger.debug(
@@ -282,29 +278,26 @@ class CleanupFilesPlugin(PluginBase):
 
             if self.event_bus and "recording_id" in locals():
                 # Emit error event
-                error_event = Event(
+                error_event = Event.create(
                     name="cleanup_files.error",
                     data={
-                        # Preserve original event data
                         "recording": data.get("recording", {}) if data else {},
                         "noise_reduction": data.get("noise_reduction", {}) if data else {},
                         "transcription": data.get("transcription", {}) if data else {},
                         "meeting_notes": data.get("meeting_notes", {}) if data else {},
                         "desktop_notification": data.get("desktop_notification", {}) if data else {},
-                        # Add current event data
                         "cleanup_files": {
                             "status": "error",
-                            "timestamp": datetime.now(UTC).isoformat(),
+                            "timestamp": datetime.now().isoformat(),
                             "error": str(e),
                             "include_dirs": [str(d) for d in self.include_dirs],
                             "exclude_dirs": [str(d) for d in self.exclude_dirs],
                             "cleanup_delay": self.cleanup_delay
                         }
                     },
-                    # Preserve original event metadata
-                    metadata=event_data.context.metadata,
-                    # Preserve input/output paths from previous steps
-                    input_paths=event_data.data.get("paths", {}).get("input", {})
+                    correlation_id=data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
                 )
                 await self.event_bus.publish(error_event)
 

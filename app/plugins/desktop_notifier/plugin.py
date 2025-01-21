@@ -4,12 +4,12 @@ import os
 import subprocess
 import threading
 import traceback
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
-from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import Event
+from app.core.events import ConcreteEventBus as EventBus, Event, EventPriority
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.database import DatabaseManager
 from app.models.recording.events import EventContext, RecordingEvent
@@ -181,7 +181,7 @@ class DesktopNotifierPlugin(PluginBase):
 
             # Emit completion event
             if self.event_bus:
-                completion_event = Event(
+                completion_event = Event.create(
                     name="desktop_notification.completed",
                     data={
                         # Preserve original event data
@@ -199,11 +199,15 @@ class DesktopNotifierPlugin(PluginBase):
                             "output_path": output_path,
                         }
                     },
-                    # Preserve original event metadata
-                    metadata=data.get("metadata", {}),
-                    # Preserve input/output paths from previous steps
-                    input_paths=data.get("input_paths", {}),
-                    transcript_paths=data.get("transcript_paths", {})
+                    correlation_id=(
+                        event_data.context.correlation_id
+                        if isinstance(event_data, (Event, RecordingEvent)) and hasattr(event_data, 'context') and hasattr(event_data.context, 'correlation_id')
+                        else data.get('context', {}).get('correlation_id')
+                        if isinstance(event_data, dict)
+                        else str(uuid.uuid4())
+                    ),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
                 )
                 logger.debug(
                     "Publishing completion event",
@@ -232,7 +236,7 @@ class DesktopNotifierPlugin(PluginBase):
 
             if self.event_bus and "recording_id" in locals():
                 # Emit error event
-                error_event = Event(
+                error_event = Event.create(
                     name="desktop_notification.error",
                     data={
                         # Preserve original event data
@@ -248,11 +252,15 @@ class DesktopNotifierPlugin(PluginBase):
                             "recording_id": recording_id
                         }
                     },
-                    # Preserve original event metadata
-                    metadata=data.get("metadata", {}),
-                    # Preserve input/output paths from previous steps
-                    input_paths=data.get("input_paths", {}),
-                    transcript_paths=data.get("transcript_paths", {})
+                    correlation_id=(
+                        event_data.context.correlation_id
+                        if isinstance(event_data, (Event, RecordingEvent)) and hasattr(event_data, 'context') and hasattr(event_data.context, 'correlation_id')
+                        else data.get('context', {}).get('correlation_id')
+                        if isinstance(event_data, dict)
+                        else str(uuid.uuid4())
+                    ),
+                    source_plugin=self.__class__.__name__,
+                    priority=EventPriority.NORMAL
                 )
                 await self.event_bus.publish(error_event)
 
