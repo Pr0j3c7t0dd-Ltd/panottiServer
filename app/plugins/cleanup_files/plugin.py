@@ -242,10 +242,15 @@ class CleanupFilesPlugin(PluginBase):
                             "include_dirs": [str(d) for d in self.include_dirs],
                             "exclude_dirs": [str(d) for d in self.exclude_dirs],
                             "cleanup_delay": self.cleanup_delay
+                        },
+                        "context": {
+                            "correlation_id": data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                            "source_plugin": self.name,
+                            "metadata": data.get("context", {}).get("metadata", {})
                         }
                     },
                     correlation_id=data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
-                    source_plugin=self.__class__.__name__,
+                    source_plugin=self.name,
                     priority=EventPriority.NORMAL
                 )
 
@@ -296,10 +301,15 @@ class CleanupFilesPlugin(PluginBase):
                             "include_dirs": [str(d) for d in self.include_dirs],
                             "exclude_dirs": [str(d) for d in self.exclude_dirs],
                             "cleanup_delay": self.cleanup_delay
+                        },
+                        "context": {
+                            "correlation_id": data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                            "source_plugin": self.name,
+                            "metadata": data.get("context", {}).get("metadata", {})
                         }
                     },
                     correlation_id=data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
-                    source_plugin=self.__class__.__name__,
+                    source_plugin=self.name,
                     priority=EventPriority.NORMAL
                 )
                 await self.event_bus.publish(error_event)

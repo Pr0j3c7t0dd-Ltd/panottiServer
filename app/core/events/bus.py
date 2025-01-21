@@ -6,6 +6,7 @@ import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
+import inspect
 
 from app.utils.logging_config import get_logger
 
@@ -136,14 +137,6 @@ class EventBus:
                     "event_id": getattr(event, "event_id", None)
                     or getattr(event, "id", None),
                     "event_name": self._get_event_name(event),
-                    "handler_class": getattr(
-                        getattr(handler, "__self__", None), "__class__", None
-                    ).__name__
-                    if hasattr(handler, "__self__")
-                    else None,  # type: ignore
-                    "handler_instance_id": id(getattr(handler, "__self__", None))
-                    if hasattr(handler, "__self__")
-                    else None,
                     "stack_trace": "".join(traceback.format_stack()),
                 },
             )
@@ -156,11 +149,12 @@ class EventBus:
             }
 
             # Check if it's a bound method and add instance info if available
-            if hasattr(handler, "__self__") and handler.__self__ is not None:  # type: ignore
+            if inspect.ismethod(handler) and hasattr(handler, "__self__"):
+                instance = handler.__self__
                 handler_info.update(
                     {
-                        "handler_class": handler.__self__.__class__.__name__,  # type: ignore
-                        "handler_instance_vars": vars(handler.__self__),  # type: ignore
+                        "handler_class": instance.__class__.__name__,
+                        "handler_instance_vars": vars(instance),
                     }
                 )
 
@@ -562,9 +556,7 @@ class EventBus:
                 "id": id(handler),
                 "class": getattr(
                     getattr(handler, "__self__", None), "__class__", None
-                ).__name__
-                if hasattr(handler, "__self__")
-                else None,  # type: ignore
+                ) and getattr(getattr(handler, "__self__", None), "__class__", None).__name__,
                 "instance_id": id(getattr(handler, "__self__", None))
                 if hasattr(handler, "__self__")
                 else None,

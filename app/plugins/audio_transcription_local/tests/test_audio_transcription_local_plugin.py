@@ -146,10 +146,12 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         with patch.object(plugin, "_process_audio", new_callable=AsyncMock) as mock_process_audio, \
              patch.object(plugin, "_init_model"), \
              patch.object(plugin, "_model", mock_whisper), \
-             patch("builtins.open", mock_open()) as mock_file:
+             patch("builtins.open", mock_open()) as mock_file, \
+             patch("os.path.exists") as mock_exists:
 
-            # Configure the mock to return our results
+            # Configure the mocks
             mock_process_audio.return_value = (mock_segments, mock_transcript)
+            mock_exists.return_value = True
 
             # Initialize the plugin
             await plugin.initialize()

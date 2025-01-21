@@ -88,11 +88,18 @@ class TestExamplePlugin(BasePluginTest):
 
     async def test_handle_recording_ended(self, plugin):
         """Test recording ended event handler"""
-        # Mock event data as dictionary since plugin expects EventData type
-        event = {
-            "context": {"event_id": "test_id", "event_type": "recording.ended"},
-            "data": {"recording_id": "test_recording"},
-        }
+        # Mock event data with context and metadata
+        event = Event.create(
+            name="recording.ended",
+            data={"recording_id": "test_recording"},
+            correlation_id="test_correlation_id",
+            source_plugin="test_source",
+            context=EventContext(
+                correlation_id="test_correlation_id",
+                source_plugin="test_source",
+                metadata={"test_key": "test_value"}
+            )
+        )
 
         # Initialize plugin
         with patch("app.plugins.example.plugin.ThreadPoolExecutor"):
@@ -101,9 +108,22 @@ class TestExamplePlugin(BasePluginTest):
             # Test event handling
             await plugin._handle_recording_ended(event)
 
+            # Verify completion event was published with correct metadata
+            published_events = [call.args[0] for call in plugin.event_bus.publish.call_args_list]
+            assert len(published_events) == 1
+            completion_event = published_events[0]
+            
+            # Verify event structure
+            assert completion_event.name == "example.completed"
+            assert completion_event.correlation_id == "test_correlation_id"
+            assert completion_event.source_plugin == "example"
+            assert completion_event.context.correlation_id == "test_correlation_id"
+            assert completion_event.context.source_plugin == "example"
+            assert completion_event.context.metadata == {"test_key": "test_value"}
+
     async def test_handle_recording_ended_no_context(self, plugin):
         """Test recording ended handler with missing context"""
-        # Mock event data as dictionary since plugin expects EventData type
+        # Mock event data without context
         event = {"data": {"recording_id": "test_recording"}}
 
         # Initialize plugin
@@ -112,6 +132,57 @@ class TestExamplePlugin(BasePluginTest):
 
             # Test event handling with missing context
             await plugin._handle_recording_ended(event)
+
+            # Verify completion event was published with default metadata
+            published_events = [call.args[0] for call in plugin.event_bus.publish.call_args_list]
+            assert len(published_events) == 1
+            completion_event = published_events[0]
+            
+            # Verify event structure
+            assert completion_event.name == "example.completed"
+            assert completion_event.source_plugin == "example"
+            assert completion_event.context.source_plugin == "example"
+            assert completion_event.context.metadata == {}
+
+    async def test_handle_recording_ended_error(self, plugin):
+        """Test recording ended handler error case"""
+        # Mock event data with context and metadata
+        event = Event.create(
+            name="recording.ended",
+            data={"recording_id": "test_recording"},
+            correlation_id="test_correlation_id",
+            source_plugin="test_source",
+            context=EventContext(
+                correlation_id="test_correlation_id",
+                source_plugin="test_source",
+                metadata={"test_key": "test_value"}
+            )
+        )
+
+        # Initialize plugin
+        with patch("app.plugins.example.plugin.ThreadPoolExecutor"):
+            await plugin.initialize()
+
+            # Mock event_bus.publish to raise an exception
+            plugin.event_bus.publish.side_effect = Exception("Test error")
+
+            # Test event handling with error
+            with pytest.raises(Exception):
+                await plugin._handle_recording_ended(event)
+
+            # Verify error event was published with correct metadata
+            published_events = [call.args[0] for call in plugin.event_bus.publish.call_args_list]
+            assert len(published_events) == 2  # Both completion and error events
+            error_event = published_events[1]
+            
+            # Verify error event structure
+            assert error_event.name == "example.error"
+            assert error_event.correlation_id == "test_correlation_id"
+            assert error_event.source_plugin == "example"
+            assert error_event.context.correlation_id == "test_correlation_id"
+            assert error_event.context.source_plugin == "example"
+            assert error_event.context.metadata == {"test_key": "test_value"}
+            assert "Test error" in error_event.data["example"]["error"]
 
     async def test_name_property(self, plugin):
         """Test name property returns correct value"""

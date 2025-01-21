@@ -57,14 +57,15 @@ def parse_timestamp(timestamp_str: str | None) -> datetime:
 class EventMetadata(BaseModel):
     """Event metadata model."""
 
-    event_provider_id: str | None = None
-    event_title: str | None = None
-    event_provider: str | None = None
-    event_attendees: list[str] | None = None
-    system_label: str | None = None
-    microphone_label: str | None = None
-    recording_started: str | None = None
-    recording_ended: str | None = None
+    event_provider_id: str | None = Field(None, alias="eventProviderId")
+    event_title: str | None = Field(None, alias="eventTitle")
+    event_provider: str | None = Field(None, alias="eventProvider")
+    event_attendees: list[str] | None = Field(None, alias="eventAttendees")
+    system_label: str | None = Field(None, alias="systemLabel")
+    microphone_label: str | None = Field(None, alias="microphoneLabel")
+    recording_started: str | None = Field(None, alias="recordingStarted")
+    recording_ended: str | None = Field(None, alias="recordingEnded")
+    recording_date_time: str | None = Field(None, alias="recordingDateTime")
 
 
 T = TypeVar("T")

@@ -18,7 +18,7 @@ from scipy import signal
 from scipy.signal import butter, filtfilt
 
 from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import EventData, Event, EventPriority
+from app.core.events import Event, EventPriority
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.database import DatabaseManager, get_db_async
 from app.utils.logging_config import get_logger
@@ -526,7 +526,7 @@ class NoiseReductionPlugin(PluginBase):
         """Handle an event."""
         await self.handle_recording_ended(event_data)
 
-    async def handle_recording_ended(self, event_data: EventData) -> None:
+    async def handle_recording_ended(self, event_data: Event) -> None:
         """
         Called when a recording ends. We decide how to process it
         based on config toggles.
@@ -540,12 +540,8 @@ class NoiseReductionPlugin(PluginBase):
                     "plugin_name": self.name,
                     "plugin_enabled": self.config.enabled,
                     "plugin_version": self.config.version,
-                    "recording_id": event_data.recording_id
-                    if hasattr(event_data, "recording_id")
-                    else event_data.get("recording_id"),
-                    "event_id": event_data.event_id
-                    if hasattr(event_data, "event_id")
-                    else event_data.get("event_id"),
+                    "recording_id": event_data.get("recording_id") if isinstance(event_data, dict) else event_data.data.get("recording_id"),
+                    "event_id": event_data.get("event_id") if isinstance(event_data, dict) else event_data.event_id,
                     "event_type": type(event_data).__name__,
                     "event_data": str(event_data),
                     "event_bus_type": type(self.event_bus).__name__
@@ -567,11 +563,11 @@ class NoiseReductionPlugin(PluginBase):
                 sys_path = audio_paths.get("system")
                 metadata = event_data.get("metadata", {})
             else:
-                recording_id = event_data.recording_id
-                mic_path = event_data.microphone_audio_path
-                sys_path = event_data.system_audio_path
+                recording_id = event_data.data.get("recording_id")
+                mic_path = event_data.data.get("microphone_audio_path")
+                sys_path = event_data.data.get("system_audio_path")
                 metadata = (
-                    event_data.metadata if hasattr(event_data, "metadata") else {}
+                    event_data.context.metadata if hasattr(event_data, "context") else {}
                 )
 
             if not recording_id:
@@ -736,7 +732,6 @@ class NoiseReductionPlugin(PluginBase):
                                     "system": system_audio_path,
                                     "microphone": microphone_audio_path,
                                 },
-                                "metadata": event_metadata or {},
                             },
                             "noise_reduction": {
                                 "status": "error",
@@ -829,8 +824,8 @@ class NoiseReductionPlugin(PluginBase):
             # Emit completed event
             if self.event_bus:
                 completed_event = Event.create(
-                    name="noise_reduction.completed",
-                    data={
+                    "noise_reduction.completed",
+                    {
                         "recording_id": recording_id,
                         "output_path": str(final_output),
                         "system_audio_path": system_audio_path,
@@ -894,7 +889,6 @@ class NoiseReductionPlugin(PluginBase):
                                 "system": system_audio_path,
                                 "microphone": microphone_audio_path,
                             },
-                            "metadata": event_metadata or {},
                         },
                         # Add noise reduction error data
                         "noise_reduction": {

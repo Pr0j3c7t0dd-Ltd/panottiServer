@@ -11,8 +11,7 @@ import httpx
 from anthropic import AsyncAnthropic  # Update import statement
 from openai import AsyncOpenAI
 
-from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import Event, EventPriority
+from app.core.events import ConcreteEventBus as EventBus, Event, EventPriority, EventContext
 from app.core.plugins import PluginBase  # Updated import path
 from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
@@ -145,7 +144,7 @@ class MeetingNotesRemotePlugin(PluginBase):
             )
             raise
 
-    async def handle_transcription_completed(self, event_data: Event) -> None:
+    async def handle_transcription_completed(self, event_data: Event | RecordingEvent) -> None:
         """Handle transcription completed event"""
         try:
             event_id = str(uuid.uuid4())
@@ -210,8 +209,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                                     },
                                 },
                             },
-                            correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
-                            source_plugin=self.__class__.__name__,
+                            correlation_id=getattr(event_data, "correlation_id", None) or str(uuid.uuid4()),
+                            source_plugin=self.name,
                             priority=EventPriority.NORMAL,
                         )
 
@@ -251,6 +250,37 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "error": str(e),
                 },
             )
+            if self.event_bus:
+                try:
+                    error_event = Event.create(
+                        name="meeting_notes_remote.error",
+                        data={
+                            "recording": event_data.data.get("recording", {}),
+                            "noise_reduction": event_data.data.get("noise_reduction", {}),
+                            "transcription": event_data.data.get("transcription", {}),
+                            "meeting_notes_remote": {
+                                "status": "error",
+                                "timestamp": dt.now(UTC).isoformat(),
+                                "error": str(e),
+                                "recording_id": recording_id,
+                                "input_paths": {
+                                    "transcript": str(transcript_path),
+                                },
+                            },
+                        },
+                        correlation_id=getattr(event_data, "correlation_id", None) or str(uuid.uuid4()),
+                        source_plugin=self.name,
+                        priority=EventPriority.NORMAL,
+                    )
+                    await self.event_bus.publish(error_event)
+                except Exception as e:
+                    logger.error(
+                        "Failed to publish error event",
+                        extra={
+                            "plugin": self.name,
+                            "error": str(e),
+                        },
+                    )
 
     async def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
         """Extract transcript path from event."""

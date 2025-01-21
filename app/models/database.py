@@ -404,7 +404,7 @@ class DatabaseManager:
         self._shutting_down = True
         try:
             # Shutdown thread pool first with proper timeout handling
-            if hasattr(self, '_executor'):
+            if hasattr(self, '_executor') and self._executor is not None:
                 try:
                     # Use wait=True without timeout for compatibility
                     self._executor.shutdown(wait=True)

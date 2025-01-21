@@ -345,17 +345,14 @@ Keep each bullet point concise but informative]
                         }
                     }
                 }
-
-                event = Event(
-                    event_id=str(uuid.uuid4()),
-                    plugin_id=self.name,
+                # Include metadata in event data
+                event_data["metadata"] = getattr(original_event.context, "metadata", {})
+                
+                event = Event.create(
                     name="meeting_notes_local.completed",
                     data=event_data,
-                    context=EventContext(
-                        correlation_id=getattr(original_event.context, "correlation_id", str(uuid.uuid4())),
-                        timestamp=dt.now(UTC),
-                        metadata={"source_plugin": self.name},
-                    ),
+                    correlation_id=getattr(original_event.context, "correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.name,
                     priority=EventPriority.NORMAL,
                 )
 
@@ -386,24 +383,28 @@ Keep each bullet point concise but informative]
 
             if self.event_bus:
                 # Emit error event with preserved chain
+                error_data = {
+                    # Preserve original event data
+                    "recording": original_event.data.get("recording", {}),
+                    "noise_reduction": original_event.data.get("noise_reduction", {}),
+                    "transcription": original_event.data.get("transcription", {}),
+                    # Add current event data
+                    "meeting_notes_local": {
+                        "status": "error",
+                        "timestamp": dt.now(UTC).isoformat(),
+                        "recording_id": recording_id,
+                        "error": str(e)
+                    }
+                }
+                # Include metadata in error event data
+                error_data["metadata"] = getattr(original_event.context, "metadata", {})
+                
                 error_event = Event.create(
                     name="meeting_notes_local.error",
-                    data={
-                        # Preserve original event data
-                        "recording": original_event.data.get("recording", {}),
-                        "noise_reduction": original_event.data.get("noise_reduction", {}),
-                        "transcription": original_event.data.get("transcription", {}),
-                        # Add current event data
-                        "meeting_notes_local": {
-                            "status": "error",
-                            "timestamp": dt.now(UTC).isoformat(),
-                            "recording_id": recording_id,
-                            "error": str(e)
-                        }
-                    },
+                    data=error_data,
                     correlation_id=getattr(original_event.context, "correlation_id", str(uuid.uuid4())),
-                    source_plugin=self.__class__.__name__,
-                    priority=EventPriority.NORMAL
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(error_event)
 
@@ -495,33 +496,39 @@ Keep each bullet point concise but informative]
                 # Emit completion event
                 if self.event_bus:
                     try:
+                        completion_data = {
+                            "recording": event_data.data.get("recording", {}),
+                            "noise_reduction": event_data.data.get("noise_reduction", {}),
+                            "transcription": event_data.data.get("transcription", {}),
+                            "meeting_notes_local": {
+                                "status": "completed",
+                                "timestamp": dt.now(UTC).isoformat(),
+                                "recording_id": recording_id,
+                                "output_path": str(output_path),
+                                "notes_path": str(output_path),
+                                "input_paths": {
+                                    "transcript": str(transcript_path),
+                                },
+                                "speaker_label": event_data.data.get("speaker_label"),
+                                "system_label": event_data.data.get("system_label")
+                            },
+                            "meeting_notes": {
+                                "status": "completed",
+                                "timestamp": dt.now(UTC).isoformat(),
+                                "recording_id": recording_id,
+                                "output_path": str(output_path),
+                                "notes_path": str(output_path),
+                                "input_paths": {
+                                    "transcript": str(transcript_path),
+                                },
+                            }
+                        }
+                        # Include metadata in completion event data
+                        completion_data["metadata"] = getattr(event_data.context, "metadata", {})
+                        
                         completion_event = Event.create(
                             name="meeting_notes_local.completed",
-                            data={
-                                "recording": event_data.data.get("recording", {}),
-                                "noise_reduction": event_data.data.get("noise_reduction", {}),
-                                "transcription": event_data.data.get("transcription", {}),
-                                "meeting_notes_local": {
-                                    "status": "completed",
-                                    "timestamp": dt.now(UTC).isoformat(),
-                                    "recording_id": recording_id,
-                                    "output_path": str(output_path),
-                                    "notes_path": str(output_path),
-                                    "input_paths": {
-                                        "transcript": str(transcript_path),
-                                    },
-                                },
-                                "meeting_notes": {
-                                    "status": "completed",
-                                    "timestamp": dt.now(UTC).isoformat(),
-                                    "recording_id": recording_id,
-                                    "output_path": str(output_path),
-                                    "notes_path": str(output_path),
-                                    "input_paths": {
-                                        "transcript": str(transcript_path),
-                                    },
-                                }
-                            },
+                            data=completion_data,
                             correlation_id=getattr(event_data, "correlation_id", None) or str(uuid.uuid4()),
                             source_plugin=self.__class__.__name__,
                             priority=EventPriority.NORMAL,

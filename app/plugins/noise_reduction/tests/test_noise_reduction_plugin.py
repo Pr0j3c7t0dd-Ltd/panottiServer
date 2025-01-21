@@ -153,8 +153,9 @@ class TestNoiseReductionPlugin(BasePluginTest):
 
         with patch("os.path.exists", side_effect=mock_exists):
             with patch.object(
-                initialized_plugin, "_process_audio_files"
+                initialized_plugin, "_process_audio_files", new_callable=AsyncMock
             ) as mock_process:
+                mock_process.return_value = None
                 await initialized_plugin.handle_recording_ended(event_data)
 
                 mock_process.assert_called_once_with(
@@ -174,7 +175,9 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "metadata": {},
         }
 
-        with patch.object(initialized_plugin, "_process_audio_files") as mock_process:
+        with patch.object(
+            initialized_plugin, "_process_audio_files", new_callable=AsyncMock
+        ) as mock_process:
             mock_process.return_value = None  # Ensure async mock returns something
 
             # Call handler directly since we're testing the handler itself
@@ -201,7 +204,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "source_plugin": "other_plugin",
         }
 
-        with patch.object(initialized_plugin, "_process_audio_files") as mock_process:
+        with patch.object(initialized_plugin, "_process_audio_files", new_callable=AsyncMock) as mock_process:
             mock_process.return_value = None
             await initialized_plugin.handle_recording_ended(event_data)
 
@@ -256,7 +259,9 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "source_plugin": "test_plugin",
         }
 
-        with patch.object(initialized_plugin, "_process_audio_files") as mock_process:
+        with patch.object(
+            initialized_plugin, "_process_audio_files", new_callable=AsyncMock
+        ) as mock_process:
             mock_process.return_value = None
             await initialized_plugin.handle_recording_ended(event)
 
@@ -432,7 +437,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "metadata": {},
         }
 
-        with patch.object(initialized_plugin, "_process_audio_files") as mock_process:
+        with patch.object(initialized_plugin, "_process_audio_files", new_callable=AsyncMock) as mock_process:
             mock_process.return_value = None
             await initialized_plugin.handle_recording_ended(event_data)
             mock_process.assert_called_once_with(recording_id, None, None, {})

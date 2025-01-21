@@ -376,6 +376,15 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         transcript_paths: dict[str, str | None] | None = None,
     ) -> None:
         """Emit transcription event."""
+        # Extract metadata from original event
+        metadata = original_event.get("metadata", {}) if original_event else {}
+        speaker_label = original_event.get("speaker_label") if original_event else None
+        system_label = original_event.get("system_label") if original_event else None
+        correlation_id = (
+            original_event.get("context", {}).get("correlation_id", str(uuid.uuid4()))
+            if original_event else str(uuid.uuid4())
+        )
+
         if error:
             event = Event.create(
                 name="transcription_local.error",
@@ -390,13 +399,13 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                         "model": self.get_config("model", "base"),
                         "language": self.get_config("language", "en"),
                         "speaker_labels": {
-                            "microphone": original_event.get("metadata", {}).get("microphoneLabel", "Microphone") if original_event else "Microphone",
-                            "system": original_event.get("metadata", {}).get("systemLabel", "System") if original_event else "System"
+                            "microphone": speaker_label,
+                            "system": system_label
                         }
                     }
                 },
-                correlation_id=original_event.get("context", {}).get("correlation_id", str(uuid.uuid4())) if original_event else str(uuid.uuid4()),
-                source_plugin=self.__class__.__name__,
+                correlation_id=correlation_id,
+                source_plugin=self.name,
                 priority=EventPriority.NORMAL
             )
         else:
@@ -406,20 +415,20 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "recording": original_event.get("recording", {}) if original_event else {},
                     "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
                     "transcription": {
-                        "status": "completed",
+                        "status": status,
                         "timestamp": datetime.now().isoformat(),
                         "output_file": output_file,
                         "transcript_paths": transcript_paths,
                         "model": self.get_config("model", "base"),
                         "language": self.get_config("language", "en"),
                         "speaker_labels": {
-                            "microphone": original_event.get("metadata", {}).get("microphoneLabel", "Microphone") if original_event else "Microphone",
-                            "system": original_event.get("metadata", {}).get("systemLabel", "System") if original_event else "System"
+                            "microphone": speaker_label,
+                            "system": system_label
                         }
                     }
                 },
-                correlation_id=original_event.get("context", {}).get("correlation_id", str(uuid.uuid4())) if original_event else str(uuid.uuid4()),
-                source_plugin=self.__class__.__name__,
+                correlation_id=correlation_id,
+                source_plugin=self.name,
                 priority=EventPriority.NORMAL
             )
 

@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
-from app.core.events import ConcreteEventBus as EventBus, Event, EventPriority
+from app.core.events import ConcreteEventBus as EventBus, Event, EventPriority, EventContext
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.database import DatabaseManager
 from app.models.recording.events import EventContext, RecordingEvent
@@ -196,15 +196,9 @@ class DesktopNotifierPlugin(PluginBase):
                             "output_path": output_path,
                         }
                     },
-                    correlation_id=(
-                        event_data.context.correlation_id
-                        if isinstance(event_data, (Event, RecordingEvent)) and hasattr(event_data, 'context') and hasattr(event_data.context, 'correlation_id')
-                        else data.get('context', {}).get('correlation_id')
-                        if isinstance(event_data, dict)
-                        else str(uuid.uuid4())
-                    ),
-                    source_plugin=self.__class__.__name__,
-                    priority=EventPriority.NORMAL
+                    correlation_id=getattr(event_data, "correlation_id", None) or data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL,
                 )
                 logger.debug(
                     "Publishing completion event",
@@ -249,15 +243,9 @@ class DesktopNotifierPlugin(PluginBase):
                             "recording_id": recording_id
                         }
                     },
-                    correlation_id=(
-                        event_data.context.correlation_id
-                        if isinstance(event_data, (Event, RecordingEvent)) and hasattr(event_data, 'context') and hasattr(event_data.context, 'correlation_id')
-                        else data.get('context', {}).get('correlation_id')
-                        if isinstance(event_data, dict)
-                        else str(uuid.uuid4())
-                    ),
-                    source_plugin=self.__class__.__name__,
-                    priority=EventPriority.NORMAL
+                    correlation_id=getattr(event_data, "correlation_id", None) or data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(error_event)
 

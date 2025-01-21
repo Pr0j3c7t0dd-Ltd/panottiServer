@@ -128,9 +128,9 @@ class ExamplePlugin(PluginBase):
                             "event_id": getattr(context, "event_id", None)
                         }
                     },
-                    correlation_id=getattr(context, "correlation_id", str(uuid.uuid4())),
-                    source_plugin=self.__class__.__name__,
-                    priority=EventPriority.NORMAL
+                    correlation_id=getattr(context, "correlation_id", None) or str(uuid.uuid4()),
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(completion_event)
 
@@ -170,9 +170,9 @@ class ExamplePlugin(PluginBase):
                             "event_id": getattr(context, "event_id", None)
                         }
                     },
-                    correlation_id=getattr(context, "correlation_id", str(uuid.uuid4())),
-                    source_plugin=self.__class__.__name__,
-                    priority=EventPriority.NORMAL
+                    correlation_id=getattr(context, "correlation_id", None) or str(uuid.uuid4()),
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(error_event)
             raise
