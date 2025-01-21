@@ -3,6 +3,7 @@
 import os
 import subprocess
 import threading
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
@@ -183,19 +184,27 @@ class DesktopNotifierPlugin(PluginBase):
                 completion_event = Event(
                     name="desktop_notification.completed",
                     data={
-                        "current_event": {
-                            "desktop_notification": {
-                                "status": "completed",
-                                "timestamp": datetime.now(UTC).isoformat(),
-                                "notification_type": "terminal-notifier",
-                                "settings": {"auto_open_notes": auto_open},
-                                "recording_id": recording_id,
-                                "output_path": output_path,
-                            }
-                        },
+                        # Preserve original event data
+                        "recording": data.get("data", {}).get("recording", {}),
+                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
+                        "transcription": data.get("data", {}).get("transcription", {}),
+                        "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
+                        # Add current event data
+                        "desktop_notification": {
+                            "status": "completed",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "notification_type": "terminal-notifier",
+                            "settings": {"auto_open_notes": auto_open},
+                            "recording_id": recording_id,
+                            "output_path": output_path,
+                        }
                     },
+                    # Preserve original event metadata
+                    metadata=data.get("metadata", {}),
+                    # Preserve input/output paths from previous steps
+                    input_paths=data.get("input_paths", {}),
+                    transcript_paths=data.get("transcript_paths", {})
                 )
-
                 logger.debug(
                     "Publishing completion event",
                     extra={
@@ -226,20 +235,24 @@ class DesktopNotifierPlugin(PluginBase):
                 error_event = Event(
                     name="desktop_notification.error",
                     data={
-                        "recording_id": recording_id,  # type: ignore
-                        "error": str(e),
-                        "current_event": {
-                            "desktop_notification": {
-                                "status": "error",
-                                "timestamp": datetime.now(UTC).isoformat(),
-                                "error": str(e),
-                            }
-                        },
+                        # Preserve original event data
+                        "recording": data.get("data", {}).get("recording", {}),
+                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
+                        "transcription": data.get("data", {}).get("transcription", {}),
+                        "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
+                        # Add current event data
+                        "desktop_notification": {
+                            "status": "error",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "error": str(e),
+                            "recording_id": recording_id
+                        }
                     },
-                    context=EventContext(
-                        timestamp=datetime.now(UTC),
-                        metadata={"recording_id": recording_id},  # type: ignore
-                    ),
+                    # Preserve original event metadata
+                    metadata=data.get("metadata", {}),
+                    # Preserve input/output paths from previous steps
+                    input_paths=data.get("input_paths", {}),
+                    transcript_paths=data.get("transcript_paths", {})
                 )
                 await self.event_bus.publish(error_event)
 

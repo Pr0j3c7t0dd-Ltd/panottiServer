@@ -659,6 +659,237 @@ class NoiseReductionPlugin(PluginBase):
                 exc_info=True,
             )
 
+    async def _process_audio_files(
+        self,
+        recording_id: str,
+        system_audio_path: str | None,
+        microphone_audio_path: str | None,
+        event_metadata: dict | None = None,
+    ) -> None:
+        """Process the audio files for noise reduction."""
+        try:
+            logger.debug(
+                "Processing audio files",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "system_audio_path": system_audio_path,
+                    "microphone_audio_path": microphone_audio_path,
+                },
+            )
+
+            # Check if files exist
+            system_exists = system_audio_path and os.path.exists(system_audio_path)
+            mic_exists = microphone_audio_path and os.path.exists(microphone_audio_path)
+
+            if not system_exists and not mic_exists:
+                logger.warning(
+                    "Missing or invalid audio files, skipping noise reduction",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "system_exists": system_exists,
+                        "mic_exists": mic_exists,
+                        "system_path": system_audio_path,
+                        "mic_path": microphone_audio_path,
+                        "is_docker": os.path.exists("/.dockerenv"),
+                    },
+                )
+                # Emit error event with preserved data
+                if self.event_bus:
+                    error_event = {
+                        "event": "noise_reduction.error",
+                        "data": {
+                            "recording": {
+                                "recording_id": recording_id,
+                                "audio_paths": {
+                                    "system": system_audio_path,
+                                    "microphone": microphone_audio_path,
+                                },
+                                "metadata": event_metadata or {},
+                            },
+                            "noise_reduction": {
+                                "status": "error",
+                                "timestamp": datetime.now(tz=UTC).isoformat(),
+                                "error": "Missing or invalid audio files",
+                                "config": {
+                                    "time_domain_subtraction": self._time_domain_subtraction,
+                                    "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
+                                    "noise_reduce_factor": self._noise_reduce_factor,
+                                    "wiener_alpha": self._wiener_alpha,
+                                }
+                            }
+                        },
+                        "metadata": event_metadata or {},
+                    }
+                    await self.event_bus.publish(error_event)
+                return None
+
+            # Process audio files
+            final_output = None
+            if system_audio_path and microphone_audio_path:
+                loop = asyncio.get_running_loop()
+
+                if self._freq_domain_bleed_removal:
+                    output_path = self._output_directory / f"{recording_id}_mic_bleed_removed_freq.wav"
+                    await loop.run_in_executor(
+                        self._executor,
+                        self._remove_bleed_frequency_domain,
+                        microphone_audio_path,
+                        system_audio_path,
+                        str(output_path),
+                        True,
+                        True,
+                    )
+                    final_output = output_path
+
+                elif self._time_domain_subtraction:
+                    output_path = self._output_directory / f"{recording_id}_mic_bleed_removed_time.wav"
+                    await loop.run_in_executor(
+                        self._executor,
+                        self._subtract_bleed_time_domain,
+                        microphone_audio_path,
+                        system_audio_path,
+                        str(output_path),
+                        True,
+                        True,
+                    )
+                    final_output = output_path
+
+                else:
+                    output_path = self._output_directory / f"{recording_id}_microphone_cleaned.wav"
+                    await loop.run_in_executor(
+                        self._executor,
+                        self.reduce_noise,
+                        microphone_audio_path,
+                        system_audio_path,
+                        str(output_path),
+                        self._noise_reduce_factor,
+                        self._wiener_alpha,
+                        self._highpass_cutoff,
+                        self._spectral_floor,
+                        self._smoothing_factor,
+                    )
+                    final_output = output_path
+
+            # Update database status
+            if self._db:
+                db = await DatabaseManager.get_instance_async()
+                await db.execute(
+                    """
+                    UPDATE plugin_tasks
+                    SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+                    WHERE recording_id = ? AND plugin_name = ?
+                    """,
+                    (recording_id, self.name),
+                )
+
+            # Emit completion event with preserved data
+            if self.event_bus and final_output:
+                completion_event = {
+                    "event": "noise_reduction.completed",
+                    "data": {
+                        # Preserve original recording data
+                        "recording": {
+                            "recording_id": recording_id,
+                            "audio_paths": {
+                                "system": system_audio_path,
+                                "microphone": microphone_audio_path,
+                            },
+                            "metadata": event_metadata or {},
+                        },
+                        # Add noise reduction data
+                        "noise_reduction": {
+                            "status": "completed",
+                            "timestamp": datetime.now(tz=UTC).isoformat(),
+                            "output_path": str(final_output),
+                            "method": "frequency_domain" if self._freq_domain_bleed_removal else 
+                                    "time_domain" if self._time_domain_subtraction else 
+                                    "spectral",
+                            "config": {
+                                "time_domain_subtraction": self._time_domain_subtraction,
+                                "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
+                                "noise_reduce_factor": self._noise_reduce_factor,
+                                "wiener_alpha": self._wiener_alpha,
+                                "highpass_cutoff": self._highpass_cutoff,
+                                "spectral_floor": self._spectral_floor,
+                                "smoothing_factor": self._smoothing_factor,
+                            }
+                        }
+                    },
+                    # Preserve original metadata
+                    "metadata": event_metadata or {},
+                    # Add input/output paths
+                    "input_paths": {
+                        "system": system_audio_path,
+                        "microphone": microphone_audio_path,
+                    },
+                    "output_paths": {
+                        "cleaned_audio": str(final_output)
+                    }
+                }
+                await self.event_bus.publish(completion_event)
+
+                logger.info(
+                    "Audio processing completed successfully",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "output_path": str(final_output),
+                    },
+                )
+
+        except Exception as e:
+            logger.error(
+                "Error processing audio files",
+                extra={
+                    "req_id": self._req_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "error": str(e),
+                },
+            )
+            # Emit error event with preserved data
+            if self.event_bus:
+                error_event = {
+                    "event": "noise_reduction.error",
+                    "data": {
+                        # Preserve original recording data
+                        "recording": {
+                            "recording_id": recording_id,
+                            "audio_paths": {
+                                "system": system_audio_path,
+                                "microphone": microphone_audio_path,
+                            },
+                            "metadata": event_metadata or {},
+                        },
+                        # Add noise reduction error data
+                        "noise_reduction": {
+                            "status": "error",
+                            "timestamp": datetime.now(tz=UTC).isoformat(),
+                            "error": str(e),
+                            "config": {
+                                "time_domain_subtraction": self._time_domain_subtraction,
+                                "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
+                                "noise_reduce_factor": self._noise_reduce_factor,
+                                "wiener_alpha": self._wiener_alpha,
+                            }
+                        }
+                    },
+                    # Preserve original metadata
+                    "metadata": event_metadata or {},
+                    # Add input paths
+                    "input_paths": {
+                        "system": system_audio_path,
+                        "microphone": microphone_audio_path,
+                    }
+                }
+                await self.event_bus.publish(error_event)
+            raise
+
     def _translate_path_to_container(self, local_path: str | None) -> str | None:
         """Translate a local path to its corresponding container path."""
         if not local_path:
@@ -684,206 +915,6 @@ class NoiseReductionPlugin(PluginBase):
         )
 
         return container_path if os.path.exists(container_path) else None
-
-    async def _process_audio_files(
-        self,
-        recording_id: str,
-        system_audio_path: str | None,
-        microphone_audio_path: str | None,
-        event_metadata: dict | None = None,
-    ) -> None:
-        """Process the audio files for noise reduction."""
-        try:
-            # Translate paths if needed
-            system_audio_path = self._translate_path_to_container(system_audio_path)
-            microphone_audio_path = self._translate_path_to_container(
-                microphone_audio_path
-            )
-
-            # Check if files exist
-            system_exists = system_audio_path and os.path.exists(system_audio_path)
-            mic_exists = microphone_audio_path and os.path.exists(microphone_audio_path)
-
-            if not system_exists and not mic_exists:
-                logger.warning(
-                    "Missing or invalid audio files, skipping noise reduction",
-                    extra={
-                        "req_id": self._req_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "system_exists": system_exists,
-                        "mic_exists": mic_exists,
-                        "system_path": system_audio_path,
-                        "mic_path": microphone_audio_path,
-                        "is_docker": os.path.exists("/.dockerenv"),
-                    },
-                )
-                return None
-
-            logger.info(
-                "Starting audio processing for both system and microphone",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id,
-                    "system_audio_path": system_audio_path,
-                    "microphone_audio_path": microphone_audio_path,
-                    "time_domain_subtraction": self._time_domain_subtraction,
-                    "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
-                },
-            )
-
-            if system_audio_path and microphone_audio_path:
-                loop = asyncio.get_running_loop()
-
-                if self._freq_domain_bleed_removal:
-                    # 2) Frequency-domain bleed removal
-                    output_path = (
-                        self._output_directory
-                        / f"{recording_id}_mic_bleed_removed_freq.wav"
-                    )
-                    await loop.run_in_executor(
-                        self._executor,
-                        self._remove_bleed_frequency_domain,
-                        microphone_audio_path,
-                        system_audio_path,
-                        str(output_path),
-                        True,  # do_alignment
-                        True,  # randomize_phase
-                    )
-                    final_output = output_path
-
-                elif self._time_domain_subtraction:
-                    # 1) Simple time-domain approach
-                    output_path = (
-                        self._output_directory
-                        / f"{recording_id}_mic_bleed_removed_time.wav"
-                    )
-                    await loop.run_in_executor(
-                        self._executor,
-                        self._subtract_bleed_time_domain,
-                        microphone_audio_path,
-                        system_audio_path,
-                        str(output_path),
-                        True,  # do_alignment
-                        True,  # auto_scale
-                    )
-                    final_output = output_path
-
-                else:
-                    # 3) Fallback to original spectral noise reduction
-                    output_path = (
-                        self._output_directory
-                        / f"{recording_id}_microphone_cleaned.wav"
-                    )
-                    await loop.run_in_executor(
-                        self._executor,
-                        self.reduce_noise,
-                        microphone_audio_path,
-                        system_audio_path,
-                        str(output_path),
-                        self._noise_reduce_factor,
-                        self._wiener_alpha,
-                        self._highpass_cutoff,
-                        self._spectral_floor,
-                        self._smoothing_factor,
-                    )
-                    final_output = output_path
-
-                # Mark DB status
-                if self._db:
-                    db = await DatabaseManager.get_instance_async()
-                    await db.execute(
-                        """
-                        UPDATE plugin_tasks
-                        SET status = 'completed', updated_at = CURRENT_TIMESTAMP
-                        WHERE recording_id = ? AND plugin_name = ?
-                        """,
-                        (recording_id, self.name),
-                    )
-                    await db.commit()
-
-                logger.info(
-                    "Audio processing completed successfully",
-                    extra={
-                        "req_id": self._req_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "output_path": str(final_output),
-                        "time_domain_subtraction": self._time_domain_subtraction,
-                        "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
-                    },
-                )
-
-                # Trim the first N seconds of the cleaned audio based on alignment_chunk_seconds config
-                # Get actual sample rate from the audio file
-                _, sample_rate = sf.read(str(final_output))
-                self.trim_audio_with_lag(
-                    str(final_output),
-                    str(final_output),
-                    lag_samples=int(self._alignment_chunk_seconds * sample_rate),
-                    sample_rate=sample_rate,
-                )
-
-                # Emit completion event
-                if self.event_bus:
-                    await self.event_bus.publish(
-                        {
-                            "event": "noise_reduction.completed",
-                            "recording_id": recording_id,
-                            "output_path": str(final_output),
-                            "original_audio_path": microphone_audio_path,
-                            "system_audio_path": system_audio_path,
-                            "event_id": f"{recording_id}_noise_reduction_completed",
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "plugin_id": self.name,
-                            "metadata": {
-                                "time_domain_subtraction": self._time_domain_subtraction,
-                                "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
-                            },
-                            "data": {
-                                "current_event": {
-                                    "recording": {
-                                        "audio_paths": {
-                                            "system": system_audio_path,
-                                            "microphone": microphone_audio_path,
-                                        },
-                                        "metadata": event_metadata or {},
-                                    }
-                                }
-                            },
-                        }
-                    )
-
-            else:
-                logger.warning(
-                    "Missing or invalid audio files, skipping noise reduction",
-                    extra={
-                        "req_id": self._req_id,
-                        "plugin_name": self.name,
-                        "recording_id": recording_id,
-                        "system_exists": os.path.exists(system_audio_path)
-                        if system_audio_path
-                        else False,
-                        "mic_exists": os.path.exists(microphone_audio_path)
-                        if microphone_audio_path
-                        else False,
-                    },
-                )
-                return None
-
-        except Exception as e:
-            logger.error(
-                "Failed to process audio files",
-                extra={
-                    "req_id": self._req_id,
-                    "plugin_name": self.name,
-                    "recording_id": recording_id,
-                    "error": str(e),
-                },
-                exc_info=True,
-            )
-            raise
 
     async def _shutdown(self) -> None:
         """Shutdown plugin."""

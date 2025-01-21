@@ -4,6 +4,8 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from datetime import datetime
+from pytz import UTC
 
 from app.core.events import EventContext
 from app.core.plugins import PluginBase, PluginConfig
@@ -110,6 +112,29 @@ class ExamplePlugin(PluginBase):
             debug_mode = self.get_config("debug_mode", False)
             example_setting = self.get_config("example_setting")
 
+            # Example of emitting a completion event with preserved event chain
+            if self.event_bus:
+                completion_event = {
+                    "event": "example.completed",
+                    "data": {
+                        # Preserve original event data
+                        "recording": event_data.get("data", {}).get("recording", {}),
+                        # Add current event data
+                        "example": {
+                            "status": "completed",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "debug_mode": debug_mode,
+                            "example_setting": example_setting,
+                            "event_id": getattr(context, "event_id", None),
+                        }
+                    },
+                    # Preserve original event metadata
+                    "metadata": event_data.get("metadata", {}),
+                    # Preserve input/output paths
+                    "input_paths": event_data.get("input_paths", {}),
+                }
+                await self.event_bus.publish(completion_event)
+
             logger.info(
                 "Example plugin processed recording.ended event",
                 extra={
@@ -128,6 +153,30 @@ class ExamplePlugin(PluginBase):
                     "error_type": type(e).__name__,
                 },
             )
+
+            # Example of emitting an error event with preserved event chain
+            if self.event_bus:
+                error_event = {
+                    "event": "example.error",
+                    "data": {
+                        # Preserve original event data
+                        "recording": event_data.get("data", {}).get("recording", {}),
+                        # Add current event data
+                        "example": {
+                            "status": "error",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "error": str(e),
+                            "debug_mode": debug_mode,
+                            "example_setting": example_setting,
+                            "event_id": getattr(context, "event_id", None),
+                        }
+                    },
+                    # Preserve original event metadata
+                    "metadata": event_data.get("metadata", {}),
+                    # Preserve input/output paths
+                    "input_paths": event_data.get("input_paths", {}),
+                }
+                await self.event_bus.publish(error_event)
             raise
 
     @property

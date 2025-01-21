@@ -49,21 +49,53 @@ async def test_mark_processed():
     event = Event(name="test.event", data={})
     await store.store_event(event)
 
-    # Test marking as processed
+    # Test marking as processed with explicit success=True
+    await store.mark_processed(event.event_id, success=True)
+    status = store._status[event.event_id]
+    assert status["status"] == EventProcessingStatus.PROCESSED
+    assert status["error"] is None
+
+    # Test marking as processed with implicit success (default True)
     await store.mark_processed(event.event_id)
     status = store._status[event.event_id]
     assert status["status"] == EventProcessingStatus.PROCESSED
     assert status["error"] is None
 
-    # Test marking as failed
+    # Test marking as failed with error message
     error_msg = "Test error"
     await store.mark_processed(event.event_id, success=False, error=error_msg)
     status = store._status[event.event_id]
     assert status["status"] == EventProcessingStatus.FAILED
     assert status["error"] == error_msg
 
+    # Test marking as failed with None error
+    await store.mark_processed(event.event_id, success=False, error=None)
+    status = store._status[event.event_id]
+    assert status["status"] == EventProcessingStatus.FAILED
+    assert status["error"] is None
+
     # Test marking unknown event
     await store.mark_processed("unknown_id")  # Should not raise exception
+
+
+@pytest.mark.asyncio
+async def test_mark_processed_status_transitions():
+    """Test all possible status transitions in mark_processed."""
+    store = EventStore()
+    event = Event(name="test.event", data={})
+    await store.store_event(event)
+
+    # Test explicit success=True
+    await store.mark_processed(event.event_id, success=True)
+    assert store._status[event.event_id]["status"] == EventProcessingStatus.PROCESSED
+
+    # Test explicit success=False
+    await store.mark_processed(event.event_id, success=False)
+    assert store._status[event.event_id]["status"] == EventProcessingStatus.FAILED
+
+    # Test default success value (True)
+    await store.mark_processed(event.event_id)
+    assert store._status[event.event_id]["status"] == EventProcessingStatus.PROCESSED
 
 
 @pytest.mark.asyncio
@@ -140,3 +172,24 @@ async def test_clear_events():
 
     # Test clearing events for non-existent plugin
     await store.clear_events("non_existent")  # Should not raise exception
+
+
+@pytest.mark.asyncio
+async def test_mark_processed_error_logging():
+    """Test error string formatting in mark_processed logging."""
+    store = EventStore()
+    event = Event(name="test.event", data={})
+    await store.store_event(event)
+
+    # Test with string error
+    await store.mark_processed(event.event_id, success=False, error="string error")
+    assert store._status[event.event_id]["error"] == "string error"
+
+    # Test with None error
+    await store.mark_processed(event.event_id, success=False, error=None)
+    assert store._status[event.event_id]["error"] is None
+
+    # Test with non-string error object
+    error_obj = ValueError("test error")
+    await store.mark_processed(event.event_id, success=False, error=str(error_obj))
+    assert store._status[event.event_id]["error"] == str(error_obj)

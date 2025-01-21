@@ -365,6 +365,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             # Emit enriched event
             if self.event_bus:
                 await self.event_bus.publish(enriched_event)
+            else:
+                logger.warning("No event bus available to publish transcription event")
 
         except Exception as e:
             logger.error(
@@ -381,55 +383,71 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         error: str | None = None,
         original_event: dict | None = None,
     ) -> None:
-        """Emit transcription event"""
-        if not self.event_bus:
-            logger.warning("No event bus available to emit transcription event")
-            return
-
-        # Structure new event data with nested history
+        """Emit transcription event."""
         event_data = {
-            "recording_id": recording_id,
-            "transcription": {
-                "status": status,
-                "timestamp": datetime.utcnow().isoformat(),
-                "output_paths": {"transcript": output_file} if output_file else None,
-                "error": error,
-            },
+            "status": status,
+            "timestamp": datetime.now(tz=UTC).isoformat(),
+            "output_file": output_file if output_file else None,
         }
 
-        # Preserve previous event data in nested structure
+        if error:
+            event_data["error"] = error
+
+        # Preserve event chain data
         if original_event:
-            if "noise_reduction" in original_event:
-                event_data["noise_reduction"] = original_event["noise_reduction"]
+            # Preserve recording data
             if "recording" in original_event:
                 event_data["recording"] = original_event["recording"]
+            
+            # Preserve noise reduction data
+            if "noise_reduction" in original_event:
+                event_data["noise_reduction"] = original_event["noise_reduction"]
+            
+            # Add transcription data
+            event_data["transcription"] = {
+                "status": status,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+                "output_file": output_file,
+                "error": error if error else None,
+                "model": self.get_config("model", "base"),
+                "language": self.get_config("language", "en"),
+                "speaker_labels": {
+                    "microphone": original_event.get("metadata", {}).get("microphoneLabel", "Microphone"),
+                    "system": original_event.get("metadata", {}).get("systemLabel", "System")
+                }
+            }
 
-        # Create and emit event
-        event = RecordingEvent(
-            recording_timestamp=datetime.now(tz=UTC).isoformat(),
-            recording_id=recording_id,
-            event="transcription_local.completed",
-            data=event_data,
-            context=EventContext(
+            # Preserve paths
+            event_data["input_paths"] = original_event.get("input_paths", {})
+            if output_file:
+                event_data["output_paths"] = {
+                    "transcript": output_file
+                }
+
+        # Create and emit event with preserved context
+        event = {
+            "event": "transcription_local.completed" if not error else "transcription_local.error",
+            "data": event_data,
+            "context": EventContext(
                 metadata=original_event.get("context", {}).get("metadata", {})
                 if original_event and "context" in original_event
                 else {}
             ),
-            system_audio_path=original_event.get("system_audio_path")
-            if original_event
-            else None,
-            microphone_audio_path=original_event.get("microphone_audio_path")
-            if original_event
-            else None,
-        )
+            "metadata": original_event.get("metadata", {}) if original_event else {},
+            "system_audio_path": original_event.get("system_audio_path") if original_event else None,
+            "microphone_audio_path": original_event.get("microphone_audio_path") if original_event else None,
+        }
 
-        await self.event_bus.publish(event)
+        if self.event_bus:
+            await self.event_bus.publish(event)
+        else:
+            logger.warning("No event bus available to publish transcription event")
 
         # Structured logging
         log_data = {
             "plugin": self.name,
             "recording_id": recording_id,
-            "event": "transcription_local.completed",
+            "event": "transcription_local.completed" if not error else "transcription_local.error",
             "status": status,
         }
         if output_file:

@@ -522,9 +522,9 @@ Keep each bullet point concise but informative]
                     "plugin_id": self.name,
                     "data": {
                         # Preserve original event data
-                        "recording": event_data.get("data", {}).get("recording", {}),
-                        "noise_reduction": event_data.get("data", {}).get("noise_reduction", {}),
-                        "transcription": event_data.get("data", {}).get("transcription", {}),
+                        "recording": event_data.data.get("recording", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("recording", {}),
+                        "noise_reduction": event_data.data.get("noise_reduction", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("noise_reduction", {}),
+                        "transcription": event_data.data.get("transcription", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("transcription", {}),
                         # Add current event data
                         "meeting_notes": {
                             "status": "completed",
@@ -533,13 +533,13 @@ Keep each bullet point concise but informative]
                         }
                     },
                     # Preserve original event metadata
-                    "metadata": event_data.get("metadata", {}),
+                    "metadata": event_data.data.get("metadata", {}) if isinstance(event_data, RecordingEvent) else event_data.get("metadata", {}),
                     # Preserve input/output paths from previous steps
                     "input_paths": {
-                        "microphone": event_data.get("input_paths", {}).get("microphone"),
-                        "system": event_data.get("input_paths", {}).get("system"),
+                        "microphone": event_data.data.get("input_paths", {}).get("microphone") if isinstance(event_data, RecordingEvent) else event_data.get("input_paths", {}).get("microphone"),
+                        "system": event_data.data.get("input_paths", {}).get("system") if isinstance(event_data, RecordingEvent) else event_data.get("input_paths", {}).get("system"),
                     },
-                    "transcript_paths": event_data.get("transcript_paths", {}),
+                    "transcript_paths": event_data.data.get("transcript_paths", {}) if isinstance(event_data, RecordingEvent) else event_data.get("transcript_paths", {}),
                 }
 
                 if self.event_bus is None:

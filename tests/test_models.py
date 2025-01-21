@@ -6,6 +6,14 @@ from app.core.events.models import Event, EventPriority, get_event_name
 from app.core.events.types import EventContext
 
 
+def test_event_priority_value_int():
+    """Test EventPriority value_int property."""
+    assert EventPriority.LOW.value_int == 0
+    assert EventPriority.NORMAL.value_int == 1
+    assert EventPriority.HIGH.value_int == 2
+    assert EventPriority.CRITICAL.value_int == 3
+
+
 def test_event_validators():
     """Test Event model validators."""
     # Test validate_event_id
@@ -20,6 +28,10 @@ def test_event_validators():
     event = Event(name="event")
     assert event.name == "event"
 
+    # Test validate_name with None
+    event = Event(name=None)
+    assert event.name == "event"  # Uses class name
+
     # Test validate_name with existing value
     event = Event(name="custom.event")
     assert event.name == "custom.event"
@@ -28,18 +40,27 @@ def test_event_validators():
     event = Event(name="test.event")
     assert event.plugin_id == "system"
 
+    # Test validate_plugin_id with None
+    event = Event(name="test.event", plugin_id=None)
+    assert event.plugin_id == "system"
+
     # Test validate_plugin_id with existing value
     event = Event(name="test.event", plugin_id="custom_plugin")
     assert event.plugin_id == "custom_plugin"
 
     # Test validate_context with None
-    event = Event(name="test.event")  # Let it use the default_factory
+    event = Event(name="test.event", context=None)
     assert isinstance(event.context, EventContext)
+
+    # Test validate_context with existing EventContext
+    existing_context = EventContext(correlation_id="123")
+    event = Event(name="test.event", context=existing_context)
+    assert event.context == existing_context
 
     # Test validate_context with dict
     event = Event(
         name="test.event",
-        context=EventContext(correlation_id="123", metadata={"source_plugin": "test"}),
+        context={"correlation_id": "123", "metadata": {"source_plugin": "test"}},
     )
     assert isinstance(event.context, EventContext)
     assert event.context.correlation_id == "123"

@@ -204,9 +204,9 @@ class MeetingNotesRemotePlugin(PluginBase):
                 "plugin_id": self.name,
                 "data": {
                     # Preserve original event data
-                    "recording": event_data.get("data", {}).get("recording", {}),
-                    "noise_reduction": event_data.get("data", {}).get("noise_reduction", {}),
-                    "transcription": event_data.get("data", {}).get("transcription", {}),
+                    "recording": event_data.get("recording", {}),
+                    "noise_reduction": event_data.get("noise_reduction", {}),
+                    "transcription": event_data.get("transcription", {}),
                     # Add current event data
                     "meeting_notes": {
                         "status": "completed",

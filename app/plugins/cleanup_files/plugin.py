@@ -228,22 +228,27 @@ class CleanupFilesPlugin(PluginBase):
                 completion_event = Event(
                     name="cleanup_files.completed",
                     data={
-                        "recording_id": recording_id,
-                        "cleaned_files": cleaned_files,
-                        "status": "completed",
-                        "current_event": {
-                            "cleanup_files": {
-                                "status": "completed",
-                                "timestamp": datetime.now(UTC),
-                                "cleaned_files": cleaned_files,
-                            }
-                        },
+                        # Preserve original event data
+                        "recording": data.get("data", {}).get("recording", {}),
+                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
+                        "transcription": data.get("data", {}).get("transcription", {}),
+                        "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
+                        "desktop_notification": data.get("data", {}).get("desktop_notification", {}),
+                        # Add current event data
+                        "cleanup_files": {
+                            "status": "completed",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "cleaned_files": cleaned_files,
+                            "include_dirs": [str(d) for d in self.include_dirs],
+                            "exclude_dirs": [str(d) for d in self.exclude_dirs],
+                            "cleanup_delay": self.cleanup_delay
+                        }
                     },
-                    context=EventContext(
-                        correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.now(UTC),
-                        source_plugin=self.name,
-                    ),
+                    # Preserve original event metadata
+                    metadata=data.get("metadata", {}),
+                    # Preserve input/output paths from previous steps
+                    input_paths=data.get("input_paths", {}),
+                    transcript_paths=data.get("transcript_paths", {})
                 )
 
                 logger.debug(
@@ -281,21 +286,27 @@ class CleanupFilesPlugin(PluginBase):
                 error_event = Event(
                     name="cleanup_files.error",
                     data={
-                        "recording_id": recording_id,
-                        "error": str(e),
-                        "current_event": {
-                            "cleanup_files": {
-                                "status": "error",
-                                "timestamp": datetime.now(UTC),
-                                "error": str(e),
-                            }
-                        },
+                        # Preserve original event data
+                        "recording": data.get("data", {}).get("recording", {}),
+                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
+                        "transcription": data.get("data", {}).get("transcription", {}),
+                        "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
+                        "desktop_notification": data.get("data", {}).get("desktop_notification", {}),
+                        # Add current event data
+                        "cleanup_files": {
+                            "status": "error",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "error": str(e),
+                            "include_dirs": [str(d) for d in self.include_dirs],
+                            "exclude_dirs": [str(d) for d in self.exclude_dirs],
+                            "cleanup_delay": self.cleanup_delay
+                        }
                     },
-                    context=EventContext(
-                        correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.now(UTC),
-                        source_plugin=self.name,
-                    ),
+                    # Preserve original event metadata
+                    metadata=data.get("metadata", {}),
+                    # Preserve input/output paths from previous steps
+                    input_paths=data.get("input_paths", {}),
+                    transcript_paths=data.get("transcript_paths", {})
                 )
                 await self.event_bus.publish(error_event)
 
