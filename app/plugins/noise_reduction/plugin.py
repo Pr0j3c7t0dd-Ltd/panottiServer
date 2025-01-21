@@ -17,8 +17,7 @@ import soundfile as sf
 from scipy import signal
 from scipy.signal import butter, filtfilt
 
-from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import Event, EventPriority
+from app.core.events import ConcreteEventBus as EventBus, Event, EventPriority, EventContext
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.database import DatabaseManager, get_db_async
 from app.utils.logging_config import get_logger
@@ -723,18 +722,11 @@ class NoiseReductionPlugin(PluginBase):
                 )
                 # Emit error event with preserved data
                 if self.event_bus:
-                    error_event = Event.create(
+                    error_event = Event(
                         name="noise_reduction.error",
                         data={
-                            "recording": {
-                                "recording_id": recording_id,
-                                "audio_paths": {
-                                    "system": system_audio_path,
-                                    "microphone": microphone_audio_path,
-                                },
-                            },
-                            "noise_reduction": {
-                                "status": "error",
+                            "recording_id": recording_id,
+                            "error_details": {
                                 "timestamp": datetime.now(UTC).isoformat(),
                                 "error": "Missing or invalid audio files",
                                 "config": {
@@ -745,8 +737,11 @@ class NoiseReductionPlugin(PluginBase):
                                 }
                             }
                         },
-                        correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
-                        source_plugin=self.__class__.__name__,
+                        context=EventContext(
+                            correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                            source_plugin=self.__class__.__name__,
+                            metadata=event_metadata if event_metadata is not None else {}
+                        ),
                         priority=EventPriority.NORMAL
                     )
                     await self.event_bus.publish(error_event)
@@ -824,43 +819,43 @@ class NoiseReductionPlugin(PluginBase):
             # Emit completed event
             if self.event_bus:
                 completed_event = Event.create(
-                    "noise_reduction.completed",
-                    {
+                    name="noise_reduction.completed",
+                    data={
                         "recording_id": recording_id,
                         "output_path": str(final_output),
                         "system_audio_path": system_audio_path,
+                        "microphone_audio_path": microphone_audio_path,
+                        "status": "completed",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "method": "frequency_domain" if self._freq_domain_bleed_removal else 
+                                "time_domain" if self._time_domain_subtraction else 
+                                "spectral",
+                        "config": {
+                            "time_domain_subtraction": self._time_domain_subtraction,
+                            "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
+                            "noise_reduce_factor": self._noise_reduce_factor,
+                            "wiener_alpha": self._wiener_alpha,
+                            "highpass_cutoff": self._highpass_cutoff,
+                            "spectral_floor": self._spectral_floor,
+                            "smoothing_factor": self._smoothing_factor,
+                        },
                         "metadata": event_metadata or {},
                         "original_event": {
                             "recording": {
                                 "recording_id": recording_id,
                                 "audio_paths": {
                                     "system": system_audio_path,
-                                    "microphone": microphone_audio_path,
-                                },
-                                "metadata": event_metadata or {},
-                            },
-                            "noise_reduction": {
-                                "status": "completed",
-                                "timestamp": datetime.now(UTC).isoformat(),
-                                "output_path": str(final_output),
-                                "method": "frequency_domain" if self._freq_domain_bleed_removal else 
-                                        "time_domain" if self._time_domain_subtraction else 
-                                        "spectral",
-                                "config": {
-                                    "time_domain_subtraction": self._time_domain_subtraction,
-                                    "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
-                                    "noise_reduce_factor": self._noise_reduce_factor,
-                                    "wiener_alpha": self._wiener_alpha,
-                                    "highpass_cutoff": self._highpass_cutoff,
-                                    "spectral_floor": self._spectral_floor,
-                                    "smoothing_factor": self._smoothing_factor,
+                                    "microphone": microphone_audio_path
                                 }
                             }
                         }
                     },
-                    correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
-                    source_plugin=self.__class__.__name__,
-                    priority=EventPriority.NORMAL
+                    context=EventContext(
+                        correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                        source_plugin=self.__class__.__name__,
+                        metadata=event_metadata if event_metadata is not None else {}
+                    ),
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(completed_event)
 
@@ -879,7 +874,7 @@ class NoiseReductionPlugin(PluginBase):
             )
             # Emit error event with preserved data
             if self.event_bus:
-                error_event = Event.create(
+                error_event = Event(
                     name="noise_reduction.error",
                     data={
                         # Preserve original recording data
@@ -890,7 +885,6 @@ class NoiseReductionPlugin(PluginBase):
                                 "microphone": microphone_audio_path,
                             },
                         },
-                        # Add noise reduction error data
                         "noise_reduction": {
                             "status": "error",
                             "timestamp": datetime.now(UTC).isoformat(),
@@ -900,15 +894,14 @@ class NoiseReductionPlugin(PluginBase):
                                 "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
                                 "noise_reduce_factor": self._noise_reduce_factor,
                                 "wiener_alpha": self._wiener_alpha,
-                            },
-                            "input_paths": {
-                                "system": system_audio_path,
-                                "microphone": microphone_audio_path,
                             }
                         }
                     },
-                    correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
-                    source_plugin=self.__class__.__name__,
+                    context=EventContext(
+                        correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                        source_plugin=self.__class__.__name__,
+                        metadata=event_metadata if event_metadata is not None else {}
+                    ),
                     priority=EventPriority.NORMAL
                 )
                 await self.event_bus.publish(error_event)

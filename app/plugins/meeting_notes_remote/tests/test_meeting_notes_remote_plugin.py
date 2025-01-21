@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from openai import AsyncOpenAI
 
-from app.core.events import ConcreteEventBus
+from app.core.events import ConcreteEventBus, Event, EventPriority
 from app.core.plugins import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
@@ -94,10 +94,20 @@ Speaker 2: I'll prepare the report by next week.
     ):
         """Test handling transcription completed event with dict data"""
         transcript_path = Path("test_transcript.txt")
-        event_data = {
-            "recording_id": "test_recording",
-            "transcript_path": str(transcript_path),
-        }
+        event = Event.create(
+            name="transcription_local.completed",
+            data={
+                "recording": {
+                    "recording_id": "test_recording",
+                },
+                "transcription": {
+                    "transcript_path": str(transcript_path),
+                }
+            },
+            source_plugin="transcription_local",
+            correlation_id="test_correlation_id",
+            priority=EventPriority.NORMAL
+        )
 
         with patch.object(Path, "mkdir"), patch.object(
             plugin_with_mock_bus, "_read_transcript", return_value=sample_transcript
@@ -105,9 +115,13 @@ Speaker 2: I'll prepare the report by next week.
             plugin_with_mock_bus,
             "_generate_meeting_notes",
             return_value=Path("output.md"),
+        ), patch.object(
+            plugin_with_mock_bus,
+            "_get_transcript_path",
+            return_value=transcript_path,
         ):
             await plugin_with_mock_bus.initialize()
-            await plugin_with_mock_bus.handle_transcription_completed(event_data)
+            await plugin_with_mock_bus.handle_transcription_completed(event)
 
             plugin_with_mock_bus.event_bus.publish.assert_called_once()
             call_args = plugin_with_mock_bus.event_bus.publish.call_args[0][0]
