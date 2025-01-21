@@ -21,7 +21,7 @@ from scipy.io import wavfile
 from scipy.signal import butter, filtfilt
 
 from app.models.database import get_db, get_db_async, DatabaseManager
-from app.plugins.base import PluginBase, PluginConfig
+from app.core.plugins import PluginBase, PluginConfig
 from app.core.events import ConcreteEventBus as EventBus, EventData
 from app.plugins.events.models import EventContext
 from app.utils.logging_config import get_logger
@@ -596,8 +596,8 @@ class NoiseReductionPlugin(PluginBase):
                     self._db = db
 
             # Retry database operations with exponential backoff
-            max_retries = 3
-            retry_delay = 1.0  # seconds
+            max_retries = 5  # Increased from 3
+            retry_delay = 2.0  # Increased from 1.0
             
             for attempt in range(max_retries):
                 try:
@@ -628,7 +628,9 @@ class NoiseReductionPlugin(PluginBase):
                                 "plugin_name": self.name,
                                 "recording_id": recording_id,
                                 "attempt": attempt + 1,
-                                "retry_delay": retry_delay
+                                "max_retries": max_retries,
+                                "retry_delay": retry_delay,
+                                "total_delay": retry_delay * (2 ** attempt)
                             }
                         )
                         await asyncio.sleep(retry_delay)

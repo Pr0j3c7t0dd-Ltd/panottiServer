@@ -10,7 +10,7 @@ import pytest
 import soundfile as sf
 
 from app.core.events import Event, EventContext
-from app.plugins.base import PluginConfig
+from app.core.plugins import PluginConfig
 from app.plugins.noise_reduction.plugin import AudioPaths, NoiseReductionPlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
 

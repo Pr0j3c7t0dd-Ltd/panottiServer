@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from dotenv import load_dotenv
 
-from app.plugins.base import PluginBase, PluginConfig
+from app.core.plugins import PluginBase, PluginConfig
 from app.core.events.bus import EventBus
 
 # Add project root to Python path

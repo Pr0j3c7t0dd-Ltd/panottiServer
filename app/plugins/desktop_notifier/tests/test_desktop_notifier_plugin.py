@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.core.events import Event
-from app.plugins.base import PluginConfig
+from app.core.plugins import PluginConfig
 from app.plugins.desktop_notifier.plugin import DesktopNotifierPlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
 

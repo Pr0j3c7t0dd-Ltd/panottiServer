@@ -39,13 +39,13 @@ from app.core.events.models import (
     RecordingStartRequest,
 )
 from app.models.database import DatabaseManager
-from app.plugins.base import PluginBase, PluginConfig
+from app.core.plugins import PluginBase, PluginConfig
 from app.plugins.events.bus import EventBus as PluginEventBus
 
 logger = logging.getLogger(__name__)
 
 
-class NoiseReductionPlugin(PluginBase):
+class AudioPreprocessingPlugin(PluginBase):
     """Plugin for reducing noise in speech audio recordings while preserving voice quality."""
 
     def __init__(

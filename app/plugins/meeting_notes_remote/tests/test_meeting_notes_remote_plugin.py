@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch, Mock, mock_open
 import pytest
 from openai import AsyncOpenAI
 from app.core.events import Event, EventContext, ConcreteEventBus
-from app.plugins.base import PluginConfig
+from app.core.plugins import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
 

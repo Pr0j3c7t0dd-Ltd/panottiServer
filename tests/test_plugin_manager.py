@@ -7,8 +7,7 @@ import yaml
 import uuid
 
 from app.core.events import ConcreteEventBus
-from app.plugins.manager import PluginManager
-from app.plugins.base import PluginBase, PluginConfig
+from app.core.plugins import PluginBase, PluginConfig, PluginManager
 
 
 @pytest.fixture

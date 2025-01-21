@@ -2,7 +2,7 @@ import pytest
 import asyncio
 
 from app.core.events import ConcreteEventBus as EventBus
-from app.plugins.base import PluginBase, PluginConfig
+from app.core.plugins import PluginBase, PluginConfig
 
 
 class BasePluginTest:

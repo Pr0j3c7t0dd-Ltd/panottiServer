@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from app.core.events import ConcreteEventBus as EventBus
-from app.plugins.base import PluginBase, PluginConfig
+from app.core.plugins.interface import PluginBase, PluginConfig
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)

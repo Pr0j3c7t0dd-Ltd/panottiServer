@@ -73,21 +73,12 @@ config:                   # Plugin-specific configuration
 
 3. Implement the plugin class:
    ```python
-   from app.plugins.base import PluginBase, PluginConfig
+   from app.core.plugins import PluginBase, PluginConfig
    
-   class YourPlugin(PluginBase):
-       async def _initialize(self) -> None:
+   class MyPlugin(PluginBase):
+       def __init__(self, config: PluginConfig, event_bus=None):
+           super().__init__(config, event_bus)
            # Plugin-specific initialization
-           if self.event_bus:
-               await self.event_bus.subscribe("event.name", self._handle_event)
-   
-       async def _shutdown(self) -> None:
-           # Plugin-specific cleanup
-           pass
-   
-       async def _handle_event(self, event: dict) -> None:
-           # Event handling logic
-           pass
    ```
 
 ### Best Practices

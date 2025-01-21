@@ -18,7 +18,7 @@ from faster_whisper import WhisperModel
 from app.models.database import DatabaseManager
 from app.models.recording.events import RecordingEvent
 from app.plugins.audio_transcription_local.transcript_cleaner import TranscriptCleaner
-from app.plugins.base import PluginBase
+from app.core.plugins import PluginBase
 from app.utils.logging_config import get_logger
 
 logger = get_logger("app.plugins.audio_transcription_local.plugin")

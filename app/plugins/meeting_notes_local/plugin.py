@@ -11,7 +11,7 @@ import aiohttp
 from app.core.events import ConcreteEventBus as EventBus, EventPriority
 from app.core.events import Event, EventContext
 from app.models.recording.events import RecordingEvent
-from app.plugins.base import PluginBase
+from app.core.plugins import PluginBase
 from app.utils.logging_config import get_logger
 
 EventData = dict[str, Any] | RecordingEvent

@@ -26,7 +26,7 @@ from app.models.recording.events import (
     RecordingEvent,
     RecordingStartRequest,
 )
-from app.plugins.manager import PluginManager
+from app.core.plugins import PluginManager
 from app.utils.directory_sync import DirectorySync
 from app.utils.logging_config import setup_logging
 

@@ -403,50 +403,36 @@ The application follows a modular, plugin-based architecture:
 
 ```
 app/
-├── core/                     # Core system interfaces
-├── models/                   # Domain models
-├── plugins/                  # Plugin system
-│   ├── base.py              # Base plugin classes
-│   ├── manager.py           # Plugin lifecycle
-│   ├── audio_transcription_local/ # Local audio transcription plugin
-│   ├── cleanup_files/       # File cleanup plugin
-│   ├── desktop_notifier/    # Desktop notifications plugin
-│   ├── events/              # Event handling plugin
-│   ├── meeting_notes_local/ # Local meeting notes plugin
-│   ├── meeting_notes_remote/# Remote meeting notes plugin
-│   └── noise_reduction/     # Noise reduction plugin
-├── utils/                   # Utilities
-└── tests/                   # Test suite
+├── core/                     # Core system interfaces and protocols
+│   ├── __init__.py
+│   ├── events/              # Event system interfaces
+│   │   ├── __init__.py     # EventBus protocol
+│   │   └── models.py       # Core event models
+│   └── plugins/            # Plugin system core
+│       ├── __init__.py     # Plugin exports
+│       ├── interface.py    # Plugin base class and config
+│       ├── manager.py      # Plugin lifecycle management
+│       └── protocol.py     # Plugin protocols and interfaces
+├── plugins/                # Plugin implementations
+│   ├── __init__.py
+│   ├── example/           # Example plugin
+│   │   ├── __init__.py
+│   │   ├── plugin.py
+│   │   └── plugin.yaml
+│   └── ...                # Other plugins
 ```
 
 ### Creating a New Plugin
 
 1. Create a new directory under `app/plugins/`
-2. Add `plugin.yaml` configuration:
-```yaml
-name: your_plugin_name
-version: 1.0.0
-description: Plugin description
-enabled: true
-dependencies: []
-```
+2. Create the plugin implementation:
 
-3. Implement `plugin.py`:
 ```python
-from app.plugins.base import PluginBase
+from app.core.plugins import PluginBase, PluginConfig
 
-class YourPlugin(PluginBase):
-    async def initialize(self):
-        # Setup code
-        pass
-
-    async def start(self):
-        # Start plugin
-        pass
-
-    async def stop(self):
-        # Cleanup code
-        pass
+class MyPlugin(PluginBase):
+    def __init__(self, config: PluginConfig, event_bus=None):
+        super().__init__(config, event_bus)
 ```
 
 ### Available Plugins

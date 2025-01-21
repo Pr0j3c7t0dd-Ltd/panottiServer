@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock
 
-from app.core.plugins import PluginBase
+from app.core.plugins import PluginBase, PluginConfig
 from app.core.events import EventBus
 
 
@@ -28,7 +28,12 @@ def event_bus():
 @pytest.fixture
 def plugin_config():
     """Fixture providing test plugin config."""
-    return {"test_key": "test_value"}
+    return PluginConfig(
+        name="test_plugin",
+        version="1.0.0",
+        enabled=True,
+        config={"test_key": "test_value"}
+    )
 
 
 @pytest.fixture
@@ -41,7 +46,7 @@ async def test_plugin_initialization_with_event_bus(concrete_plugin, plugin_conf
     """Test plugin initialization with event bus."""
     assert concrete_plugin.config == plugin_config
     assert concrete_plugin.event_bus == event_bus
-    assert concrete_plugin.logger is None
+    assert concrete_plugin.version == plugin_config.version
 
 
 async def test_plugin_initialization_without_event_bus(plugin_config):
@@ -49,7 +54,7 @@ async def test_plugin_initialization_without_event_bus(plugin_config):
     plugin = ConcretePlugin(config=plugin_config)
     assert plugin.config == plugin_config
     assert plugin.event_bus is None
-    assert plugin.logger is None
+    assert plugin.version == plugin_config.version
 
 
 async def test_plugin_initialize_calls_internal_initialize(concrete_plugin):

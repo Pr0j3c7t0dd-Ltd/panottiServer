@@ -5,7 +5,7 @@ import pytest
 
 from app.core.events import ConcreteEventBus as EventBus
 from app.core.events import Event
-from app.plugins.base import PluginConfig
+from app.core.plugins import PluginConfig
 from app.plugins.cleanup_files.plugin import CleanupFilesPlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
 

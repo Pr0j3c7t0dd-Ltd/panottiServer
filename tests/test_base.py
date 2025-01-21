@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from app.plugins.base import PluginConfig
+from app.core.plugins import PluginConfig
 from tests.conftest import _TestPluginImpl
 
 

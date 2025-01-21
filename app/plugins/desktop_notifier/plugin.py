@@ -12,7 +12,7 @@ from app.core.events import ConcreteEventBus as EventBus
 from app.core.events import Event
 from app.models.database import DatabaseManager
 from app.models.recording.events import EventContext, RecordingEvent
-from app.plugins.base import PluginBase, PluginConfig
+from app.core.plugins import PluginBase, PluginConfig
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)

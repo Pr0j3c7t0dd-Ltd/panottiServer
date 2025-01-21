@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 import pytest
 
 from app.plugins.audio_transcription_local.plugin import AudioTranscriptionLocalPlugin
-from app.plugins.base import PluginConfig
+from app.core.plugins import PluginConfig
 from tests.plugins.test_plugin_interface import BasePluginTest
 
 

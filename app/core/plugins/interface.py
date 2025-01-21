@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.core.events import ConcreteEventBus as EventBus, EventData
 from app.core.events.types import EventHandler
-from app.core.plugins import PluginProtocol
+from app.core.plugins.protocol import PluginProtocol
 from app.models.recording.events import (
     RecordingEndRequest,
     RecordingEvent,

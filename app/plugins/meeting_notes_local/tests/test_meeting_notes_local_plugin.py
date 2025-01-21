@@ -6,7 +6,7 @@ import pytest
 import aioresponses
 
 from app.core.events import Event, EventContext
-from app.plugins.base import PluginConfig
+from app.core.plugins import PluginConfig
 from app.plugins.meeting_notes_local.plugin import MeetingNotesLocalPlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
 

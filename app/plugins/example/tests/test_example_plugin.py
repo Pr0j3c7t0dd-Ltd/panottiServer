@@ -2,7 +2,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
-from app.plugins.base import PluginConfig
+from app.core.plugins import PluginConfig
 from app.plugins.example.plugin import ExamplePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
 
