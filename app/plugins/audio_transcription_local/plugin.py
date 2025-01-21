@@ -236,9 +236,10 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 if original_sys_audio is None and hasattr(event_data, "data"):
                     original_sys_audio = event_data.data.get("system_audio_path")
                 if original_event and hasattr(original_event, "recording"):
-                    original_sys_audio = original_event.recording.audio_paths.get(
-                        "system", original_sys_audio
-                    )
+                    if original_event.recording:
+                        original_sys_audio = original_event.recording.audio_paths.get(
+                            "system", original_sys_audio
+                        )
 
             logger.debug(
                 "Processing event data",
@@ -333,16 +334,21 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 },
             )
 
+            # Get metadata and speaker labels
+            metadata = original_event.get("metadata", {})
+            mic_label = metadata.get("microphone_label", "Microphone")
+            sys_label = metadata.get("system_label", "System")
+
             # Merge transcripts if we have both
             transcript_files = []
             labels = []
 
             if mic_transcript:
                 transcript_files.append(str(mic_transcript))
-                labels.append("Microphone")
+                labels.append(mic_label)
             if sys_transcript:
                 transcript_files.append(str(sys_transcript))
-                labels.append("System")
+                labels.append(sys_label)
 
             if len(transcript_files) > 0:
                 await self.merge_transcripts(transcript_files, str(merged_transcript), labels, original_event or {})
@@ -734,14 +740,18 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             # Create metadata object
             metadata = {
                 "event": {
-                    "title": original_event.get("eventTitle"),
-                    "provider": original_event.get("eventProvider"),
-                    "providerId": original_event.get("eventProviderId"),
-                    "started": original_event.get("recordingStarted"),
-                    "ended": original_event.get("recordingEnded"),
-                    "attendees": original_event.get("eventAttendees", []),
+                    "title": original_event.get("metadata", {}).get("event_title"),
+                    "provider": original_event.get("metadata", {}).get("event_provider"),
+                    "providerId": original_event.get("metadata", {}).get("event_provider_id"),
+                    "started": original_event.get("metadata", {}).get("recording_started"),
+                    "ended": original_event.get("metadata", {}).get("recording_ended"),
+                    "attendees": original_event.get("metadata", {}).get("event_attendees", []),
                 },
-                "speakers": labels,
+                "speakers": {
+                    "system": original_event.get("metadata", {}).get("system_label"),
+                    "microphone": original_event.get("metadata", {}).get("microphone_label"),
+                    "labels": labels
+                },
                 "transcriptionCompleted": datetime.now(tz=timezone.utc).isoformat(),
             }
 
@@ -757,6 +767,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 seconds = start_time % 60
                 # Remove doubled label from text if it exists
                 text = text.replace(f"{label}: ", "").strip()
+                text = text.replace("Microphone: ", "").replace("System: ", "").strip()
 
                 # Clean up transcript if enabled in config
                 if (

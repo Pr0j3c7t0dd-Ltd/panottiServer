@@ -1,6 +1,8 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch, call
 import os
+import numpy as np
+import concurrent.futures
 
 import pytest
 
@@ -182,55 +184,93 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
 
             mock_transcribe.assert_not_called()
 
-    async def test_transcribe_audio(self, plugin, mock_whisper):
-        """Test audio transcription functionality"""
-        audio_path = "test.wav"
-        output_path = os.path.join("test_output", "output.md")
-        label = "Speaker"
-
-        # Create a segment object with the required attributes
-        class MockSegment:
-            def __init__(self, text, start, end):
-                self.text = text
-                self.start = start
-                self.end = end
-
-        mock_segments = [
-            MockSegment("Transcript content would go here", 0.0, 1.0)
+    @pytest.mark.asyncio
+    async def test_transcribe_audio(self):
+        mock_whisper = MagicMock()
+        mock_segments = [MagicMock()]
+        mock_segments[0].start = 0.0
+        mock_segments[0].end = 1.0
+        mock_segments[0].text = "Transcript content"
+        mock_segments[0].words = [
+            MagicMock(
+                start=0.0,
+                end=0.5,
+                word="Transcript",
+                probability=0.9
+            ),
+            MagicMock(
+                start=0.5,
+                end=1.0,
+                word="content",
+                probability=0.9
+            )
         ]
 
-        # Create a mock loop with run_in_executor
-        mock_loop = AsyncMock()
-        mock_loop.run_in_executor.return_value = (mock_segments, "en")
+        mock_result = MagicMock()
+        mock_result.text = "Test transcription"
+        mock_result.segments = mock_segments
 
-        with patch("wave.open") as mock_wave, patch(
-            "builtins.open", mock_open()
-        ) as mock_file, patch.object(plugin, "_init_model"), patch.object(
-            plugin, "_model", mock_whisper
-        ), patch("os.makedirs") as mock_makedirs, patch(
-            "asyncio.get_running_loop", return_value=mock_loop
-        ):
-            mock_wave.return_value.__enter__.return_value = MagicMock(
-                getnchannels=lambda: 1,
-                getsampwidth=lambda: 2,
-                getframerate=lambda: 16000,
-                getnframes=lambda: 16000,
+        mock_whisper.transcribe.return_value = mock_result
+
+        # Create mock config
+        mock_config = MagicMock()
+        mock_config.model_size = "base"
+        mock_config.compute_type = "float32"
+        mock_config.device = "cpu"
+        mock_config.num_workers = 1
+
+        # Create a mock file context
+        mock_file_handle = mock_open()
+
+        with patch("faster_whisper.WhisperModel", return_value=mock_whisper), \
+             patch("pathlib.Path.mkdir") as mock_mkdir, \
+             patch("builtins.open", mock_file_handle) as mock_file, \
+             patch("concurrent.futures.ThreadPoolExecutor") as mock_executor, \
+             patch("av.open"), \
+             patch("faster_whisper.audio.decode_audio", return_value=(np.zeros(16000), 16000)):
+
+            # Create a Future object for the executor's submit method
+            future = concurrent.futures.Future()
+            future.set_result((mock_segments, {}))
+
+            # Create another Future for the write_transcript function
+            write_future = concurrent.futures.Future()
+            write_future.set_result(None)
+
+            # Set up the mock executor to return different futures for different calls
+            mock_executor.submit.side_effect = [future, write_future]
+
+            plugin = AudioTranscriptionLocalPlugin(config=mock_config)
+            plugin._model = mock_whisper
+            plugin._executor = mock_executor
+
+            output_path = Path("test_output/output.md")
+            result = await plugin.transcribe_audio("test.wav", str(output_path), label="Speaker")
+
+            # Verify directory creation
+            mock_mkdir.assert_called_with(parents=True, exist_ok=True)
+
+            # Verify file operations
+            mock_file.assert_called_with(output_path, 'w')
+            
+            # Verify model call
+            mock_whisper.transcribe.assert_called_once_with(
+                "test.wav",
+                condition_on_previous_text=False,
+                word_timestamps=True,
+                vad_filter=True,
+                beam_size=5
             )
 
-            await plugin.initialize()
-            result = await plugin.transcribe_audio(audio_path, output_path, label)
+            # Verify result
+            assert result == output_path
 
-            assert result == Path(output_path)
-            mock_makedirs.assert_called_once_with("test_output", exist_ok=True)
-            mock_file.assert_called_with(output_path, "w", encoding="utf-8")
-            mock_file().write.assert_any_call(f"# {label}'s Transcript\n\n")
-            mock_file().write.assert_any_call("[00:00.000 - 00:01.000] Transcript content would go here\n")
-
-            # Verify run_in_executor was called correctly
-            mock_loop.run_in_executor.assert_called_once()
-            executor_args = mock_loop.run_in_executor.call_args[0]
-            assert executor_args[0] == plugin._executor  # First arg should be the executor
-            assert callable(executor_args[1])  # Second arg should be the lambda function
+            # Verify file content
+            write_calls = [call.args[0] for call in mock_file_handle().write.mock_calls]
+            assert "# Audio Transcript\n\n" in write_calls
+            assert "Speaker: Speaker\n\n" in write_calls
+            assert "## Segments\n\n" in write_calls
+            assert "[00:00.000 -> 00:01.000] Speaker: Transcript content\n" in write_calls
 
     def test_plugin_configuration(self, plugin):
         """Test plugin configuration parameters"""

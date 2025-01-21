@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 
@@ -29,28 +29,9 @@ class TestExamplePlugin(BasePluginTest):
     def event_bus(self):
         """Mock event bus fixture"""
         mock_bus = MagicMock()
-
-        # Store subscriptions
-        mock_bus.subscriptions = {}
-
-        async def mock_subscribe(event_type, callback):
-            if event_type not in mock_bus.subscriptions:
-                mock_bus.subscriptions[event_type] = []
-            mock_bus.subscriptions[event_type].append(callback)
-
-        async def mock_unsubscribe(event_type, callback):
-            if event_type in mock_bus.subscriptions:
-                mock_bus.subscriptions[event_type].remove(callback)
-
-        async def mock_publish(event):
-            event_type = event.name if isinstance(event, Event) else event.get("name")
-            if event_type in mock_bus.subscriptions:
-                for callback in mock_bus.subscriptions[event_type]:
-                    await callback(event)
-
-        mock_bus.subscribe = mock_subscribe
-        mock_bus.unsubscribe = mock_unsubscribe
-        mock_bus.publish = mock_publish
+        mock_bus.publish = AsyncMock()
+        mock_bus.subscribe = AsyncMock()
+        mock_bus.unsubscribe = AsyncMock()
         mock_bus._pending_tasks = set()
         return mock_bus
 
@@ -151,29 +132,27 @@ class TestExamplePlugin(BasePluginTest):
             name="recording.ended",
             data={"recording_id": "test_recording"},
             correlation_id="test_correlation_id",
-            source_plugin="test_source",
-            context=EventContext(
-                correlation_id="test_correlation_id",
-                source_plugin="test_source",
-                metadata={"test_key": "test_value"}
-            )
+            source_plugin="test_source"
         )
+        # Set additional context metadata after creation
+        event.context.metadata = {"test_key": "test_value"}
+
+        # Set up the mock to track calls and raise exception on first call
+        mock_publish = AsyncMock()
+        mock_publish.side_effect = [Exception("Test error"), None]
+        plugin.event_bus.publish = mock_publish
 
         # Initialize plugin
         with patch("app.plugins.example.plugin.ThreadPoolExecutor"):
             await plugin.initialize()
 
-            # Mock event_bus.publish to raise an exception
-            plugin.event_bus.publish.side_effect = Exception("Test error")
-
             # Test event handling with error
             with pytest.raises(Exception):
                 await plugin._handle_recording_ended(event)
 
-            # Verify error event was published with correct metadata
-            published_events = [call.args[0] for call in plugin.event_bus.publish.call_args_list]
-            assert len(published_events) == 2  # Both completion and error events
-            error_event = published_events[1]
+            # Verify error event was published
+            assert mock_publish.call_count == 2  # Both completion and error events
+            error_event = mock_publish.call_args.args[0]
             
             # Verify error event structure
             assert error_event.name == "example.error"

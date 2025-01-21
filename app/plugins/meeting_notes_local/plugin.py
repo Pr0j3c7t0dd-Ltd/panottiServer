@@ -215,7 +215,7 @@ Create meeting notes with the following sections:
 Keep each bullet point concise but informative]
 
 ## Action Items
-[Bulleted list of action items with owner and deadline in the format of `(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED`. Identify the owner from the context of the meeting transcript]
+[Bulleted list of action items with owner and deadline formated EXACTLY as: `(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED]`. Identify the owner from the context of the meeting transcript]
 
 ## Decisions Made
 [List specific decisions or conclusions reached during the meeting]
@@ -346,7 +346,10 @@ Keep each bullet point concise but informative]
                     }
                 }
                 # Include metadata in event data
-                event_data["metadata"] = getattr(original_event.context, "metadata", {})
+                if isinstance(original_event, dict):
+                    event_data["metadata"] = original_event.get("metadata", {})
+                else:
+                    event_data["metadata"] = getattr(original_event.context, "metadata", {}) if hasattr(original_event, "context") else {}
                 
                 event = Event.create(
                     name="meeting_notes_local.completed",
@@ -395,7 +398,14 @@ Keep each bullet point concise but informative]
                         "recording_id": recording_id,
                         "error": str(e)
                     },
-                    "metadata": original_event.data.get("metadata", {})  # Include metadata in error event
+                    # Include metadata in error event - handle both dict and Event objects
+                    "metadata": (
+                        original_event.get("metadata", {})
+                        if isinstance(original_event, dict)
+                        else getattr(original_event.context, "metadata", {})
+                        if hasattr(original_event, "context")
+                        else {}
+                    )
                 }
                 
                 error_event = Event.create(
@@ -523,7 +533,10 @@ Keep each bullet point concise but informative]
                             }
                         }
                         # Include metadata in completion event data
-                        completion_data["metadata"] = getattr(event_data.context, "metadata", {})
+                        if isinstance(event_data, dict):
+                            completion_data["metadata"] = event_data.get("metadata", {})
+                        else:
+                            completion_data["metadata"] = getattr(event_data.context, "metadata", {}) if hasattr(event_data, "context") else {}
                         
                         completion_event = Event.create(
                             name="meeting_notes_local.completed",

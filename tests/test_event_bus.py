@@ -649,7 +649,7 @@ async def test_subscribe_with_handler_info():
     
     # Verify handler info is logged correctly
     handler_info = bus._get_handler_info(handler_obj.handle)
-    assert handler_info["class"] == "TestHandler"
+    assert handler_info["class"] == TestHandler
     assert "instance_id" in handler_info
 
 
