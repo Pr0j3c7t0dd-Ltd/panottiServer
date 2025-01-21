@@ -196,40 +196,6 @@ class NoiseReductionPlugin(PluginBase):
 
         return np.asarray(mic_aligned), np.asarray(sys_aligned), lag_seconds
 
-    @staticmethod
-    def detect_start_of_audio(
-        audio_data: np.ndarray, threshold: float = 0.01, frame_size: int = 1024
-    ) -> int:
-        """
-        Detect the start of meaningful audio content based on energy threshold.
-        :param audio_data: Input audio signal.
-        :param threshold: Energy threshold to determine silence.
-        :param frame_size: Number of samples per frame for analysis.
-        :return: Index of the first sample with significant energy.
-        """
-        for i in range(0, len(audio_data), frame_size):
-            frame = audio_data[i : i + frame_size]
-            if np.sqrt(np.mean(frame**2)) > threshold:  # Root mean square (RMS)
-                return i
-        return 0  # Default to start if no meaningful audio is detected
-
-    @staticmethod
-    def trim_initial_silence(
-        audio_data: np.ndarray, sr: int, threshold: float = 0.01
-    ) -> np.ndarray:
-        """
-        Trim initial silence from the audio signal.
-        :param audio_data: Input audio signal.
-        :param sr: Sample rate of the audio.
-        :param threshold: RMS energy threshold to detect silence.
-        :return: Trimmed audio signal.
-        """
-        start_index = NoiseReductionPlugin.detect_start_of_audio(audio_data, threshold)
-        logger.debug(
-            f"Trimming {start_index / sr:.2f} seconds of silence at the start."
-        )
-        return audio_data[start_index:]
-
     # ------------------------------------------------------------------------
     # 1) Basic time-domain bleed removal (unchanged)
     # ------------------------------------------------------------------------

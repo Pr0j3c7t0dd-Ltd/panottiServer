@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
 
                 # Wait for tasks to complete with timeout
                 try:
-                    await asyncio.wait(tasks, timeout=5.0)
+                    await asyncio.wait(tasks, timeout=10.0)
                 except asyncio.TimeoutError:
                     logger.warning("Some tasks did not complete within timeout")
 
@@ -124,10 +124,10 @@ async def lifespan(app: FastAPI):
                 logger.info("Shutting down plugins")
                 try:
                     await asyncio.shield(
-                        asyncio.wait_for(plugin_manager.shutdown_plugins(), timeout=5.0)
+                        asyncio.wait_for(plugin_manager.shutdown_plugins(), timeout=10.0)
                     )
                 except asyncio.TimeoutError:
-                    logger.warning("Plugin shutdown timed out after 5 seconds")
+                    logger.warning("Plugin shutdown timed out after 10 seconds")
                 except asyncio.CancelledError:
                     logger.warning("Plugin shutdown cancelled")
                 plugin_manager = None
@@ -137,10 +137,10 @@ async def lifespan(app: FastAPI):
                 logger.info("Shutting down event bus")
                 try:
                     await asyncio.shield(
-                        asyncio.wait_for(event_bus.shutdown(), timeout=5.0)
+                        asyncio.wait_for(event_bus.shutdown(), timeout=10.0)
                     )
                 except asyncio.TimeoutError:
-                    logger.warning("Event bus shutdown timed out after 5 seconds")
+                    logger.warning("Event bus shutdown timed out after 10 seconds")
                 except asyncio.CancelledError:
                     logger.warning("Event bus shutdown cancelled")
                 event_bus = None
@@ -149,9 +149,9 @@ async def lifespan(app: FastAPI):
             logger.info("Closing database connections")
             try:
                 db = await DatabaseManager.get_instance_async()
-                await asyncio.shield(asyncio.wait_for(db.close(), timeout=5.0))
+                await asyncio.shield(asyncio.wait_for(db.close(), timeout=10.0))
             except asyncio.TimeoutError:
-                logger.warning("Database shutdown timed out after 5 seconds")
+                logger.warning("Database shutdown timed out after 10 seconds")
             except asyncio.CancelledError:
                 logger.warning("Database shutdown cancelled")
             except Exception as e:
@@ -185,9 +185,36 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI app with lifespan
 app = FastAPI(
     title="Recording Events API",
-    description="API for handling start and end recording events",
+    description="""
+    The Recording Events API provides endpoints for managing audio recording events and processing.
+    
+    ## Features
+    - Start and stop recording sessions
+    - Process audio recordings with configurable plugins
+    - Real-time event processing and notifications
+    
+    ## Authentication
+    All endpoints require an API key to be provided in the `X-API-Key` header.
+    
+    ## Error Responses
+    - 400: Bad Request - Invalid input data
+    - 403: Unauthorized - Invalid or missing API key
+    - 422: Validation Error - Request data validation failed
+    """,
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_tags=[
+        {
+            "name": "recordings",
+            "description": "Operations for managing recording sessions"
+        },
+        {
+            "name": "system",
+            "description": "System health and monitoring endpoints"
+        }
+    ]
 )
 
 # Add CORS middleware
@@ -312,7 +339,23 @@ async def validation_exception_handler(
     )
 
 
-@app.post("/api/recording-started")
+@app.post("/api/recording-started", 
+    response_model=dict,
+    tags=["recordings"],
+    summary="Start a new recording session",
+    responses={
+        200: {
+            "description": "Recording session started successfully",
+            "content": {
+                "application/json": {
+                    "example": {"recording_id": "123e4567-e89b-12d3-a456-426614174000", "status": "started"}
+                }
+            }
+        },
+        403: {"description": "Invalid API key"},
+        422: {"description": "Invalid request data"}
+    }
+)
 async def recording_started(
     background_tasks_fastapi: BackgroundTasks,
     request: RecordingStartRequest,
@@ -341,7 +384,24 @@ async def recording_started(
     return {"status": "success", "recording_id": request.recording_id}
 
 
-@app.post("/api/recording-ended")
+@app.post("/api/recording-ended",
+    response_model=dict,
+    tags=["recordings"],
+    summary="End an active recording session",
+    responses={
+        200: {
+            "description": "Recording session ended successfully",
+            "content": {
+                "application/json": {
+                    "example": {"recording_id": "123e4567-e89b-12d3-a456-426614174000", "status": "ended"}
+                }
+            }
+        },
+        403: {"description": "Invalid API key"},
+        404: {"description": "Recording session not found"},
+        422: {"description": "Invalid request data"}
+    }
+)
 async def recording_ended(
     background_tasks_fastapi: BackgroundTasks,
     request: Request,
@@ -479,7 +539,21 @@ async def process_event(event: RecordingEvent) -> None:
         )
 
 
-@app.get("/health")
+@app.get("/health",
+    tags=["system"],
+    summary="Check system health",
+    responses={
+        200: {
+            "description": "System is healthy",
+            "content": {
+                "application/json": {
+                    "example": {"status": "healthy", "timestamp": "2025-01-21T00:35:35Z"}
+                }
+            }
+        },
+        403: {"description": "Invalid API key"}
+    }
+)
 async def health_check(api_key: str = Depends(get_api_key)):
     """Health check endpoint."""
     return {"status": "ok"}

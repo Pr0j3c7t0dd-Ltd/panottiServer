@@ -119,7 +119,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
         # Mock run_in_executor to actually call the function
         loop = asyncio.get_event_loop()
 
-        async def mock_run_in_executor(executor_or_none, func, *args):
+        async def mock_run_in_executor(executor, func, *args):
             if func == mock_executor.shutdown:
                 func(*args)
 
@@ -135,18 +135,6 @@ class TestNoiseReductionPlugin(BasePluginTest):
         assert paths.recording_id == "test_recording"
         assert paths.system_audio == "system.wav"
         assert paths.mic_audio == "mic.wav"
-
-    def test_detect_start_of_audio(self):
-        """Test audio start detection"""
-        # Create test signal with initial silence
-        silence = np.zeros(1000)
-        audio = np.random.randn(1000) * 0.1
-        signal = np.concatenate([silence, audio])
-
-        start_idx = NoiseReductionPlugin.detect_start_of_audio(
-            signal, threshold=0.01, frame_size=100
-        )
-        assert start_idx >= 1000  # Should detect start after silence
 
     async def test_handle_recording_ended(self, initialized_plugin):
         """Test recording ended event handler"""
@@ -199,31 +187,6 @@ class TestNoiseReductionPlugin(BasePluginTest):
                 None,  # microphone_audio_path
                 {},  # metadata
             )
-
-    def test_align_signals_by_fft(self, initialized_plugin):
-        """Test FFT-based signal alignment"""
-        # Create test signals
-        sample_rate = 44100
-        duration = 1.0
-        t = np.linspace(0, duration, int(sample_rate * duration))
-        signal = np.sin(2 * np.pi * 440 * t)
-        delayed_signal = np.roll(signal, 100)  # Delay by 100 samples
-
-        # Call the function
-        signal1, signal2, lag = initialized_plugin._align_signals_by_fft(
-            signal, delayed_signal, sample_rate
-        )
-
-        # Verify lag detection and signal alignment
-        assert isinstance(lag, (int, float, np.number))
-        assert abs(lag * sample_rate) < 10  # Allow small alignment error
-        assert signal1.shape == signal2.shape == signal.shape
-
-    def test_plugin_configuration(self, initialized_plugin):
-        """Test plugin configuration"""
-        assert initialized_plugin.config.enabled is True
-        assert initialized_plugin.config.version == "1.0.0"
-        assert initialized_plugin.config.name == "noise_reduction"
 
     async def test_handle_recording_ended_dict_format(self, initialized_plugin):
         """Test recording ended handler with dictionary event format"""
@@ -428,7 +391,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
                 return func(*args)
             return None
 
-        with patch("os.path.exists", return_value=True), patch.object(
+        with patch.object(
             initialized_plugin, "_translate_path_to_container", side_effect=lambda x: x
         ), patch.object(
             initialized_plugin, "_subtract_bleed_time_domain"
@@ -452,30 +415,6 @@ class TestNoiseReductionPlugin(BasePluginTest):
             # Verify the appropriate method was called
             mock_subtract.assert_called_once()
             assert mock_remove.call_count == 0
-
-    def test_trim_initial_silence(self):
-        """Test trimming initial silence from audio signal"""
-        # Create test signal with initial silence
-        sample_rate = 44100
-        silence_duration = 0.5  # seconds
-        audio_duration = 0.5  # seconds
-
-        silence = np.zeros(int(silence_duration * sample_rate))
-        audio = np.random.randn(int(audio_duration * sample_rate)) * 0.1
-        signal = np.concatenate([silence, audio])
-
-        # Test the function with mocked detect_start_of_audio
-        with patch.object(NoiseReductionPlugin, "detect_start_of_audio") as mock_detect:
-            mock_detect.return_value = len(
-                silence
-            )  # Return the index where silence ends
-            trimmed = NoiseReductionPlugin.trim_initial_silence(
-                signal, sample_rate, threshold=0.01
-            )
-
-            # Verify the silence was trimmed
-            assert len(trimmed) < len(signal)
-            assert np.array_equal(trimmed, audio)
 
     async def test_process_recording_missing_paths(self, initialized_plugin):
         """Test process_recording with missing audio paths"""
@@ -625,3 +564,28 @@ class TestNoiseReductionPlugin(BasePluginTest):
             )
 
             # Verify no error is raised and function completes
+
+    def test_align_signals_by_fft(self, initialized_plugin):
+        """Test FFT-based signal alignment"""
+        # Create test signals
+        sample_rate = 44100
+        duration = 1.0
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        signal = np.sin(2 * np.pi * 440 * t)
+        delayed_signal = np.roll(signal, 100)  # Delay by 100 samples
+
+        # Call the function
+        signal1, signal2, lag = initialized_plugin._align_signals_by_fft(
+            signal, delayed_signal, sample_rate
+        )
+
+        # Verify lag detection and signal alignment
+        assert isinstance(lag, (int, float, np.number))
+        assert abs(lag * sample_rate) < 10  # Allow small alignment error
+        assert signal1.shape == signal2.shape == signal.shape
+
+    def test_plugin_configuration(self, initialized_plugin):
+        """Test plugin configuration"""
+        assert initialized_plugin.config.enabled is True
+        assert initialized_plugin.config.version == "1.0.0"
+        assert initialized_plugin.config.name == "noise_reduction"

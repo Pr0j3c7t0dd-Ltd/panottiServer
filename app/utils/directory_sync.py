@@ -216,16 +216,28 @@ class DirectorySync:
             extra={"observer_count": len(self.observers)},
         )
 
-        for source, observer in self.observers.items():
-            logger.debug("Stopping observer", extra={"source": source})
-            observer.stop()
+        try:
+            # First stop all observers
+            for source, observer in self.observers.items():
+                logger.debug("Stopping observer", extra={"source": source})
+                observer.stop()
 
-        for source, observer in self.observers.items():
-            logger.debug("Joining observer thread", extra={"source": source})
-            observer.join()
+            # Then wait for them to finish with timeout
+            for source, observer in self.observers.items():
+                logger.debug("Joining observer thread", extra={"source": source})
+                observer.join(timeout=10.0)  # Add timeout
+                if observer.is_alive():
+                    logger.warning(f"Observer for {source} did not stop within timeout")
 
-        self.observers.clear()
-        logger.info("Directory monitoring stopped")
+            self.observers.clear()
+            logger.info("Directory monitoring stopped")
+        except Exception as e:
+            logger.error(
+                "Error stopping directory monitoring",
+                extra={"error": str(e)},
+                exc_info=True
+            )
+            raise
 
 
 class MonitorStatus(BaseModel):

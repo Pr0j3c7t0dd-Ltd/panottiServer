@@ -20,12 +20,7 @@ class EventPriority(str, Enum):
     @property
     def value_int(self) -> int:
         """Get integer value for priority level."""
-        return {
-            self.LOW: 0,
-            self.NORMAL: 1,
-            self.HIGH: 2,
-            self.CRITICAL: 3
-        }[self]
+        return {self.LOW: 0, self.NORMAL: 1, self.HIGH: 2, self.CRITICAL: 3}[self]
 
 
 class Event(BaseModel):

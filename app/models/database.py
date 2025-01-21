@@ -392,36 +392,27 @@ class DatabaseManager:
         await asyncio.get_event_loop().run_in_executor(self._executor, _commit)
 
     async def close(self) -> None:
-        """Close database connections and shutdown thread pool."""
-        logger.info(
-            "Closing database connections",
-            extra={"req_id": self._req_id, "db_path": self.db_path},
-        )
-
+        """Close database connection and cleanup resources."""
         try:
-            # Close connections
+            # Shutdown thread pool first
+            if hasattr(self, '_executor'):
+                self._executor.shutdown(wait=True, timeout=10)
+                self._executor = None
+
+            # Then close connections
             self.close_connections()
-
-            # Shutdown thread pool
-            if hasattr(self, "_executor"):
-                self._executor.shutdown(wait=True)
-                delattr(self, "_executor")
-
-            # Clear instance
-            DatabaseManager._instance = None
-
-            logger.info(
-                "Database connections closed",
-                extra={"req_id": self._req_id, "db_path": self.db_path},
+            
+            logger.debug(
+                "Database manager cleanup complete",
+                extra={"req_id": self._req_id}
             )
         except Exception as e:
             logger.error(
-                "Error closing database connections",
+                "Error during database cleanup",
                 extra={
                     "req_id": self._req_id,
-                    "db_path": self.db_path,
-                    "error": str(e),
-                },
+                    "error": str(e)
+                }
             )
             raise
 
@@ -430,25 +421,6 @@ class DatabaseManager:
         if hasattr(self._local, "connection"):
             self._local.connection.close()
             del self._local.connection
-
-    def get_active_recordings(self) -> dict[str, str]:
-        """Get all active recordings (started but not ended)"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT DISTINCT json_extract(data, '$.recordingId') as recording_id,
-                       json_extract(data, '$.timestamp') as timestamp
-                FROM events
-                WHERE type = 'Recording Started'
-                AND recording_id NOT IN (
-                    SELECT DISTINCT json_extract(data, '$.recordingId')
-                    FROM events
-                    WHERE type = 'Recording Ended'
-                )
-            """
-            )
-            return {row["recording_id"]: row["timestamp"] for row in cursor.fetchall()}
 
     @classmethod
     async def cleanup(cls) -> None:

@@ -715,51 +715,74 @@ class EventBus:
             },
         )
 
-        # First stop the cleanup task
-        if self._cleanup_events_task and not self._cleanup_events_task.done():
-            self._cleanup_events_task.cancel()
-            try:
-                await self._cleanup_events_task
-            except (asyncio.CancelledError, Exception):
-                pass
-            finally:
-                self._cleanup_events_task = None
+        try:
+            # First stop accepting new events by clearing subscribers
+            self._subscribers.clear()
 
-        # Cancel all pending tasks
-        pending_tasks = list(self._pending_tasks)
-        if pending_tasks:
-            for task in pending_tasks:
-                if not task.done():
-                    task.cancel()
+            # Then stop the cleanup task
+            if self._cleanup_events_task and not self._cleanup_events_task.done():
+                self._cleanup_events_task.cancel()
+                try:
+                    await asyncio.wait_for(self._cleanup_events_task, timeout=10.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                    logger.warning("Cleanup task did not complete cleanly")
+                finally:
+                    self._cleanup_events_task = None
 
-            # Wait for all tasks to complete or be cancelled with a timeout
-            try:
-                await asyncio.wait(pending_tasks, timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "Timeout waiting for tasks to cancel",
-                    extra={
-                        "req_id": self._req_id,
-                        "component": "event_bus",
-                        "pending_tasks": len(pending_tasks),
-                    },
-                )
-            except Exception as e:
-                logger.error(
-                    "Error during task cancellation",
-                    extra={
-                        "req_id": self._req_id,
-                        "component": "event_bus",
-                        "error": str(e),
-                    },
-                    exc_info=True,
-                )
+            # Cancel all pending tasks
+            pending_tasks = list(self._pending_tasks)
+            if pending_tasks:
+                # Cancel tasks in batches to avoid overwhelming the event loop
+                batch_size = 50
+                for i in range(0, len(pending_tasks), batch_size):
+                    batch = pending_tasks[i:i + batch_size]
+                    for task in batch:
+                        if not task.done():
+                            task.cancel()
 
-        self._pending_tasks.clear()
-        self._subscribers.clear()
-        self._processed_events.clear()
+                    # Wait for batch to complete with timeout
+                    try:
+                        await asyncio.wait(batch, timeout=10.0)
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Timeout waiting for task batch to cancel",
+                            extra={
+                                "req_id": self._req_id,
+                                "component": "event_bus",
+                                "batch_start": i,
+                                "batch_size": len(batch),
+                            },
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Error during task batch cancellation",
+                            extra={
+                                "req_id": self._req_id,
+                                "component": "event_bus",
+                                "error": str(e),
+                                "batch_start": i,
+                                "batch_size": len(batch),
+                            },
+                            exc_info=True,
+                        )
 
-        logger.info(
-            "Event bus shutdown complete",
-            extra={"req_id": self._req_id, "component": "event_bus"},
-        )
+            # Clear all internal state
+            self._pending_tasks.clear()
+            self._processed_events.clear()
+
+            logger.info(
+                "Event bus shutdown complete",
+                extra={"req_id": self._req_id, "component": "event_bus"},
+            )
+
+        except Exception as e:
+            logger.error(
+                "Error during event bus shutdown",
+                extra={
+                    "req_id": self._req_id,
+                    "component": "event_bus",
+                    "error": str(e),
+                },
+                exc_info=True,
+            )
+            raise
