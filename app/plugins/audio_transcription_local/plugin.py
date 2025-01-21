@@ -376,7 +376,11 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         transcript_paths: dict[str, str | None] | None = None,
     ) -> None:
         """Emit transcription event."""
-        # Extract metadata from original event
+        if not self.event_bus:
+            logger.warning("No event bus available to publish transcription event")
+            return
+
+        # Extract metadata and labels from original event
         metadata = original_event.get("metadata", {}) if original_event else {}
         speaker_label = original_event.get("speaker_label") if original_event else None
         system_label = original_event.get("system_label") if original_event else None
@@ -385,71 +389,84 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             if original_event else str(uuid.uuid4())
         )
 
-        if error:
-            event = Event.create(
-                name="transcription_local.error",
-                data={
-                    "recording": original_event.get("recording", {}) if original_event else {},
-                    "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
-                    "transcription": {
-                        "status": "error",
-                        "timestamp": datetime.now().isoformat(),
-                        "output_file": output_file,
-                        "error": error,
-                        "model": self.get_config("model", "base"),
-                        "language": self.get_config("language", "en"),
-                        "speaker_labels": {
-                            "microphone": speaker_label,
-                            "system": system_label
-                        }
-                    }
-                },
-                correlation_id=correlation_id,
-                source_plugin=self.name,
-                priority=EventPriority.NORMAL
-            )
-        else:
-            event = Event.create(
-                name="transcription_local.completed",
-                data={
-                    "recording": original_event.get("recording", {}) if original_event else {},
-                    "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
-                    "transcription": {
-                        "status": status,
-                        "timestamp": datetime.now().isoformat(),
-                        "output_file": output_file,
-                        "transcript_paths": transcript_paths,
-                        "model": self.get_config("model", "base"),
-                        "language": self.get_config("language", "en"),
-                        "speaker_labels": {
-                            "microphone": speaker_label,
-                            "system": system_label
-                        }
-                    }
-                },
-                correlation_id=correlation_id,
-                source_plugin=self.name,
-                priority=EventPriority.NORMAL
-            )
+        try:
+            if error:
+                event = Event.create(
+                    name="transcription_local.error",
+                    data={
+                        "recording": original_event.get("recording", {}) if original_event else {},
+                        "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
+                        "transcription": {
+                            "status": "error",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "recording_id": recording_id,
+                            "output_file": output_file,
+                            "error": error,
+                            "model": self.get_config("model", "base"),
+                            "language": self.get_config("language", "en"),
+                            "speaker_labels": {
+                                "microphone": speaker_label,
+                                "system": system_label
+                            }
+                        },
+                        "metadata": metadata  # Include metadata in error event
+                    },
+                    correlation_id=correlation_id,
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL
+                )
+            else:
+                event = Event.create(
+                    name="transcription_local.completed",
+                    data={
+                        "recording": original_event.get("recording", {}) if original_event else {},
+                        "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
+                        "transcription": {
+                            "status": status,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "recording_id": recording_id,
+                            "output_file": output_file,
+                            "transcript_paths": transcript_paths,
+                            "model": self.get_config("model", "base"),
+                            "language": self.get_config("language", "en"),
+                            "speaker_labels": {
+                                "microphone": speaker_label,
+                                "system": system_label
+                            }
+                        },
+                        "metadata": metadata  # Include metadata in completion event
+                    },
+                    correlation_id=correlation_id,
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL
+                )
 
-        if self.event_bus:
             await self.event_bus.publish(event)
-        else:
-            logger.warning("No event bus available to publish transcription event")
 
-        # Structured logging
-        log_data = {
-            "plugin": self.name,
-            "recording_id": recording_id,
-            "event": event.name,
-            "status": status,
-        }
-        if output_file:
-            log_data["output_file"] = output_file
-        if error:
-            log_data["error"] = error
+            # Structured logging
+            log_data = {
+                "plugin": self.name,
+                "recording_id": recording_id,
+                "event": event.name,
+                "status": status,
+            }
+            if output_file:
+                log_data["output_file"] = output_file
+            if error:
+                log_data["error"] = error
 
-        logger.info("Emitted transcription event", extra=log_data)
+            logger.info("Emitted transcription event", extra=log_data)
+
+        except Exception as e:
+            logger.error(
+                "Failed to emit transcription event",
+                extra={
+                    "plugin": self.name,
+                    "error": str(e),
+                    "recording_id": recording_id,
+                },
+                exc_info=True,
+            )
 
     async def _init_database(self) -> None:
         """Initialize database tables."""

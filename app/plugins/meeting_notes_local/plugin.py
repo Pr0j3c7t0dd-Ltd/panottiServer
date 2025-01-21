@@ -394,10 +394,9 @@ Keep each bullet point concise but informative]
                         "timestamp": dt.now(UTC).isoformat(),
                         "recording_id": recording_id,
                         "error": str(e)
-                    }
+                    },
+                    "metadata": original_event.data.get("metadata", {})  # Include metadata in error event
                 }
-                # Include metadata in error event data
-                error_data["metadata"] = getattr(original_event.context, "metadata", {})
                 
                 error_event = Event.create(
                     name="meeting_notes_local.error",

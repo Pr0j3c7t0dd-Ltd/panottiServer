@@ -126,7 +126,9 @@ class ExamplePlugin(PluginBase):
                             "debug_mode": debug_mode,
                             "example_setting": example_setting,
                             "event_id": getattr(context, "event_id", None)
-                        }
+                        },
+                        # Preserve metadata
+                        "metadata": event_data.get("metadata", {}) or event_data.get("data", {}).get("metadata", {})
                     },
                     correlation_id=getattr(context, "correlation_id", None) or str(uuid.uuid4()),
                     source_plugin=self.name,
@@ -168,7 +170,9 @@ class ExamplePlugin(PluginBase):
                             "debug_mode": debug_mode,
                             "example_setting": example_setting,
                             "event_id": getattr(context, "event_id", None)
-                        }
+                        },
+                        # Preserve metadata
+                        "metadata": event_data.get("metadata", {}) or event_data.get("data", {}).get("metadata", {})
                     },
                     correlation_id=getattr(context, "correlation_id", None) or str(uuid.uuid4()),
                     source_plugin=self.name,

@@ -194,7 +194,9 @@ class DesktopNotifierPlugin(PluginBase):
                             "settings": {"auto_open_notes": auto_open},
                             "recording_id": recording_id,
                             "output_path": output_path,
-                        }
+                        },
+                        # Preserve metadata
+                        "metadata": data.get("metadata", {}) or data.get("data", {}).get("metadata", {})
                     },
                     correlation_id=getattr(event_data, "correlation_id", None) or data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
@@ -241,7 +243,9 @@ class DesktopNotifierPlugin(PluginBase):
                             "timestamp": datetime.now(UTC).isoformat(),
                             "error": str(e),
                             "recording_id": recording_id
-                        }
+                        },
+                        # Preserve metadata
+                        "metadata": data.get("metadata", {}) or data.get("data", {}).get("metadata", {})
                     },
                     correlation_id=getattr(event_data, "correlation_id", None) or data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,

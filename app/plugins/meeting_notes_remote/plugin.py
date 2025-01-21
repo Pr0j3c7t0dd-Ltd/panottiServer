@@ -147,100 +147,92 @@ class MeetingNotesRemotePlugin(PluginBase):
     async def handle_transcription_completed(self, event_data: Event | RecordingEvent) -> None:
         """Handle transcription completed event"""
         try:
-            event_id = str(uuid.uuid4())
-
-            logger.info(
-                "Processing transcription completed event",
-                extra={
-                    "plugin_name": self.name,
-                    "event_id": getattr(event_data, "event_id", None),
-                },
-            )
-
-            # Get transcript path from event data
+            # Get transcript path
             transcript_path = await self._get_transcript_path(event_data)
             if not transcript_path:
-                logger.warning(
-                    "No transcript path in event",
-                    extra={
-                        "plugin_name": self.name,
-                    },
+                logger.error(
+                    "No transcript path found in event",
+                    extra={"plugin": self.name, "event_data": str(event_data)},
                 )
                 return
 
-            # Get recording ID from event data
+            # Get recording ID from event
             recording_id = None
-            if hasattr(event_data, "data") and isinstance(event_data.data, dict):
+            if isinstance(event_data, RecordingEvent):
+                recording_id = event_data.recording_id
+            elif hasattr(event_data, "data"):
                 recording_data = event_data.data.get("recording", {})
                 recording_id = recording_data.get("recording_id")
 
-            # Generate meeting notes
+            if not recording_id:
+                logger.error(
+                    "No recording ID found in event",
+                    extra={"plugin": self.name, "event_data": str(event_data)},
+                )
+                return
+
+            # Get metadata from event
+            metadata = {}
+            if hasattr(event_data, "data"):
+                metadata = event_data.data.get("metadata", {})
+
+            # Generate notes
             output_path = await self._generate_meeting_notes(
-                transcript_path, event_id, recording_id
+                transcript_path, str(uuid.uuid4()), recording_id
             )
 
-            if output_path:
-                logger.info(
-                    "Generated meeting notes",
-                    extra={
-                        "plugin_name": self.name,
-                        "output_path": str(output_path),
-                        "recording_id": recording_id,
-                    },
-                )
-
-                # Emit completion event
-                if self.event_bus:
-                    try:
-                        completion_event = Event.create(
-                            name="meeting_notes_remote.completed",
-                            data={
-                                "recording": event_data.data.get("recording", {}),
-                                "noise_reduction": event_data.data.get("noise_reduction", {}),
-                                "transcription": event_data.data.get("transcription", {}),
-                                "meeting_notes_remote": {
-                                    "status": "completed",
-                                    "timestamp": dt.now(UTC).isoformat(),
-                                    "recording_id": recording_id,
-                                    "output_path": str(output_path),
-                                    "notes_path": str(output_path),
-                                    "input_paths": {
-                                        "transcript": str(transcript_path),
-                                    },
+            if self.event_bus:
+                try:
+                    completion_event = Event.create(
+                        name="meeting_notes_remote.completed",
+                        data={
+                            "recording": event_data.data.get("recording", {}),
+                            "noise_reduction": event_data.data.get("noise_reduction", {}),
+                            "transcription": event_data.data.get("transcription", {}),
+                            "meeting_notes_remote": {
+                                "status": "completed",
+                                "timestamp": dt.now(UTC).isoformat(),
+                                "recording_id": recording_id,
+                                "output_path": str(output_path),
+                                "notes_path": str(output_path),
+                                "input_paths": {
+                                    "transcript": str(transcript_path),
                                 },
                             },
-                            correlation_id=getattr(event_data, "correlation_id", None) or str(uuid.uuid4()),
-                            source_plugin=self.name,
-                            priority=EventPriority.NORMAL,
-                        )
+                            "metadata": metadata,  # Include metadata in event data
+                        },
+                        correlation_id=getattr(event_data, "correlation_id", None) or str(uuid.uuid4()),
+                        source_plugin=self.name,
+                        priority=EventPriority.NORMAL,
+                    )
 
-                        await self.event_bus.publish(completion_event)
-                        logger.info(
-                            "Published meeting notes completion event",
-                            extra={
-                                "plugin": self.name,
-                                "event_name": "meeting_notes_remote.completed",
-                                "recording_id": recording_id,
-                            },
-                        )
-                    except Exception as e:
-                        logger.error(
-                            "Failed to publish completion event",
-                            extra={
-                                "plugin": self.name,
-                                "error": str(e),
-                            },
-                        )
-                else:
-                    logger.warning(
-                        "No event bus available to publish completion event",
+                    await self.event_bus.publish(completion_event)
+                    logger.info(
+                        "Published meeting notes completion event",
                         extra={
-                            "plugin_name": self.name,
+                            "plugin": self.name,
                             "event_name": "meeting_notes_remote.completed",
                             "recording_id": recording_id,
-                            "output_path": str(output_path),
                         },
                     )
+                except Exception as e:
+                    logger.error(
+                        "Failed to publish completion event",
+                        extra={
+                            "plugin": self.name,
+                            "error": str(e),
+                        },
+                    )
+            else:
+                logger.warning(
+                    "No event bus available to publish completion event",
+                    extra={
+                        "plugin_name": self.name,
+                        "event_name": "meeting_notes_remote.completed",
+                        "recording_id": recording_id,
+                        "output_path": str(output_path),
+                    },
+                )
 
         except Exception as e:
             logger.error(
@@ -267,6 +259,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                                     "transcript": str(transcript_path),
                                 },
                             },
+                            "metadata": metadata,  # Include metadata in error event
                         },
                         correlation_id=getattr(event_data, "correlation_id", None) or str(uuid.uuid4()),
                         source_plugin=self.name,

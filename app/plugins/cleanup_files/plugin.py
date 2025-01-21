@@ -222,6 +222,9 @@ class CleanupFilesPlugin(PluginBase):
                 )
                 return
 
+            # Extract metadata
+            metadata = data.get("metadata", {}) or data.get("data", {}).get("metadata", {})
+
             # Clean up files
             cleaned_files = await self._cleanup_files(recording_id)
 
@@ -243,10 +246,11 @@ class CleanupFilesPlugin(PluginBase):
                             "exclude_dirs": [str(d) for d in self.exclude_dirs],
                             "cleanup_delay": self.cleanup_delay
                         },
+                        "metadata": metadata,
                         "context": {
                             "correlation_id": data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
                             "source_plugin": self.name,
-                            "metadata": data.get("context", {}).get("metadata", {})
+                            "metadata": metadata
                         }
                     },
                     correlation_id=data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
@@ -302,10 +306,11 @@ class CleanupFilesPlugin(PluginBase):
                             "exclude_dirs": [str(d) for d in self.exclude_dirs],
                             "cleanup_delay": self.cleanup_delay
                         },
+                        "metadata": metadata,
                         "context": {
                             "correlation_id": data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
                             "source_plugin": self.name,
-                            "metadata": data.get("context", {}).get("metadata", {})
+                            "metadata": metadata
                         }
                     },
                     correlation_id=data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
