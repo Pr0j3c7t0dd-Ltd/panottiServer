@@ -94,8 +94,12 @@ class TestCleanupFilesPlugin(BasePluginTest):
             event = publish_call[0][0]
             assert isinstance(event, Event)
             assert event.name == "cleanup_files.completed"
-            assert event.data["recording_id"] == "test_recording"
-            assert event.data["cleaned_files"] == ["file1.txt", "file2.txt"]
+            assert event.data["cleanup_files"]["cleaned_files"] == ["file1.txt", "file2.txt"]
+            assert event.data["cleanup_files"]["status"] == "completed"
+            assert isinstance(event.data["cleanup_files"]["timestamp"], str)
+            assert len(event.data["cleanup_files"]["include_dirs"]) == 2
+            assert len(event.data["cleanup_files"]["exclude_dirs"]) == 1
+            assert event.data["cleanup_files"]["cleanup_delay"] == 5
 
     async def test_handle_desktop_notification_completed_event(self, plugin):
         """Test handling desktop notification completed with Event object"""

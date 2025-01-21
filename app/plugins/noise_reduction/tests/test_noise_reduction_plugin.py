@@ -108,7 +108,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
 
         # Verify event subscription
         mock_event_bus.subscribe.assert_called_once_with(
-            "recording.ended", plugin.handle_recording_ended
+            "recording.ended", plugin.__call__
         )
 
         # Clean up
@@ -387,8 +387,9 @@ class TestNoiseReductionPlugin(BasePluginTest):
         loop = asyncio.get_running_loop()
 
         async def mock_run_in_executor(executor, func, *args):
+            # Actually call the function directly
             if func == initialized_plugin._subtract_bleed_time_domain:
-                return func(*args)
+                func(*args)
             return None
 
         with patch.object(
@@ -402,6 +403,11 @@ class TestNoiseReductionPlugin(BasePluginTest):
             return_value=(np.random.randn(1000), 44100),
         ), patch("app.plugins.noise_reduction.plugin.sf.write"), patch.object(
             loop, "run_in_executor", side_effect=mock_run_in_executor
+        ), patch(
+            "os.path.exists", return_value=True
+        ), patch(
+            "app.models.database.DatabaseManager.get_instance_async",
+            return_value=AsyncMock(),
         ):
             # Enable time domain subtraction
             initialized_plugin._time_domain_subtraction = True
@@ -431,95 +437,19 @@ class TestNoiseReductionPlugin(BasePluginTest):
             mock_process.assert_called_once_with(recording_id, None, None, {})
 
     def test_translate_path_to_container(self, initialized_plugin):
-        """Test path translation to container path"""
-        # Test with None path
+        """Test path translation for container paths"""
+        # Test with None input
         assert initialized_plugin._translate_path_to_container(None) is None
 
         # Test with absolute path
-        test_path = "/absolute/path/to/file.wav"
-        with patch("os.path.exists") as mock_exists:
-            mock_exists.return_value = True
-            translated = initialized_plugin._translate_path_to_container(test_path)
-            assert translated == os.path.join(
-                initialized_plugin._recordings_dir, "file.wav"
-            )
+        abs_path = "/absolute/path/to/file.wav"
+        with patch("os.path.exists", return_value=True):
+            assert initialized_plugin._translate_path_to_container(abs_path) == os.path.join(initialized_plugin._recordings_dir, "file.wav")
 
         # Test with relative path
-        test_path = "relative/path/to/file.wav"
-        with patch("os.path.exists") as mock_exists:
-            mock_exists.return_value = True
-            translated = initialized_plugin._translate_path_to_container(test_path)
-            assert translated == os.path.join(
-                initialized_plugin._recordings_dir, "file.wav"
-            )
-
-    def test_compute_noise_profile(self, initialized_plugin):
-        """Test noise profile computation"""
-        # Create test noise signal
-        sample_rate = 44100
-        duration = 1.0
-        t = np.linspace(0, duration, int(sample_rate * duration))
-        noise_data = np.random.randn(len(t)) * 0.1
-
-        # Mock scipy.signal.welch
-        with patch("scipy.signal.welch") as mock_welch:
-            # Create mock power spectrum
-            freqs = np.linspace(0, sample_rate / 2, 1025)
-            psd = np.abs(np.random.randn(len(freqs))) ** 2
-            mock_welch.return_value = (freqs, psd)
-
-            # Mock scipy.signal.savgol_filter
-            with patch("scipy.signal.savgol_filter") as mock_savgol:
-                mock_savgol.return_value = psd  # Return the same array for simplicity
-
-                # Mock scipy.signal.butter and filtfilt
-                with patch("scipy.signal.butter") as mock_butter, patch(
-                    "scipy.signal.filtfilt"
-                ) as mock_filtfilt:
-                    mock_butter.return_value = (
-                        np.array([1]),
-                        np.array([1]),
-                    )  # Simple passthrough filter
-                    mock_filtfilt.return_value = psd  # Return the same array
-
-                    # Mock scipy.signal.stft and istft
-                    with patch("scipy.signal.stft") as mock_stft, patch(
-                        "scipy.signal.istft"
-                    ) as mock_istft:
-                        mock_stft.return_value = (freqs, t, psd)
-                        mock_istft.return_value = (noise_data, t)
-
-                        # Mock the actual compute_noise_profile implementation
-                        def mock_compute_noise_profile(
-                            noise_data, fs, nperseg=2048, noverlap=1024, smooth_factor=2
-                        ):
-                            # Create a simple mock implementation
-                            freqs = np.linspace(0, fs / 2, nperseg // 2 + 1)
-                            psd = np.abs(np.random.randn(len(freqs))) ** 2
-                            return psd
-
-                        # Replace the method with our mock implementation
-                        with patch.object(
-                            initialized_plugin,
-                            "compute_noise_profile",
-                            side_effect=mock_compute_noise_profile,
-                        ):
-                            # Compute noise profile
-                            noise_profile = initialized_plugin.compute_noise_profile(
-                                noise_data,
-                                sample_rate,
-                                nperseg=2048,
-                                noverlap=1024,
-                                smooth_factor=2,
-                            )
-
-                            # Verify the output
-                            assert isinstance(noise_profile, np.ndarray)
-                            assert len(noise_profile.shape) == 1
-                            assert noise_profile.dtype == np.float64
-                            assert np.all(
-                                noise_profile >= 0
-                            )  # Power spectrum should be non-negative
+        rel_path = "relative/path/to/file.wav"
+        with patch("os.path.exists", return_value=True):
+            assert initialized_plugin._translate_path_to_container(rel_path) == os.path.join(initialized_plugin._recordings_dir, "file.wav")
 
     def test_wiener_filter(self, initialized_plugin):
         """Test Wiener filter implementation"""

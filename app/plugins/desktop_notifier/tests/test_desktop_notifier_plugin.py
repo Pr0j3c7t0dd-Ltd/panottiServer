@@ -76,12 +76,15 @@ class TestDesktopNotifierPlugin(BasePluginTest):
     async def test_handle_meeting_notes_completed_dict(self, plugin, mock_db):
         """Test handling meeting notes completed with dict event"""
         event_data = {
-            "recording_id": "test_recording",
-            "output_path": "/path/to/notes.txt",
+            "name": "meeting_notes_local.completed",
             "data": {
                 "recording_id": "test_recording",
                 "output_path": "/path/to/notes.txt",
             },
+            "context": {
+                "correlation_id": "test-correlation-id",
+                "source_plugin": "test-plugin"
+            }
         }
 
         with patch.object(plugin, "_send_notification") as mock_send:
@@ -134,6 +137,9 @@ class TestDesktopNotifierPlugin(BasePluginTest):
         event_data = {
             "recording_id": "test_recording",
             "output_path": "/path/to/notes.txt",
+            "context": {
+                "correlation_id": "test_correlation_id"
+            }
         }
 
         with patch.object(plugin, "_send_notification") as mock_send:
@@ -144,8 +150,7 @@ class TestDesktopNotifierPlugin(BasePluginTest):
 
             # Verify error event was published
             assert any(
-                call.args[0].event
-                in ["meeting_notes_local.error", "meeting_notes_remote.error"]
+                call.args[0].name == "desktop_notification.error"
                 for call in plugin.event_bus.publish.call_args_list
             )
 

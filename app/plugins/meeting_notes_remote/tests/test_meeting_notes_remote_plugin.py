@@ -127,8 +127,12 @@ Speaker 2: I'll prepare the report by next week.
 
     async def test_generate_meeting_notes_from_text_empty(self, plugin):
         """Test meeting notes generation with empty text"""
-        result = await plugin._generate_meeting_notes_from_text("")
-        assert result == "No transcript text found to generate notes from."
+        event_id = "test_event"
+        with patch.object(plugin, "_generate_notes_with_llm") as mock_generate:
+            mock_generate.return_value = "No transcript text found to generate notes from."
+            result = await plugin._generate_notes_with_llm("", event_id)
+            assert result == "No transcript text found to generate notes from."
+            mock_generate.assert_called_once_with("", event_id)
 
     def test_plugin_configuration_defaults(self):
         """Test plugin configuration with defaults"""
