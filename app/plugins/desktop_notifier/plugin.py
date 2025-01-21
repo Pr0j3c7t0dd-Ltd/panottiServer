@@ -103,10 +103,7 @@ class DesktopNotifierPlugin(PluginBase):
                 },
             )
 
-            # Initialize recording_id with default value
-            recording_id = "unknown"
-
-            # Extract data based on event type
+            # Extract recording ID and output path from event data
             if isinstance(event_data, dict):
                 data = event_data
             elif isinstance(event_data, (Event, RecordingEvent)):
@@ -121,19 +118,19 @@ class DesktopNotifierPlugin(PluginBase):
                 )
                 return
 
-            # Extract recording ID and output path, with fallbacks
-            recording_id = data.get("recording_id") or data.get("data", {}).get(
-                "recording_id"
-            )
+            # Extract recording ID from recording data
+            recording = data.get("recording", {})
+            recording_id = recording.get("recording_id", "unknown")
 
+            # Extract output path from meeting notes data
+            meeting_notes_local = data.get("meeting_notes_local", {})
+            meeting_notes_remote = data.get("meeting_notes_remote", {})
             output_path = (
-                data.get("output_path")
-                or data.get("notes_path")
-                or data.get("data", {}).get("output_path")
-                or data.get("data", {}).get("notes_path")
-                or data.get("current_event", {})
-                .get("meeting_notes", {})
-                .get("output_path")
+                meeting_notes_local.get("output_path")
+                or meeting_notes_remote.get("output_path")
+                or meeting_notes_local.get("notes_path")
+                or meeting_notes_remote.get("notes_path")
+                or data.get("output_path")  # Fallback for old event structure
             )
 
             if not output_path:

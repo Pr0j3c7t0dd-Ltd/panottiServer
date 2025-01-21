@@ -188,6 +188,7 @@ class CleanupFilesPlugin(PluginBase):
             recording_id = (
                 data.get("recording_id")
                 or data.get("data", {}).get("recording_id")
+                or data.get("desktop_notification", {}).get("recording_id")
                 or "unknown"
             )
 
@@ -203,6 +204,8 @@ class CleanupFilesPlugin(PluginBase):
                         if "recording_id" in data
                         else "root.data.recording_id"
                         if "data" in data and "recording_id" in data["data"]
+                        else "root.desktop_notification.recording_id"
+                        if "desktop_notification" in data and "recording_id" in data["desktop_notification"]
                         else "unknown"
                     ),
                 },

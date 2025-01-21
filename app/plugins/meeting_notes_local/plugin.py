@@ -321,19 +321,29 @@ Keep each bullet point concise but informative]
                 from datetime import datetime as dt
 
                 event_data = {
-                    "recording_id": recording_id,
-                    "output_path": str(output_file),
-                    "notes_path": str(output_file),
-                    "status": "completed",
-                    "timestamp": dt.now(UTC),
-                    "current_event": {
-                        "meeting_notes": {
-                            "status": "completed",
-                            "timestamp": dt.now(UTC),
-                            "output_path": str(output_file),
+                    "recording": original_event.data.get("recording", {}),
+                    "noise_reduction": original_event.data.get("noise_reduction", {}),
+                    "transcription": original_event.data.get("transcription", {}),
+                    "meeting_notes_local": {
+                        "status": "completed",
+                        "timestamp": dt.now(UTC).isoformat(),
+                        "recording_id": recording_id,
+                        "output_path": str(output_file),
+                        "notes_path": str(output_file),
+                        "input_paths": {
+                            "transcript": str(original_event.data.get("transcription", {}).get("output_file", ""))
                         }
                     },
-                    "event_history": {},
+                    "meeting_notes": {
+                        "status": "completed",
+                        "timestamp": dt.now(UTC).isoformat(),
+                        "recording_id": recording_id,
+                        "output_path": str(output_file),
+                        "notes_path": str(output_file),
+                        "input_paths": {
+                            "transcript": str(original_event.data.get("transcription", {}).get("output_file", ""))
+                        }
+                    }
                 }
 
                 event = Event(
@@ -342,7 +352,7 @@ Keep each bullet point concise but informative]
                     name="meeting_notes_local.completed",
                     data=event_data,
                     context=EventContext(
-                        correlation_id=str(uuid.uuid4()),
+                        correlation_id=getattr(original_event.context, "correlation_id", str(uuid.uuid4())),
                         timestamp=dt.now(UTC),
                         metadata={"source_plugin": self.name},
                     ),
@@ -354,7 +364,7 @@ Keep each bullet point concise but informative]
                 logger.info(
                     "Meeting notes completion event published",
                     extra={
-                        "plugin_name": self.name,
+                        "plugin": self.name,
                         "event_name": "meeting_notes_local.completed",
                         "recording_id": recording_id,
                         "output_path": str(output_file),
@@ -423,7 +433,7 @@ Keep each bullet point concise but informative]
         except Exception as e:
             logger.error("Failed to handle transcript event: %s", str(e), exc_info=True)
 
-    async def handle_transcription_completed(self, event_data: EventData) -> None:
+    async def handle_transcription_completed(self, event_data: Event) -> None:
         """Handle transcription completed event"""
         try:
             event_id = str(uuid.uuid4())  # Generate new event ID
@@ -443,92 +453,37 @@ Keep each bullet point concise but informative]
                     "plugin_name": self.name,
                     "event_data": str(event_data),
                     "event_data_type": type(event_data).__name__,
-                    "has_transcript_path": "transcript_path" in event_data
-                    if isinstance(event_data, dict)
-                    else hasattr(event_data, "transcript_path"),
-                    "has_transcript_paths": "transcript_paths" in event_data
-                    if isinstance(event_data, dict)
-                    else hasattr(event_data, "transcript_paths"),
-                    "transcript_path": event_data.get("transcript_path")
-                    if isinstance(event_data, dict)
-                    else getattr(event_data, "transcript_path", None),
-                    "transcript_paths": event_data.get("transcript_paths")
-                    if isinstance(event_data, dict)
-                    else getattr(event_data, "transcript_paths", None),
+                    "has_transcript_path": hasattr(event_data, "transcript_path"),
+                    "has_transcript_paths": hasattr(event_data, "transcript_paths"),
                 },
             )
 
             # Get transcript path from various possible locations in event data
-            transcript_path = None
-            if isinstance(event_data, dict):
-                # First check transcription data
-                transcription_data = event_data.get("transcription", {})
-                transcript_paths = transcription_data.get("transcript_paths", {})
-                transcript_path = (
-                    transcript_paths.get("merged")  # First try merged transcript
-                    or transcript_paths.get("system")  # Then try system transcript
-                    or transcript_paths.get("mic")  # Finally try mic transcript
-                    or transcription_data.get("transcript_path")  # Legacy field
-                    or event_data.get("transcript_path")  # Direct field
-                )
-                
-                # If still not found, check original event structure
-                if not transcript_path and "original_event" in event_data:
-                    original_event = event_data["original_event"]
-                    if "transcription" in original_event:
-                        transcript_paths = original_event["transcription"].get("transcript_paths", {})
-                        transcript_path = (
-                            transcript_paths.get("merged")
-                            or transcript_paths.get("system")
-                            or transcript_paths.get("mic")
-                            or original_event["transcription"].get("transcript_path")
-                        )
-            else:
-                # Handle object access pattern
-                transcription = getattr(event_data, "transcription", None)
-                if transcription:
-                    transcript_paths = getattr(transcription, "transcript_paths", {})
-                    if isinstance(transcript_paths, dict):
-                        transcript_path = (
-                            transcript_paths.get("merged")
-                            or transcript_paths.get("system")
-                            or transcript_paths.get("mic")
-                            or getattr(transcription, "transcript_path", None)
-                        )
-                
-                # If still not found, try direct attribute
-                if not transcript_path:
-                    transcript_path = getattr(event_data, "transcript_path", None)
-
+            transcript_path = await self._get_transcript_path(event_data)
             if not transcript_path:
                 logger.warning(
                     "No transcript path found in event",
                     extra={
                         "plugin_name": self.name,
-                        "event_id": event_id,
+                        "event_id": getattr(event_data, "event_id", None),
                         "event_data": str(event_data),
                     },
                 )
                 return
 
-            # Convert transcript path to Path object
-            transcript_path = Path(transcript_path)
-
-            # Get recording ID
-            recording_id = (
-                event_data.get("recording_id")
-                if isinstance(event_data, dict)
-                else getattr(event_data, "recording_id", None)
-            )
-
             # Generate meeting notes
+            recording_id = None
+            if hasattr(event_data, "data") and isinstance(event_data.data, dict):
+                recording_data = event_data.data.get("recording", {})
+                recording_id = recording_data.get("recording_id")
+
             output_path = await self._generate_meeting_notes(
                 transcript_path, event_id, recording_id
             )
 
             if output_path:
                 logger.info(
-                    "Meeting notes generated successfully",
+                    "Generated meeting notes",
                     extra={
                         "req_id": event_id,
                         "plugin_name": self.name,
@@ -537,80 +492,80 @@ Keep each bullet point concise but informative]
                     },
                 )
 
-                # Publish completion event
-                completion_event = Event.create(
-                    name="meeting_notes_local.completed",
-                    data={
-                        # Preserve original event data
-                        "recording": event_data.data.get("recording", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("recording", {}),
-                        "noise_reduction": event_data.data.get("noise_reduction", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("noise_reduction", {}),
-                        "transcription": event_data.data.get("transcription", {}) if isinstance(event_data, RecordingEvent) else event_data.get("data", {}).get("transcription", {}),
-                        # Add current event data
-                        "meeting_notes_local": {
-                            "status": "completed",
-                            "timestamp": dt.now(UTC).isoformat(),
-                            "recording_id": recording_id,
-                            "output_path": str(output_path),
-                            "notes_path": str(output_path),
-                            "input_paths": {
-                                "microphone": event_data.data.get("input_paths", {}).get("microphone") if isinstance(event_data, RecordingEvent) else event_data.get("input_paths", {}).get("microphone"),
-                                "system": event_data.data.get("input_paths", {}).get("system") if isinstance(event_data, RecordingEvent) else event_data.get("input_paths", {}).get("system"),
+                # Emit completion event
+                if self.event_bus:
+                    try:
+                        completion_event = Event.create(
+                            name="meeting_notes_local.completed",
+                            data={
+                                "recording": event_data.data.get("recording", {}),
+                                "noise_reduction": event_data.data.get("noise_reduction", {}),
+                                "transcription": event_data.data.get("transcription", {}),
+                                "meeting_notes_local": {
+                                    "status": "completed",
+                                    "timestamp": dt.now(UTC).isoformat(),
+                                    "recording_id": recording_id,
+                                    "output_path": str(output_path),
+                                    "notes_path": str(output_path),
+                                    "input_paths": {
+                                        "transcript": str(transcript_path),
+                                    },
+                                },
+                                "meeting_notes": {
+                                    "status": "completed",
+                                    "timestamp": dt.now(UTC).isoformat(),
+                                    "recording_id": recording_id,
+                                    "output_path": str(output_path),
+                                    "notes_path": str(output_path),
+                                    "input_paths": {
+                                        "transcript": str(transcript_path),
+                                    },
+                                }
                             },
-                            "transcript_paths": event_data.data.get("transcript_paths", {}) if isinstance(event_data, RecordingEvent) else event_data.get("transcript_paths", {})
-                        }
-                    },
-                    correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
-                    source_plugin=self.__class__.__name__,
-                    priority=EventPriority.NORMAL
-                )
+                            correlation_id=getattr(event_data, "correlation_id", None) or str(uuid.uuid4()),
+                            source_plugin=self.__class__.__name__,
+                            priority=EventPriority.NORMAL,
+                        )
 
-                if self.event_bus is None:
-                    logger.error(
-                        "Cannot publish event: event bus is not initialized",
-                        extra={
-                            "plugin": self.name,
-                            "event_name": "meeting_notes_local.completed",
-                            "recording_id": recording_id,
-                        },
-                    )
-                    return
-
-                logger.debug(
-                    "Publishing completion event",
-                    extra={
-                        "plugin": self.name,
-                        "event_name": "meeting_notes_local.completed",
-                        "recording_id": recording_id,
-                        "output_path": str(output_path),
-                    },
-                )
-                await self.event_bus.publish(completion_event)
-
-                # Add verification log after publishing
-                logger.info(
-                    "Meeting notes completion event published",
-                    extra={
-                        "plugin_name": self.name,
-                        "event_name": "meeting_notes_local.completed",
-                        "recording_id": recording_id,
-                        "output_path": str(output_path),
-                    },
-                )
+                        await self.event_bus.publish(completion_event)
+                        logger.info(
+                            "Published meeting notes completion event",
+                            extra={
+                                "plugin": self.name,
+                                "event_name": "meeting_notes_local.completed",
+                                "recording_id": recording_id,
+                            },
+                        )
+                        return
+                    except Exception as e:
+                        logger.error(
+                            "Failed to publish completion event",
+                            extra={
+                                "plugin": self.name,
+                                "event_name": "meeting_notes_local.completed",
+                                "recording_id": recording_id,
+                                "output_path": str(output_path),
+                            },
+                        )
             else:
-                logger.error(
-                    "Failed to generate meeting notes",
+                logger.warning(
+                    "No event bus available to publish completion event",
                     extra={
                         "plugin_name": self.name,
-                        "transcript_path": str(transcript_path),
+                        "event_name": "meeting_notes_local.completed",
+                        "recording_id": recording_id,
+                        "output_path": str(output_path),
                     },
                 )
 
         except Exception as e:
             logger.error(
                 "Error processing transcription event",
-                extra={"plugin_name": self.name, "error": str(e)},
+                extra={
+                    "plugin_name": self.name,
+                    "error": str(e),
+                },
             )
-            raise
 
     async def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
         """Extract transcript path from event."""
@@ -622,12 +577,57 @@ Keep each bullet point concise but informative]
 
         # Handle generic Event type
         if hasattr(event, "data") and isinstance(event.data, dict):
-            transcript_path = event.data.get("transcript_path") or event.data.get(
-                "output_file"
+            transcription_data = event.data.get("transcription", {})
+            
+            logger.debug(
+                "Examining transcription data",
+                extra={
+                    "plugin_name": self.name,
+                    "transcription_data": transcription_data,
+                    "has_output_file": "output_file" in transcription_data,
+                    "has_transcript_paths": "transcript_paths" in transcription_data,
+                }
             )
-            if transcript_path:
-                return Path(transcript_path)
-
+            
+            # First try to get single output file
+            if transcription_data.get("output_file"):
+                logger.debug(
+                    "Found output_file",
+                    extra={
+                        "plugin_name": self.name,
+                        "output_file": transcription_data["output_file"]
+                    }
+                )
+                return Path(transcription_data["output_file"])
+                
+            # Then try multiple transcript paths - prefer merged, then system, then mic
+            transcript_paths = transcription_data.get("transcript_paths", {})
+            if transcript_paths:
+                logger.debug(
+                    "Found transcript_paths",
+                    extra={
+                        "plugin_name": self.name,
+                        "transcript_paths": transcript_paths
+                    }
+                )
+                # Prefer merged transcript if available
+                if transcript_paths.get("merged"):
+                    return Path(transcript_paths["merged"])
+                # Then try system audio transcript
+                elif transcript_paths.get("system"):
+                    return Path(transcript_paths["system"])
+                # Finally try microphone transcript
+                elif transcript_paths.get("mic"):
+                    return Path(transcript_paths["mic"])
+                    
+        logger.warning(
+            "No transcript path found in event",
+            extra={
+                "plugin_name": self.name,
+                "event_id": getattr(event, "event_id", None),
+                "event_data": str(event)
+            }
+        )
         return None
 
     async def _read_transcript(self, transcript_path: str | Path) -> str:
