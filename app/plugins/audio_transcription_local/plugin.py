@@ -335,7 +335,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             )
 
             # Get metadata and speaker labels
-            metadata = original_event.get("metadata", {})
+            metadata = original_event.get("metadata", {}) if original_event else {}
             mic_label = metadata.get("microphone_label", "Microphone")
             sys_label = metadata.get("system_label", "System")
 
