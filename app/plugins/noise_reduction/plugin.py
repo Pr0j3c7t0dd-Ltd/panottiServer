@@ -850,11 +850,8 @@ class NoiseReductionPlugin(PluginBase):
                             }
                         }
                     },
-                    context=EventContext(
-                        correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
-                        source_plugin=self.__class__.__name__,
-                        metadata=event_metadata if event_metadata is not None else {}
-                    ),
+                    correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                    source_plugin=self.__class__.__name__,
                     priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(completed_event)
