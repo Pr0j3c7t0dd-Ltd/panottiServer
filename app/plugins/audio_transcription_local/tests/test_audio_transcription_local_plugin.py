@@ -120,30 +120,50 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
 
     async def test_handle_noise_reduction_completed(self, plugin, mock_whisper):
         """Test handling noise reduction completed event"""
+        # Test recording ID and paths
+        recording_id = "test_recording"
+        audio_path = "/path/to/audio.wav"
+        transcript_path = str(Path("data/transcripts_local/test_recording_transcript.txt"))
+
         event_data = {
-            "recording_id": "test_recording",
-            "output_path": "/path/to/audio.wav",
-            "event": "noise_reduction.completed",
+            "name": "noise_reduction.completed",
+            "recording_id": recording_id,
+            "output_path": audio_path,
             "data": {
-                "recording_id": "test_recording",
-                "output_path": "/path/to/audio.wav",
+                "recording_id": recording_id,
+                "output_path": audio_path,
             },
         }
 
-        with patch.object(plugin, "_process_audio") as mock_process_audio, patch.object(
-            plugin, "_init_model"
-        ), patch.object(plugin, "_model", mock_whisper):
-            mock_process_audio.return_value = (
-                [MagicMock(text="Test transcription", start=0.0, end=1.0)],
-                MagicMock(text="Test transcription"),
-            )
+        # Create mock transcription results
+        mock_segments = [
+            MagicMock(text="Test", start=0.0, end=1.0),
+            MagicMock(text="transcription", start=1.0, end=2.0)
+        ]
+        mock_transcript = MagicMock(text="Test transcription")
 
+        # Set up the mocks
+        with patch.object(plugin, "_process_audio", new_callable=AsyncMock) as mock_process_audio, \
+             patch.object(plugin, "_init_model"), \
+             patch.object(plugin, "_model", mock_whisper), \
+             patch("builtins.open", mock_open()) as mock_file:
+
+            # Configure the mock to return our results
+            mock_process_audio.return_value = (mock_segments, mock_transcript)
+
+            # Initialize the plugin
             await plugin.initialize()
+
+            # Call the handler
             await plugin.handle_noise_reduction_completed(event_data)
 
+            # Verify _process_audio was called with correct arguments
             mock_process_audio.assert_called_once_with(
-                str(Path("/path/to/audio.wav")), "Microphone"
+                str(Path(audio_path)), "Microphone"
             )
+
+            # Verify file operations
+            mock_file.assert_called()
 
     async def test_handle_noise_reduction_completed_no_path(self, plugin):
         """Test handling noise reduction completed with missing path"""

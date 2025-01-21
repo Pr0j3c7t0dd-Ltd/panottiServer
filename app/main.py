@@ -468,15 +468,15 @@ async def process_event(event: RecordingEvent) -> None:
                 "Event bus not initialized. Server may still be starting up."
             )
 
+        # First save the event to ensure database record exists
         save_task = asyncio.create_task(event.save())
-        publish_task = asyncio.create_task(event_bus.publish(event))
-
-        # Track tasks for cleanup
         background_tasks.add(save_task)
-        background_tasks.add(publish_task)
+        await save_task
 
-        # Wait for both tasks to complete
-        await asyncio.gather(save_task, publish_task)
+        # Then publish the event so plugins can access the database record
+        publish_task = asyncio.create_task(event_bus.publish(event))
+        background_tasks.add(publish_task)
+        await publish_task
 
         # Add callbacks for logging and cleanup
         def task_done_callback(task: asyncio.Task) -> None:
