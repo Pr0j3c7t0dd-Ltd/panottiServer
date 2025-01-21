@@ -717,7 +717,8 @@ class EventBus:
 
         try:
             # First stop accepting new events by clearing subscribers
-            self._subscribers.clear()
+            async with self._lock:
+                self._subscribers.clear()
 
             # Then stop the cleanup task
             if self._cleanup_events_task and not self._cleanup_events_task.done():
@@ -768,7 +769,12 @@ class EventBus:
 
             # Clear all internal state
             self._pending_tasks.clear()
-            self._processed_events.clear()
+            async with self._lock:
+                self._processed_events.clear()
+
+            # Release the lock's underlying semaphore
+            if hasattr(self._lock, '_locked') and self._lock._locked:
+                self._lock.release()
 
             logger.info(
                 "Event bus shutdown complete",

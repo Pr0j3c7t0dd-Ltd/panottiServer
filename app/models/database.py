@@ -400,7 +400,14 @@ class DatabaseManager:
                 self._executor = None
 
             # Then close connections
-            self.close_connections()
+            async with self._lock:
+                self.close_connections()
+                # Clear the instance
+                DatabaseManager._instance = None
+
+            # Release the lock if it's still held
+            if hasattr(self._lock, '_locked') and self._lock._locked:
+                self._lock.release()
             
             logger.debug(
                 "Database manager cleanup complete",

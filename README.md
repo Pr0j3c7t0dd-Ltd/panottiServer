@@ -277,7 +277,7 @@ docker run -p 8001:8001 \
   panotti-server
 ```
 
-The server will be accessible at `http://localhost:8001`
+The server will be accessible at `http://localhost:54789`
 
 ## Usage
 
@@ -336,9 +336,9 @@ python run_server.py
 ./start_server.sh
 ```
 
-Both methods will read the port configuration from your `.env` file. The default port is 8001 if not specified.
+Both methods will read the port configuration from your `.env` file. The default port is 54789 if not specified.
 
-Note: Using `uvicorn app.main:app --reload` directly will use port 8000 by default and won't read from the `.env` file.
+Note: Using `uvicorn app.main:app --reload` directly will use port 54789 by default and won't read from the `.env` file.
 
 #### Development
 Run the server using uvicorn:
@@ -374,8 +374,8 @@ pkill -f uvicorn
 ### API Documentation
 
 Once the server is running, you can access:
-- Swagger UI documentation at `http://localhost:8000/docs`
-- ReDoc documentation at `http://localhost:8000/redoc`
+- Swagger UI documentation at `http://localhost:54789/docs`
+- ReDoc documentation at `http://localhost:54789/redoc`
 
 ### API Endpoints
 
@@ -636,9 +636,9 @@ python run_server.py
 ./start_server.sh
 ```
 
-Both methods will read the port configuration from your `.env` file. The default port is 8001 if not specified.
+Both methods will read the port configuration from your `.env` file. The default port is 54789 if not specified.
 
-Note: Using `uvicorn app.main:app --reload` directly will use port 8000 by default and won't read from the `.env` file.
+Note: Using `uvicorn app.main:app --reload` directly will use port 54789 by default and won't read from the `.env` file.
 
 #### Development
 Run the server using uvicorn:
@@ -649,10 +649,10 @@ uvicorn app.main:app --reload
 #### Production
 For production deployment, use Gunicorn with Uvicorn workers:
 ```bash
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:54789
 ```
 
-The server will start at `http://localhost:8000`
+The server will start at `http://localhost:547890`
 
 ### Stopping the Server
 
@@ -667,8 +667,8 @@ pkill -f uvicorn
 ### API Documentation
 
 Once the server is running, you can access:
-- Swagger UI documentation at `http://localhost:8000/docs`
-- ReDoc documentation at `http://localhost:8000/redoc`
+- Swagger UI documentation at `http://localhost:547890/docs`
+- ReDoc documentation at `http://localhost:54789/redoc`
 
 ### API Endpoints
 
