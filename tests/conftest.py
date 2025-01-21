@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from dotenv import load_dotenv
 
-from app.core.plugins import PluginBase, PluginConfig
 from app.core.events.bus import EventBus
+from app.core.plugins import PluginBase, PluginConfig
 
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
@@ -30,13 +30,13 @@ def mock_threadpool():
         mock_executor_instance = MagicMock()
         mock_executor.return_value = mock_executor_instance
         mock_executor_instance._shutdown = False
-        
+
         # Create a real Future object for the submit method to return
         def submit_side_effect(*args, **kwargs):
             future = asyncio.Future()
             future.set_result(None)
             return future
-            
+
         mock_executor_instance.submit.side_effect = submit_side_effect
         yield mock_executor_instance
 
@@ -44,9 +44,10 @@ def mock_threadpool():
 @pytest.fixture(autouse=True)
 def mock_asyncio_sleep():
     """Mock asyncio.sleep globally."""
+
     async def immediate_sleep(*args, **kwargs):
         return None
-        
+
     with patch("asyncio.sleep", side_effect=immediate_sleep):
         yield
 
@@ -59,7 +60,7 @@ def mock_event_bus():
     mock_bus.stop = AsyncMock()
     mock_bus.publish = AsyncMock()
     mock_bus._cleanup_task = None
-    
+
     with patch("app.main.event_bus", mock_bus):
         yield mock_bus
 
@@ -74,7 +75,7 @@ def mock_db():
     mock_db._init_db = MagicMock()
     mock_db._run_migrations = MagicMock()
     mock_db.get_connection = MagicMock()
-    
+
     with patch("app.models.database.DatabaseManager") as mock_manager:
         mock_manager._instance = None
         mock_manager._lock = asyncio.Lock()
@@ -90,7 +91,7 @@ def mock_sqlite():
     mock_conn.executescript = MagicMock()
     mock_conn.commit = MagicMock()
     mock_conn.close = MagicMock()
-    
+
     with patch("sqlite3.connect", return_value=mock_conn):
         yield mock_conn
 
@@ -142,7 +143,7 @@ def plugin_config():
         name="test_plugin",
         version="1.0.0",
         enabled=True,
-        config={"test_key": "test_value"}
+        config={"test_key": "test_value"},
     )
 
 

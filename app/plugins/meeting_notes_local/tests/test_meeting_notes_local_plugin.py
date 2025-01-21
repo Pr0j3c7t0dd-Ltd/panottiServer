@@ -1,9 +1,9 @@
 from concurrent.futures import Future
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock, mock_open
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
-import pytest
 import aioresponses
+import pytest
 
 from app.core.events import Event, EventContext
 from app.core.plugins import PluginConfig
@@ -64,7 +64,7 @@ class TestMeetingNotesLocalPlugin(BasePluginTest):
     def plugin(self, plugin_config, event_bus):
         """Meeting notes local plugin instance"""
         plugin = MeetingNotesLocalPlugin(plugin_config, event_bus)
-        
+
         # Mock the executor
         mock_executor = MagicMock()
         future = Future()
@@ -72,7 +72,7 @@ class TestMeetingNotesLocalPlugin(BasePluginTest):
         mock_executor.submit.return_value = future
         mock_executor.shutdown = MagicMock()
         plugin._executor = mock_executor
-        
+
         return plugin
 
     @pytest.fixture
@@ -110,8 +110,14 @@ Speaker 2: I'll prepare the report by next week.
             mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
             # Verify event subscription
-            assert len(event_bus._callbacks.get("transcription_local.completed", set())) == 1
-            assert plugin.handle_transcription_completed in event_bus._callbacks["transcription_local.completed"]
+            assert (
+                len(event_bus._callbacks.get("transcription_local.completed", set()))
+                == 1
+            )
+            assert (
+                plugin.handle_transcription_completed
+                in event_bus._callbacks["transcription_local.completed"]
+            )
 
     async def test_meeting_notes_shutdown(self, plugin):
         """Test meeting notes local plugin specific shutdown"""
@@ -138,9 +144,9 @@ Speaker 2: I'll prepare the report by next week.
         mock_generate = AsyncMock(return_value=Path("output.md"))
         mock_publish = AsyncMock()
 
-        with patch.object(plugin, "_read_transcript", mock_read), \
-             patch.object(plugin, "_generate_meeting_notes", mock_generate), \
-             patch.object(plugin.event_bus, "publish", mock_publish):
+        with patch.object(plugin, "_read_transcript", mock_read), patch.object(
+            plugin, "_generate_meeting_notes", mock_generate
+        ), patch.object(plugin.event_bus, "publish", mock_publish):
             await plugin.initialize()
             await plugin.handle_transcription_completed(event_data)
 
@@ -150,12 +156,12 @@ Speaker 2: I'll prepare the report by next week.
             assert mock_generate.call_args[0][2] == "test_recording"
             assert mock_publish.await_count > 0
 
-    async def test_generate_meeting_notes_from_text(self, plugin, sample_transcript, mock_aioresponse):
+    async def test_generate_meeting_notes_from_text(
+        self, plugin, sample_transcript, mock_aioresponse
+    ):
         """Test meeting notes generation from transcript text"""
         mock_aioresponse.post(
-            plugin.ollama_url,
-            payload={"response": "Generated notes"},
-            status=200
+            plugin.ollama_url, payload={"response": "Generated notes"}, status=200
         )
 
         await plugin.initialize()
@@ -180,7 +186,9 @@ Speaker 2: I'll prepare the report by next week.
             with patch.object(plugin, "_get_output_path", mock_path):
                 with patch.object(plugin.event_bus, "publish", mock_publish):
                     await plugin.initialize()
-                    await plugin._process_transcript(recording_id, sample_transcript, event)
+                    await plugin._process_transcript(
+                        recording_id, sample_transcript, event
+                    )
 
                     mock_generate.assert_awaited_once_with(sample_transcript)
                     assert mock_publish.await_count > 0

@@ -1,62 +1,61 @@
 """Tests for main FastAPI application."""
 
-import asyncio
 import os
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException, Request, Depends, Security
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.exceptions import RequestValidationError
-from fastapi.testclient import TestClient
 from fastapi.security.api_key import APIKeyHeader
+from fastapi.testclient import TestClient
 
-from app.main import (
-    get_api_key,
-    process_event,
-    validation_exception_handler,
-    api_logging_middleware,
+from app.main import api_logging_middleware, process_event, validation_exception_handler
+from app.models.recording.events import (
+    RecordingEndRequest,
+    RecordingEvent,
+    RecordingStartRequest,
 )
-from app.models.recording.events import RecordingEndRequest, RecordingStartRequest, RecordingEvent
 
 
 @pytest.fixture
 def test_app():
     """Create a test app without lifespan."""
     app = FastAPI()
-    
+
     # Add API key security
     API_KEY_NAME = "X-API-Key"
     api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
-    
+
     async def get_api_key_test(api_key_header: str = Security(api_key_header)) -> str:
         if api_key_header.lower() == os.getenv("API_KEY", "").lower():
             return api_key_header
-        raise HTTPException(
-            status_code=403,
-            detail="Could not validate API key"
-        )
-    
+        raise HTTPException(status_code=403, detail="Could not validate API key")
+
     @app.middleware("http")
     async def test_logging_middleware(request: Request, call_next):
         response = await call_next(request)
         logger = MagicMock()
         logger.info("API request completed")
         return response
-    
+
     @app.get("/health")
     async def health(api_key: str = Depends(get_api_key_test)):
         return {"status": "ok"}
-    
+
     @app.post("/api/recording-started")
-    async def recording_started_test(request: RecordingStartRequest, api_key: str = Depends(get_api_key_test)):
+    async def recording_started_test(
+        request: RecordingStartRequest, api_key: str = Depends(get_api_key_test)
+    ):
         return {"status": "success", "recording_id": request.recording_id}
-    
+
     @app.post("/api/recording-ended")
-    async def recording_ended_test(request: RecordingEndRequest, api_key: str = Depends(get_api_key_test)):
+    async def recording_ended_test(
+        request: RecordingEndRequest, api_key: str = Depends(get_api_key_test)
+    ):
         event_id = f"{request.recording_id}_ended_{datetime.now(UTC).timestamp()}"
         return {"status": "success", "event_id": event_id}
-    
+
     return app
 
 
@@ -70,10 +69,7 @@ def test_client(test_app):
 def test_get_api_key_invalid(test_client):
     """Test that invalid API keys are rejected."""
     with patch.dict(os.environ, {"API_KEY": "test_api_key"}):
-        response = test_client.get(
-            "/health",
-            headers={"X-API-Key": "invalid_key"}
-        )
+        response = test_client.get("/health", headers={"X-API-Key": "invalid_key"})
         assert response.status_code == 403
         assert response.json() == {"detail": "Could not validate API key"}
 
@@ -81,10 +77,7 @@ def test_get_api_key_invalid(test_client):
 def test_get_api_key_valid(test_client):
     """Test that valid API keys are accepted."""
     with patch.dict(os.environ, {"API_KEY": "test_api_key"}):
-        response = test_client.get(
-            "/health",
-            headers={"X-API-Key": "test_api_key"}
-        )
+        response = test_client.get("/health", headers={"X-API-Key": "test_api_key"})
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
@@ -146,7 +139,11 @@ async def test_validation_exception_handler():
     """Test validation exception handler."""
     mock_request = MagicMock()
     mock_request.url.path = "/test"
-    exc = RequestValidationError(errors=[{"loc": ["body"], "msg": "field required", "type": "value_error.missing"}])
+    exc = RequestValidationError(
+        errors=[
+            {"loc": ["body"], "msg": "field required", "type": "value_error.missing"}
+        ]
+    )
     response = await validation_exception_handler(mock_request, exc)
     assert response.status_code == 422
     response_body = bytes(response.body).decode()
@@ -164,8 +161,8 @@ def test_recording_started_endpoint(test_client):
             "userId": "test-user",
             "timestamp": "2025-01-20T00:00:00Z",
             "recordingId": "test-recording",
-            "filePath": "/path/to/recording.mp4"
-        }
+            "filePath": "/path/to/recording.mp4",
+        },
     )
     assert response.status_code == 200
     assert response.json() == {"status": "success", "recording_id": "test-recording"}
@@ -186,11 +183,8 @@ def test_recording_ended_endpoint(test_client):
             "duration": 60,
             "systemAudioPath": "/path/to/system_audio.wav",
             "microphoneAudioPath": "/path/to/mic_audio.wav",
-            "metadata": {
-                "app": "test-app",
-                "version": "1.0.0"
-            }
-        }
+            "metadata": {"app": "test-app", "version": "1.0.0"},
+        },
     )
     assert response.status_code == 200
     response_json = response.json()

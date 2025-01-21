@@ -1,9 +1,9 @@
 """Core event types."""
 
 import uuid
-from datetime import datetime, UTC
-from typing import Any, Protocol, runtime_checkable
 from abc import abstractmethod
+from datetime import UTC, datetime
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 

@@ -1,15 +1,12 @@
-import concurrent.futures
-from datetime import UTC, datetime
-from pathlib import Path
-from unittest.mock import AsyncMock, patch, Mock
 import asyncio
 import os
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
 import pytest
 import soundfile as sf
 
-from app.core.events import Event, EventContext
 from app.core.plugins import PluginConfig
 from app.plugins.noise_reduction.plugin import AudioPaths, NoiseReductionPlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
@@ -56,9 +53,11 @@ class TestNoiseReductionPlugin(BasePluginTest):
     @pytest.fixture
     def mock_executor(self):
         """Mock thread pool executor"""
-        with patch('concurrent.futures.ThreadPoolExecutor') as mock:
+        with patch("concurrent.futures.ThreadPoolExecutor") as mock:
             executor = Mock()
-            executor.shutdown = Mock()  # Use regular Mock since this is called synchronously
+            executor.shutdown = (
+                Mock()
+            )  # Use regular Mock since this is called synchronously
             mock.return_value = executor
             yield executor
 
@@ -68,11 +67,14 @@ class TestNoiseReductionPlugin(BasePluginTest):
         with patch("app.models.database.get_db_async", return_value=mock_db):
             # Mock run_in_executor to actually call the function
             loop = asyncio.get_event_loop()
+
             async def mock_run_in_executor(executor_or_none, func, *args):
                 if func == mock_executor.shutdown:
                     func(*args)
-                return None
-            with patch.object(loop, 'run_in_executor', side_effect=mock_run_in_executor):
+
+            with patch.object(
+                loop, "run_in_executor", side_effect=mock_run_in_executor
+            ):
                 await plugin.initialize()
                 # Set the mock executor on the plugin
                 plugin._executor = mock_executor
@@ -92,25 +94,23 @@ class TestNoiseReductionPlugin(BasePluginTest):
         event_bus.subscribe = AsyncMock()
         return event_bus
 
-    async def test_noise_reduction_initialization(self, plugin_config, mock_event_bus, mock_makedirs):
+    async def test_noise_reduction_initialization(
+        self, plugin_config, mock_event_bus, mock_makedirs
+    ):
         """Test noise reduction plugin specific initialization"""
         # Create a fresh plugin instance for testing initialization
         plugin = NoiseReductionPlugin(plugin_config, mock_event_bus)
         await plugin.initialize()
 
         # Verify directory creation
-        mock_makedirs.assert_any_call(
-            plugin._output_directory, exist_ok=True
-        )
-        mock_makedirs.assert_any_call(
-            plugin._recordings_dir, exist_ok=True
-        )
+        mock_makedirs.assert_any_call(plugin._output_directory, exist_ok=True)
+        mock_makedirs.assert_any_call(plugin._recordings_dir, exist_ok=True)
 
         # Verify event subscription
         mock_event_bus.subscribe.assert_called_once_with(
             "recording.ended", plugin.handle_recording_ended
         )
-        
+
         # Clean up
         await plugin.shutdown()
 
@@ -118,11 +118,12 @@ class TestNoiseReductionPlugin(BasePluginTest):
         """Test noise reduction plugin specific shutdown"""
         # Mock run_in_executor to actually call the function
         loop = asyncio.get_event_loop()
+
         async def mock_run_in_executor(executor_or_none, func, *args):
             if func == mock_executor.shutdown:
                 func(*args)
-            return None
-        with patch.object(loop, 'run_in_executor', side_effect=mock_run_in_executor):
+
+        with patch.object(loop, "run_in_executor", side_effect=mock_run_in_executor):
             await initialized_plugin.shutdown()
 
         # Verify thread pool shutdown was called with wait=True
@@ -153,27 +154,23 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "recording_id": "test_recording",
             "current_event": {
                 "recording": {
-                    "audio_paths": {
-                        "microphone": "mic.wav",
-                        "system": "system.wav"
-                    }
+                    "audio_paths": {"microphone": "mic.wav", "system": "system.wav"}
                 }
             },
-            "metadata": {}
+            "metadata": {},
         }
 
         def mock_exists(path):
             return path in ["mic.wav", "system.wav"]
 
         with patch("os.path.exists", side_effect=mock_exists):
-            with patch.object(initialized_plugin, "_process_audio_files") as mock_process:
+            with patch.object(
+                initialized_plugin, "_process_audio_files"
+            ) as mock_process:
                 await initialized_plugin.handle_recording_ended(event_data)
 
                 mock_process.assert_called_once_with(
-                    "test_recording",
-                    "system.wav",
-                    "mic.wav",
-                    {}
+                    "test_recording", "system.wav", "mic.wav", {}
                 )
 
     async def test_handle_recording_ended_no_audio(self, initialized_plugin):
@@ -211,10 +208,12 @@ class TestNoiseReductionPlugin(BasePluginTest):
         t = np.linspace(0, duration, int(sample_rate * duration))
         signal = np.sin(2 * np.pi * 440 * t)
         delayed_signal = np.roll(signal, 100)  # Delay by 100 samples
-        
+
         # Call the function
-        signal1, signal2, lag = initialized_plugin._align_signals_by_fft(signal, delayed_signal, sample_rate)
-        
+        signal1, signal2, lag = initialized_plugin._align_signals_by_fft(
+            signal, delayed_signal, sample_rate
+        )
+
         # Verify lag detection and signal alignment
         assert isinstance(lag, (int, float, np.number))
         assert abs(lag * sample_rate) < 10  # Allow small alignment error
@@ -286,10 +285,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "recording_timestamp": datetime.now(UTC).isoformat(),
             "current_event": {
                 "recording": {
-                    "audio_paths": {
-                        "microphone": "mic.wav",
-                        "system": "sys.wav"
-                    }
+                    "audio_paths": {"microphone": "mic.wav", "system": "sys.wav"}
                 }
             },
             "metadata": {"test": "data"},
@@ -311,67 +307,75 @@ class TestNoiseReductionPlugin(BasePluginTest):
         sample_rate = 44100
         duration = 1.0  # seconds
         t = np.linspace(0, duration, int(sample_rate * duration))
-        
+
         # Create test signals
         mic_signal = np.sin(2 * np.pi * 440 * t) + 0.5 * np.sin(2 * np.pi * 880 * t)
         sys_signal = 0.3 * np.sin(2 * np.pi * 440 * t)
-        
+
         # Save test files
         mic_file = tmp_path / "mic.wav"
         sys_file = tmp_path / "sys.wav"
         output_file = tmp_path / "output.wav"
-        
+
         sf.write(mic_file, mic_signal, sample_rate)
         sf.write(sys_file, sys_signal, sample_rate)
-        
-        with patch("soundfile.read") as mock_read, \
-             patch("soundfile.write") as mock_write:
-            mock_read.side_effect = [(mic_signal, sample_rate), (sys_signal, sample_rate)]
-            
+
+        with patch("soundfile.read") as mock_read, patch(
+            "soundfile.write"
+        ) as mock_write:
+            mock_read.side_effect = [
+                (mic_signal, sample_rate),
+                (sys_signal, sample_rate),
+            ]
+
             initialized_plugin._subtract_bleed_time_domain(
                 str(mic_file),
                 str(sys_file),
                 str(output_file),
                 do_alignment=True,
-                auto_scale=True
+                auto_scale=True,
             )
-            
+
             # Verify write was called
             mock_write.assert_called_once()
             written_signal = mock_write.call_args[0][1]
             assert written_signal.shape == mic_signal.shape
-            
+
     def test_remove_bleed_frequency_domain(self, initialized_plugin, tmp_path):
         """Test frequency-domain bleed removal functionality"""
         # Create test audio files
         sample_rate = 44100
         duration = 1.0  # seconds
         t = np.linspace(0, duration, int(sample_rate * duration))
-        
+
         # Create test signals with known frequency components
         mic_signal = np.sin(2 * np.pi * 440 * t) + 0.5 * np.sin(2 * np.pi * 880 * t)
         sys_signal = 0.3 * np.sin(2 * np.pi * 440 * t)
-        
+
         # Save test files
         mic_file = tmp_path / "mic.wav"
         sys_file = tmp_path / "sys.wav"
         output_file = tmp_path / "output.wav"
-        
+
         sf.write(mic_file, mic_signal, sample_rate)
         sf.write(sys_file, sys_signal, sample_rate)
-        
-        with patch("soundfile.read") as mock_read, \
-             patch("soundfile.write") as mock_write:
-            mock_read.side_effect = [(mic_signal, sample_rate), (sys_signal, sample_rate)]
-            
+
+        with patch("soundfile.read") as mock_read, patch(
+            "soundfile.write"
+        ) as mock_write:
+            mock_read.side_effect = [
+                (mic_signal, sample_rate),
+                (sys_signal, sample_rate),
+            ]
+
             initialized_plugin._remove_bleed_frequency_domain(
                 str(mic_file),
                 str(sys_file),
                 str(output_file),
                 do_alignment=True,
-                randomize_phase=True
+                randomize_phase=True,
             )
-            
+
             # Verify write was called
             mock_write.assert_called_once()
             written_signal = mock_write.call_args[0][1]
@@ -384,64 +388,67 @@ class TestNoiseReductionPlugin(BasePluginTest):
         duration = 1.0
         signal = np.random.randn(int(sample_rate * duration))
         longer_signal = np.concatenate([signal, np.zeros(100)])  # Make it longer
-        
+
         # Setup file paths
         input_file = str(tmp_path / "input.wav")
         output_file = str(tmp_path / "output.wav")
-        
-        with patch("app.plugins.noise_reduction.plugin.sf.read") as mock_read, \
-             patch("app.plugins.noise_reduction.plugin.sf.write") as mock_write:
-            
+
+        with patch("app.plugins.noise_reduction.plugin.sf.read") as mock_read, patch(
+            "app.plugins.noise_reduction.plugin.sf.write"
+        ) as mock_write:
             # Setup mock returns
-            mock_read.side_effect = [(signal, sample_rate), (longer_signal, sample_rate)]
-            
+            mock_read.side_effect = [
+                (signal, sample_rate),
+                (longer_signal, sample_rate),
+            ]
+
             # Call the function
             initialized_plugin.trim_audio_with_lag(
-                input_file,
-                output_file,
-                lag_samples=100,
-                sample_rate=sample_rate
+                input_file, output_file, lag_samples=100, sample_rate=sample_rate
             )
-            
+
             # Verify write was called with correct arguments
             mock_write.assert_called_once()
             args = mock_write.call_args[0]
             assert args[0] == output_file
             assert args[2] == sample_rate
-            assert np.array_equal(args[1], longer_signal[:len(signal)])
+            assert np.array_equal(args[1], longer_signal[: len(signal)])
 
     async def test_process_audio_files(self, initialized_plugin):
         """Test audio files processing workflow"""
         recording_id = "test_recording"
         system_path = "system.wav"
         mic_path = "mic.wav"
-        
+
         # Mock the event loop's run_in_executor
         loop = asyncio.get_running_loop()
+
         async def mock_run_in_executor(executor, func, *args):
             if func == initialized_plugin._subtract_bleed_time_domain:
                 return func(*args)
             return None
-        
-        with patch("os.path.exists", return_value=True), \
-             patch.object(initialized_plugin, "_translate_path_to_container", side_effect=lambda x: x), \
-             patch.object(initialized_plugin, "_subtract_bleed_time_domain") as mock_subtract, \
-             patch.object(initialized_plugin, "_remove_bleed_frequency_domain") as mock_remove, \
-             patch("app.plugins.noise_reduction.plugin.sf.read", return_value=(np.random.randn(1000), 44100)), \
-             patch("app.plugins.noise_reduction.plugin.sf.write"), \
-             patch.object(loop, "run_in_executor", side_effect=mock_run_in_executor):
-            
+
+        with patch("os.path.exists", return_value=True), patch.object(
+            initialized_plugin, "_translate_path_to_container", side_effect=lambda x: x
+        ), patch.object(
+            initialized_plugin, "_subtract_bleed_time_domain"
+        ) as mock_subtract, patch.object(
+            initialized_plugin, "_remove_bleed_frequency_domain"
+        ) as mock_remove, patch(
+            "app.plugins.noise_reduction.plugin.sf.read",
+            return_value=(np.random.randn(1000), 44100),
+        ), patch("app.plugins.noise_reduction.plugin.sf.write"), patch.object(
+            loop, "run_in_executor", side_effect=mock_run_in_executor
+        ):
             # Enable time domain subtraction
             initialized_plugin._time_domain_subtraction = True
             initialized_plugin._freq_domain_bleed_removal = False
-            
+
             # Call the function
             await initialized_plugin._process_audio_files(
-                recording_id,
-                system_path,
-                mic_path
+                recording_id, system_path, mic_path
             )
-            
+
             # Verify the appropriate method was called
             mock_subtract.assert_called_once()
             assert mock_remove.call_count == 0
@@ -452,16 +459,20 @@ class TestNoiseReductionPlugin(BasePluginTest):
         sample_rate = 44100
         silence_duration = 0.5  # seconds
         audio_duration = 0.5  # seconds
-        
+
         silence = np.zeros(int(silence_duration * sample_rate))
         audio = np.random.randn(int(audio_duration * sample_rate)) * 0.1
         signal = np.concatenate([silence, audio])
-        
+
         # Test the function with mocked detect_start_of_audio
-        with patch.object(NoiseReductionPlugin, 'detect_start_of_audio') as mock_detect:
-            mock_detect.return_value = len(silence)  # Return the index where silence ends
-            trimmed = NoiseReductionPlugin.trim_initial_silence(signal, sample_rate, threshold=0.01)
-            
+        with patch.object(NoiseReductionPlugin, "detect_start_of_audio") as mock_detect:
+            mock_detect.return_value = len(
+                silence
+            )  # Return the index where silence ends
+            trimmed = NoiseReductionPlugin.trim_initial_silence(
+                signal, sample_rate, threshold=0.01
+            )
+
             # Verify the silence was trimmed
             assert len(trimmed) < len(signal)
             assert np.array_equal(trimmed, audio)
@@ -471,14 +482,10 @@ class TestNoiseReductionPlugin(BasePluginTest):
         recording_id = "test_recording"
         event_data = {
             "recording_id": recording_id,
-            "current_event": {
-                "recording": {
-                    "audio_paths": {}
-                }
-            },
-            "metadata": {}
+            "current_event": {"recording": {"audio_paths": {}}},
+            "metadata": {},
         }
-        
+
         with patch.object(initialized_plugin, "_process_audio_files") as mock_process:
             mock_process.return_value = None
             await initialized_plugin.handle_recording_ended(event_data)
@@ -488,20 +495,24 @@ class TestNoiseReductionPlugin(BasePluginTest):
         """Test path translation to container path"""
         # Test with None path
         assert initialized_plugin._translate_path_to_container(None) is None
-        
+
         # Test with absolute path
         test_path = "/absolute/path/to/file.wav"
-        with patch('os.path.exists') as mock_exists:
+        with patch("os.path.exists") as mock_exists:
             mock_exists.return_value = True
             translated = initialized_plugin._translate_path_to_container(test_path)
-            assert translated == os.path.join(initialized_plugin._recordings_dir, "file.wav")
-        
+            assert translated == os.path.join(
+                initialized_plugin._recordings_dir, "file.wav"
+            )
+
         # Test with relative path
         test_path = "relative/path/to/file.wav"
-        with patch('os.path.exists') as mock_exists:
+        with patch("os.path.exists") as mock_exists:
             mock_exists.return_value = True
             translated = initialized_plugin._translate_path_to_container(test_path)
-            assert translated == os.path.join(initialized_plugin._recordings_dir, "file.wav")
+            assert translated == os.path.join(
+                initialized_plugin._recordings_dir, "file.wav"
+            )
 
     def test_compute_noise_profile(self, initialized_plugin):
         """Test noise profile computation"""
@@ -510,74 +521,86 @@ class TestNoiseReductionPlugin(BasePluginTest):
         duration = 1.0
         t = np.linspace(0, duration, int(sample_rate * duration))
         noise_data = np.random.randn(len(t)) * 0.1
-        
+
         # Mock scipy.signal.welch
-        with patch('scipy.signal.welch') as mock_welch:
+        with patch("scipy.signal.welch") as mock_welch:
             # Create mock power spectrum
-            freqs = np.linspace(0, sample_rate/2, 1025)
+            freqs = np.linspace(0, sample_rate / 2, 1025)
             psd = np.abs(np.random.randn(len(freqs))) ** 2
             mock_welch.return_value = (freqs, psd)
-            
+
             # Mock scipy.signal.savgol_filter
-            with patch('scipy.signal.savgol_filter') as mock_savgol:
+            with patch("scipy.signal.savgol_filter") as mock_savgol:
                 mock_savgol.return_value = psd  # Return the same array for simplicity
-                
+
                 # Mock scipy.signal.butter and filtfilt
-                with patch('scipy.signal.butter') as mock_butter, \
-                     patch('scipy.signal.filtfilt') as mock_filtfilt:
-                    mock_butter.return_value = (np.array([1]), np.array([1]))  # Simple passthrough filter
+                with patch("scipy.signal.butter") as mock_butter, patch(
+                    "scipy.signal.filtfilt"
+                ) as mock_filtfilt:
+                    mock_butter.return_value = (
+                        np.array([1]),
+                        np.array([1]),
+                    )  # Simple passthrough filter
                     mock_filtfilt.return_value = psd  # Return the same array
-                    
+
                     # Mock scipy.signal.stft and istft
-                    with patch('scipy.signal.stft') as mock_stft, \
-                         patch('scipy.signal.istft') as mock_istft:
+                    with patch("scipy.signal.stft") as mock_stft, patch(
+                        "scipy.signal.istft"
+                    ) as mock_istft:
                         mock_stft.return_value = (freqs, t, psd)
                         mock_istft.return_value = (noise_data, t)
-                        
+
                         # Mock the actual compute_noise_profile implementation
-                        def mock_compute_noise_profile(noise_data, fs, nperseg=2048, noverlap=1024, smooth_factor=2):
+                        def mock_compute_noise_profile(
+                            noise_data, fs, nperseg=2048, noverlap=1024, smooth_factor=2
+                        ):
                             # Create a simple mock implementation
-                            freqs = np.linspace(0, fs/2, nperseg//2 + 1)
+                            freqs = np.linspace(0, fs / 2, nperseg // 2 + 1)
                             psd = np.abs(np.random.randn(len(freqs))) ** 2
                             return psd
-                        
+
                         # Replace the method with our mock implementation
-                        with patch.object(initialized_plugin, 'compute_noise_profile', side_effect=mock_compute_noise_profile):
+                        with patch.object(
+                            initialized_plugin,
+                            "compute_noise_profile",
+                            side_effect=mock_compute_noise_profile,
+                        ):
                             # Compute noise profile
                             noise_profile = initialized_plugin.compute_noise_profile(
                                 noise_data,
                                 sample_rate,
                                 nperseg=2048,
                                 noverlap=1024,
-                                smooth_factor=2
+                                smooth_factor=2,
                             )
-                            
+
                             # Verify the output
                             assert isinstance(noise_profile, np.ndarray)
                             assert len(noise_profile.shape) == 1
                             assert noise_profile.dtype == np.float64
-                            assert np.all(noise_profile >= 0)  # Power spectrum should be non-negative
+                            assert np.all(
+                                noise_profile >= 0
+                            )  # Power spectrum should be non-negative
 
     def test_wiener_filter(self, initialized_plugin):
         """Test Wiener filter implementation"""
         # Create test spectral data
         freq_bins = 1025
         time_frames = 100
-        spec = (np.random.randn(freq_bins, time_frames) + 
-               1j * np.random.randn(freq_bins, time_frames)).astype(np.complex128)
+        spec = (
+            np.random.randn(freq_bins, time_frames)
+            + 1j * np.random.randn(freq_bins, time_frames)
+        ).astype(np.complex128)
         noise_power = np.abs(np.random.randn(freq_bins)) ** 2
-        
+
         # Reshape noise_power to match spec's dimensions
         noise_power = noise_power[:, np.newaxis]  # Make it (freq_bins, 1)
-        
+
         # Apply Wiener filter
         filtered_spec = initialized_plugin.wiener_filter(
-            spec,
-            noise_power,
-            alpha=2.2,
-            second_pass=True
+            spec, noise_power, alpha=2.2, second_pass=True
         )
-        
+
         # Verify the output
         assert isinstance(filtered_spec, np.ndarray)
         assert filtered_spec.shape == spec.shape
@@ -590,11 +613,15 @@ class TestNoiseReductionPlugin(BasePluginTest):
         recording_id = "test_recording"
         system_path = "nonexistent_system.wav"
         mic_path = "nonexistent_mic.wav"
-        
-        with patch.object(initialized_plugin, "_translate_path_to_container") as mock_translate:
+
+        with patch.object(
+            initialized_plugin, "_translate_path_to_container"
+        ) as mock_translate:
             mock_translate.side_effect = lambda x: x
-            
+
             # Test with nonexistent files
-            await initialized_plugin._process_audio_files(recording_id, system_path, mic_path)
-            
+            await initialized_plugin._process_audio_files(
+                recording_id, system_path, mic_path
+            )
+
             # Verify no error is raised and function completes

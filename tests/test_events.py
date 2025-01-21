@@ -1,16 +1,12 @@
 """Tests for the core events module."""
 
-import pytest
-from typing import Any, Callable, cast
-from unittest.mock import AsyncMock, Mock, call
-import asyncio
+from collections.abc import Callable
+from typing import Any
+from unittest.mock import AsyncMock
 
-from app.core.events import (
-    ConcreteEventBus,
-    Event,
-    EventBus,
-    register_core_handlers,
-)
+import pytest
+
+from app.core.events import ConcreteEventBus, Event, EventBus, register_core_handlers
 from app.core.events.handlers import handle_recording_ended, handle_recording_started
 
 
@@ -38,11 +34,16 @@ async def test_event_bus_protocol():
 @pytest.mark.asyncio(loop_scope="function")
 async def test_event_bus_abstract_methods():
     """Test that EventBus protocol methods raise NotImplementedError when not implemented."""
+
     class MinimalEventBusImpl:
-        async def subscribe(self, event_type: str, callback: Callable[[Any], Any]) -> None:
+        async def subscribe(
+            self, event_type: str, callback: Callable[[Any], Any]
+        ) -> None:
             raise NotImplementedError
 
-        async def unsubscribe(self, event_type: str, callback: Callable[[Any], Any]) -> None:
+        async def unsubscribe(
+            self, event_type: str, callback: Callable[[Any], Any]
+        ) -> None:
             raise NotImplementedError
 
         async def publish(self, event: Any) -> None:
@@ -80,37 +81,42 @@ async def test_register_core_handlers():
 async def test_event_bus_protocol_implementation():
     """Test that EventBus protocol's abstract methods are properly defined."""
     # Test that the Protocol's abstract methods are defined
-    assert hasattr(EventBus, 'subscribe')
-    assert hasattr(EventBus, 'unsubscribe')
-    assert hasattr(EventBus, 'publish')
+    assert hasattr(EventBus, "subscribe")
+    assert hasattr(EventBus, "unsubscribe")
+    assert hasattr(EventBus, "publish")
 
     # Test that the Protocol's methods have the correct signatures
-    subscribe_method = getattr(EventBus, 'subscribe')
-    unsubscribe_method = getattr(EventBus, 'unsubscribe')
-    publish_method = getattr(EventBus, 'publish')
+    subscribe_method = EventBus.subscribe
+    unsubscribe_method = EventBus.unsubscribe
+    publish_method = EventBus.publish
 
-    assert subscribe_method.__name__ == 'subscribe'
-    assert unsubscribe_method.__name__ == 'unsubscribe'
-    assert publish_method.__name__ == 'publish'
+    assert subscribe_method.__name__ == "subscribe"
+    assert unsubscribe_method.__name__ == "unsubscribe"
+    assert publish_method.__name__ == "publish"
 
     # Test that the Protocol's methods are abstract
-    assert getattr(subscribe_method, '__isabstractmethod__', False)
-    assert getattr(unsubscribe_method, '__isabstractmethod__', False)
-    assert getattr(publish_method, '__isabstractmethod__', False)
+    assert getattr(subscribe_method, "__isabstractmethod__", False)
+    assert getattr(unsubscribe_method, "__isabstractmethod__", False)
+    assert getattr(publish_method, "__isabstractmethod__", False)
 
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_event_bus_implementation():
     """Test a concrete implementation of the EventBus protocol."""
+
     class TestEventBus:
         def __init__(self):
             self.publish_called = False
             self.published_event = None
 
-        async def subscribe(self, event_type: str, callback: Callable[[Any], Any]) -> None:
+        async def subscribe(
+            self, event_type: str, callback: Callable[[Any], Any]
+        ) -> None:
             pass
 
-        async def unsubscribe(self, event_type: str, callback: Callable[[Any], Any]) -> None:
+        async def unsubscribe(
+            self, event_type: str, callback: Callable[[Any], Any]
+        ) -> None:
             pass
 
         async def publish(self, event: Any) -> None:
@@ -135,14 +141,14 @@ async def test_event_handler_protocol():
     from app.core.events.types import EventHandler
 
     # Test that the Protocol's __call__ method is defined
-    assert hasattr(EventHandler, '__call__')
+    assert callable(EventHandler)
 
     # Test that the method has the correct signature
-    call_method = getattr(EventHandler, '__call__')
-    assert call_method.__name__ == '__call__'
+    call_method = EventHandler.__call__
+    assert call_method.__name__ == "__call__"
 
     # Test that the method is abstract
-    assert getattr(call_method, '__isabstractmethod__', False)
+    assert getattr(call_method, "__isabstractmethod__", False)
 
     # Verify we can create a concrete implementation
     class ConcreteHandler:
@@ -151,4 +157,4 @@ async def test_event_handler_protocol():
 
     # This should not raise a TypeError
     handler = ConcreteHandler()
-    assert isinstance(handler, EventHandler) 
+    assert isinstance(handler, EventHandler)

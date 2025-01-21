@@ -1,15 +1,16 @@
 """Tests for core plugin system interfaces."""
 
-import pytest
 from unittest.mock import Mock
 
-from app.core.plugins import PluginBase, PluginConfig
+import pytest
+
 from app.core.events import EventBus
+from app.core.plugins import PluginBase, PluginConfig
 
 
 class ConcretePlugin(PluginBase):
     """Concrete implementation of PluginBase for testing."""
-    
+
     async def _initialize(self) -> None:
         """Test implementation of initialize."""
         pass
@@ -32,7 +33,7 @@ def plugin_config():
         name="test_plugin",
         version="1.0.0",
         enabled=True,
-        config={"test_key": "test_value"}
+        config={"test_key": "test_value"},
     )
 
 
@@ -42,7 +43,9 @@ def concrete_plugin(plugin_config, event_bus):
     return ConcretePlugin(config=plugin_config, event_bus=event_bus)
 
 
-async def test_plugin_initialization_with_event_bus(concrete_plugin, plugin_config, event_bus):
+async def test_plugin_initialization_with_event_bus(
+    concrete_plugin, plugin_config, event_bus
+):
     """Test plugin initialization with event bus."""
     assert concrete_plugin.config == plugin_config
     assert concrete_plugin.event_bus == event_bus
@@ -66,4 +69,4 @@ async def test_plugin_initialize_calls_internal_initialize(concrete_plugin):
 async def test_plugin_shutdown_calls_internal_shutdown(concrete_plugin):
     """Test that shutdown() calls _shutdown()."""
     await concrete_plugin.shutdown()
-    # No assertion needed as we're just verifying it doesn't raise an exception 
+    # No assertion needed as we're just verifying it doesn't raise an exception

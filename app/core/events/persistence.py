@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from typing import TypedDict, Optional
+from datetime import UTC, datetime
+from typing import Optional, TypedDict
 
 from app.utils.logging_config import get_logger
 
@@ -18,6 +18,7 @@ class EventProcessingStatus:
 
 class EventStatusDict(TypedDict, total=True):
     """Type definition for event status dictionary"""
+
     status: str
     timestamp: datetime
     error: Optional[str]
@@ -28,7 +29,9 @@ class EventStore:
 
     def __init__(self) -> None:
         self._events: dict[str, list[Event]] = {}
-        self._status: dict[str, EventStatusDict] = {}  # event_id -> {status, timestamp, error}
+        self._status: dict[
+            str, EventStatusDict
+        ] = {}  # event_id -> {status, timestamp, error}
 
     async def store_event(self, event: Event) -> str:
         """Store an event in memory and return its ID."""
@@ -41,10 +44,10 @@ class EventStore:
         # Initialize event status
         if event.event_id is not None:
             self._status[event.event_id] = {
-            "status": EventProcessingStatus.PENDING,
-            "timestamp": datetime.now(timezone.utc),
-            "error": None,
-        }
+                "status": EventProcessingStatus.PENDING,
+                "timestamp": datetime.now(UTC),
+                "error": None,
+            }
 
         logger.debug(
             "Stored event",
@@ -74,7 +77,7 @@ class EventStore:
                     if success
                     else EventProcessingStatus.FAILED
                 ),
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
                 "error": error,
             }
         )

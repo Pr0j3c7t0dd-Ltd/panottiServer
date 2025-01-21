@@ -4,14 +4,16 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 
-def create_test_event(name: str, data: dict | None = None, event_id: str | None = None) -> dict[str, Any]:
+def create_test_event(
+    name: str, data: dict | None = None, event_id: str | None = None
+) -> dict[str, Any]:
     """Create a test event dictionary.
-    
+
     Args:
         name: Event name
         data: Event data
         event_id: Optional event ID
-        
+
     Returns:
         dict: Event dictionary
     """
@@ -30,4 +32,4 @@ def create_mock_handler(name: str = "mock_handler") -> AsyncMock:
     handler.__name__ = name
     handler.__qualname__ = f"test_event_bus.{name}"
     handler.__module__ = "test_event_bus"
-    return handler 
+    return handler

@@ -8,24 +8,25 @@ from app.core.events import EventBus
 
 class PluginProtocol(Protocol):
     """Protocol defining the plugin interface."""
-    
+
     @property
     def name(self) -> str:
         """The name of the plugin."""
         ...
-    
+
     @property
     def is_initialized(self) -> bool:
         """Whether the plugin has been initialized."""
         ...
-    
+
     async def initialize(self) -> None:
         """Initialize the plugin."""
         ...
-    
+
     async def shutdown(self) -> None:
         """Shutdown the plugin."""
         ...
+
 
 class PluginBase(ABC):
     """Abstract base class for plugins implementing core functionality."""

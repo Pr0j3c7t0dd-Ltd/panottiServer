@@ -1,18 +1,20 @@
 """Tests for the EventBus implementation."""
 
 import asyncio
-import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, Mock, patch
 from collections import defaultdict
-import uuid
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from app.core.events.bus import EventBus
-from .test_events_common import create_test_event, create_mock_handler
+
+from .test_events_common import create_test_event
 
 
 class MockEvent:
     """Mock event class for testing."""
+
     def __init__(self, name=None, event_id=None, event=None, source_plugin=None):
         self.event = name
         self.event_id = event_id
@@ -20,7 +22,9 @@ class MockEvent:
         self.source_plugin = source_plugin
 
     def __str__(self):
-        return f"MockEvent(name={self.name}, event_id={self.event_id}, event={self.event})"
+        return (
+            f"MockEvent(name={self.name}, event_id={self.event_id}, event={self.event})"
+        )
 
     def __getattr__(self, name):
         if name == "__dict__":
@@ -28,9 +32,11 @@ class MockEvent:
                 "event": self.event,
                 "event_id": self.event_id,
                 "name": self.name,
-                "source_plugin": self.source_plugin
+                "source_plugin": self.source_plugin,
             }
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
 
 
 @pytest.fixture
@@ -53,9 +59,7 @@ def mock_handler():
 @pytest.fixture
 def test_event():
     return lambda name="test.event", data=None, event_id=None: create_test_event(
-        name=name,
-        data=data,
-        event_id=event_id
+        name=name, data=data, event_id=event_id
     )
 
 
@@ -82,7 +86,7 @@ async def test_event_bus_start_stop():
         except asyncio.CancelledError:
             raise
 
-    with patch.object(bus, '_cleanup_old_events', new_callable=AsyncMock):
+    with patch.object(bus, "_cleanup_old_events", new_callable=AsyncMock):
         await bus.start()
         assert bus._cleanup_events_task is not None
         assert not bus._cleanup_events_task.done()
@@ -99,7 +103,7 @@ async def test_event_bus_stop_error(cleanup_tasks):
         while True:
             await asyncio.sleep(0)
 
-    with patch.object(bus, '_cleanup_old_events', new_callable=AsyncMock):
+    with patch.object(bus, "_cleanup_old_events", new_callable=AsyncMock):
         await bus.start()
         await bus.stop()
 
@@ -107,7 +111,7 @@ async def test_event_bus_stop_error(cleanup_tasks):
 @pytest.mark.asyncio
 async def test_cleanup_old_events(event_bus):
     event_id = "test_id"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     event_bus._processed_events[event_id] = now - timedelta(hours=2)
 
     async def mock_cleanup():

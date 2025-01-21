@@ -1,6 +1,7 @@
 """Event bus implementation."""
 import asyncio
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 from app.plugins.events.models import EventContext, EventPriority
 
@@ -10,12 +11,12 @@ class EventBus:
 
     def __init__(self):
         """Initialize the event bus."""
-        self._handlers: Dict[str, List[Callable]] = {}
+        self._handlers: dict[str, list[Callable]] = {}
         self._lock = asyncio.Lock()
 
     async def subscribe(self, event_type: str, handler: Callable) -> None:
         """Subscribe to an event type.
-        
+
         Args:
             event_type: Type of event to subscribe to
             handler: Callback function to handle the event
@@ -27,7 +28,7 @@ class EventBus:
 
     async def unsubscribe(self, event_type: str, handler: Callable) -> None:
         """Unsubscribe from an event type.
-        
+
         Args:
             event_type: Type of event to unsubscribe from
             handler: Handler to remove
@@ -37,13 +38,10 @@ class EventBus:
                 self._handlers[event_type].remove(handler)
 
     async def publish(
-        self,
-        event_type: str,
-        data: Any,
-        context: Optional[EventContext] = None
+        self, event_type: str, data: Any, context: Optional[EventContext] = None
     ) -> None:
         """Publish an event to all subscribers.
-        
+
         Args:
             event_type: Type of event being published
             data: Event data

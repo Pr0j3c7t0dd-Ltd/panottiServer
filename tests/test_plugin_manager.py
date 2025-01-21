@@ -1,10 +1,10 @@
 """Tests for the plugin manager module."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch, mock_open
+from unittest.mock import Mock
+
+import pytest
 import yaml
-import uuid
 
 from app.core.events import ConcreteEventBus
 from app.core.plugins import PluginBase, PluginConfig, PluginManager
@@ -30,14 +30,14 @@ async def test_plugin_manager_init():
     """Test plugin manager initialization."""
     plugin_dir = "/test/plugins"
     event_bus = ConcreteEventBus()
-    
+
     # Test with event bus
     manager = PluginManager(plugin_dir, event_bus)
     assert manager.plugin_dir == Path(plugin_dir)
     assert manager.event_bus == event_bus
     assert isinstance(manager.plugins, dict)
     assert isinstance(manager.configs, dict)
-    
+
     # Test without event bus
     manager = PluginManager(plugin_dir)
     assert manager.event_bus is None
@@ -58,22 +58,22 @@ async def test_discover_plugins_with_yaml(plugin_manager, tmp_path):
     plugin_dir.mkdir()
     test_plugin_dir = plugin_dir / "test_plugin"
     test_plugin_dir.mkdir()
-    
+
     config_data = {
         "name": "test_plugin",
         "version": "1.0.0",
         "enabled": True,
         "dependencies": ["dep1"],
-        "config": {"key": "value"}
+        "config": {"key": "value"},
     }
-    
+
     yaml_path = test_plugin_dir / "plugin.yaml"
     with open(yaml_path, "w") as f:
         yaml.dump(config_data, f)
-    
+
     plugin_manager.plugin_dir = plugin_dir
     configs = await plugin_manager.discover_plugins()
-    
+
     assert len(configs) == 1
     config = configs[0]
     assert config.name == "test_plugin"
@@ -90,19 +90,16 @@ async def test_discover_plugins_with_example(plugin_manager, tmp_path):
     plugin_dir.mkdir()
     test_plugin_dir = plugin_dir / "test_plugin"
     test_plugin_dir.mkdir()
-    
-    config_data = {
-        "name": "test_plugin",
-        "version": "1.0.0"
-    }
-    
+
+    config_data = {"name": "test_plugin", "version": "1.0.0"}
+
     example_path = test_plugin_dir / "plugin.yaml.example"
     with open(example_path, "w") as f:
         yaml.dump(config_data, f)
-    
+
     plugin_manager.plugin_dir = plugin_dir
     configs = await plugin_manager.discover_plugins()
-    
+
     assert len(configs) == 1
     assert Path(test_plugin_dir / "plugin.yaml").exists()
 
@@ -114,11 +111,11 @@ async def test_discover_plugins_invalid_yaml(plugin_manager, tmp_path):
     plugin_dir.mkdir()
     test_plugin_dir = plugin_dir / "test_plugin"
     test_plugin_dir.mkdir()
-    
+
     yaml_path = test_plugin_dir / "plugin.yaml"
     with open(yaml_path, "w") as f:
         f.write("invalid: yaml: content:")
-    
+
     plugin_manager.plugin_dir = plugin_dir
     configs = await plugin_manager.discover_plugins()
     assert len(configs) == 0
@@ -129,22 +126,22 @@ async def test_initialize_plugins(plugin_manager, tmp_path):
     """Test plugin initialization."""
     plugin_dir = tmp_path / "plugins"
     plugin_dir.mkdir()
-    
+
     # Create a mock plugin
     class MockPlugin(PluginBase):
         async def _initialize(self) -> None:
             self.initialized = True
-        
+
         async def _shutdown(self) -> None:
             self.shutdown_called = True
-    
+
     config = PluginConfig(name="test_plugin", version="1.0.0")
     mock_plugin = MockPlugin(config=config, event_bus=plugin_manager.event_bus)
     plugin_manager.plugins["test_plugin"] = mock_plugin
-    
+
     # Call initialize directly to set the flag
     await mock_plugin.initialize()
-    
+
     # Now initialize all plugins
     await plugin_manager.initialize_plugins()
     assert hasattr(mock_plugin, "initialized")
@@ -154,17 +151,18 @@ async def test_initialize_plugins(plugin_manager, tmp_path):
 @pytest.mark.asyncio
 async def test_shutdown_plugins(plugin_manager):
     """Test plugin shutdown."""
+
     class MockPlugin(PluginBase):
         async def _initialize(self) -> None:
             pass
-        
+
         async def _shutdown(self) -> None:
             self.shutdown_called = True
-    
+
     config = PluginConfig(name="test_plugin", version="1.0.0")
     mock_plugin = MockPlugin(config=config, event_bus=plugin_manager.event_bus)
     plugin_manager.plugins["test_plugin"] = mock_plugin
-    
+
     await plugin_manager.shutdown_plugins()
     assert hasattr(mock_plugin, "shutdown_called")
     assert mock_plugin.shutdown_called is True
@@ -177,7 +175,7 @@ async def test_get_plugin(plugin_manager):
     mock_plugin = Mock(spec=PluginBase, version="1.0.0")
     mock_plugin.config = config
     plugin_manager.plugins["test_plugin"] = mock_plugin
-    
+
     assert plugin_manager.get_plugin("test_plugin") == mock_plugin
     assert plugin_manager.get_plugin("nonexistent") is None
 
@@ -186,14 +184,18 @@ async def test_get_plugin(plugin_manager):
 async def test_sort_by_dependencies(plugin_manager):
     """Test sorting plugins by dependencies."""
     configs = {
-        "plugin1": PluginConfig(name="plugin1", version="1.0", enabled=True, dependencies=["plugin2"]),
+        "plugin1": PluginConfig(
+            name="plugin1", version="1.0", enabled=True, dependencies=["plugin2"]
+        ),
         "plugin2": PluginConfig(name="plugin2", version="1.0", enabled=True),
-        "plugin3": PluginConfig(name="plugin3", version="1.0", enabled=True, dependencies=["plugin1"]),
+        "plugin3": PluginConfig(
+            name="plugin3", version="1.0", enabled=True, dependencies=["plugin1"]
+        ),
     }
-    
+
     sorted_configs = plugin_manager._sort_by_dependencies(configs)
     sorted_names = [config.name for config in sorted_configs]
-    
+
     # plugin2 should come before plugin1, and plugin1 before plugin3
     assert sorted_names.index("plugin2") < sorted_names.index("plugin1")
-    assert sorted_names.index("plugin1") < sorted_names.index("plugin3") 
+    assert sorted_names.index("plugin1") < sorted_names.index("plugin3")

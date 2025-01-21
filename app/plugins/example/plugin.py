@@ -87,7 +87,7 @@ class ExamplePlugin(PluginBase):
         try:
             # Initialize context as None
             context = None
-            
+
             # Extract context from event
             context = (
                 event_data.get("context")
@@ -123,7 +123,7 @@ class ExamplePlugin(PluginBase):
             logger.error(
                 "Error handling recording.ended event",
                 extra={
-                    "event_id": getattr(context, "event_id", None) if context else None, # type: ignore
+                    "event_id": getattr(context, "event_id", None) if context else None,  # type: ignore
                     "error": str(e),
                     "error_type": type(e).__name__,
                 },

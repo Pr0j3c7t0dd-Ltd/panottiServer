@@ -2,7 +2,7 @@ import asyncio
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -12,9 +12,9 @@ from anthropic import AsyncAnthropic  # Update import statement
 from openai import AsyncOpenAI
 
 from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import Event, EventContext
-from app.models.recording.events import RecordingEvent
+from app.core.events import Event
 from app.core.plugins import PluginBase  # Updated import path
+from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
 
 EventData = dict[str, Any] | RecordingEvent
@@ -61,7 +61,9 @@ class MeetingNotesRemotePlugin(PluginBase):
                     self.model = config_dict["openai"]["model"]
                 elif self.provider == "anthropic":
                     # Anthropic SDK doesn't support custom http client configuration
-                    self.client = AsyncAnthropic(api_key=config_dict["anthropic"]["api_key"])
+                    self.client = AsyncAnthropic(
+                        api_key=config_dict["anthropic"]["api_key"]
+                    )
                     self.model = config_dict["anthropic"]["model"]
                 elif self.provider == "google":
                     # Standard configuration for Google GenerativeAI
@@ -307,7 +309,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                         )  # Get the JSON content
                         # Get the transcript section after metadata
                         transcript_content = (
-                            "## Transcript" + metadata_parts[2].split("## Transcript", 1)[1]
+                            "## Transcript"
+                            + metadata_parts[2].split("## Transcript", 1)[1]
                             if "## Transcript" in metadata_parts[2]
                             else ""
                         )
@@ -391,7 +394,7 @@ Keep each bullet point concise but informative]
 
             try:
                 if self.provider == "openai":
-                    response = await self.client.chat.completions.create( # type: ignore
+                    response = await self.client.chat.completions.create(  # type: ignore
                         model=self.model,
                         messages=[
                             {"role": "system", "content": self.SYSTEM_PROMPT},
@@ -402,19 +405,17 @@ Keep each bullet point concise but informative]
                     return response.choices[0].message.content
 
                 elif self.provider == "anthropic":
-                    response = await self.client.messages.create( # type: ignore
+                    response = await self.client.messages.create(  # type: ignore
                         max_tokens=4000,
-                        messages=[
-                            {"role": "user", "content": user_prompt}
-                        ],
+                        messages=[{"role": "user", "content": user_prompt}],
                         model=self.model,
                         system=self.SYSTEM_PROMPT,
                         temperature=0,
                     )
-                    return response.content[0].text # type: ignore
+                    return response.content[0].text  # type: ignore
 
                 elif self.provider == "google":
-                    response = await self.client.generate_content_async( # type: ignore
+                    response = await self.client.generate_content_async(  # type: ignore
                         f"{self.SYSTEM_PROMPT}\n\n{user_prompt}",
                         generation_config=genai.types.GenerationConfig(temperature=0),
                     )

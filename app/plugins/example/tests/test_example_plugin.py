@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -28,25 +28,25 @@ class TestExamplePlugin(BasePluginTest):
     def event_bus(self):
         """Mock event bus fixture"""
         mock_bus = MagicMock()
-        
+
         # Store subscriptions
         mock_bus.subscriptions = {}
-        
+
         async def mock_subscribe(event_type, callback):
             if event_type not in mock_bus.subscriptions:
                 mock_bus.subscriptions[event_type] = []
             mock_bus.subscriptions[event_type].append(callback)
-            
+
         async def mock_unsubscribe(event_type, callback):
             if event_type in mock_bus.subscriptions:
                 mock_bus.subscriptions[event_type].remove(callback)
-                
+
         async def mock_publish(event):
             event_type = event.get("name")
             if event_type in mock_bus.subscriptions:
                 for callback in mock_bus.subscriptions[event_type]:
                     await callback(event)
-        
+
         mock_bus.subscribe = mock_subscribe
         mock_bus.unsubscribe = mock_unsubscribe
         mock_bus.publish = mock_publish
@@ -69,7 +69,10 @@ class TestExamplePlugin(BasePluginTest):
             # Verify event subscription
             assert plugin.event_bus is not None
             assert "recording.ended" in plugin.event_bus.subscriptions
-            assert plugin._handle_recording_ended in plugin.event_bus.subscriptions["recording.ended"]
+            assert (
+                plugin._handle_recording_ended
+                in plugin.event_bus.subscriptions["recording.ended"]
+            )
 
     async def test_example_plugin_shutdown(self, plugin):
         """Test example plugin specific shutdown"""

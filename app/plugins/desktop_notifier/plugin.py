@@ -3,16 +3,15 @@
 import os
 import subprocess
 import threading
-import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.events import ConcreteEventBus as EventBus
 from app.core.events import Event
+from app.core.plugins import PluginBase, PluginConfig
 from app.models.database import DatabaseManager
 from app.models.recording.events import EventContext, RecordingEvent
-from app.core.plugins import PluginBase, PluginConfig
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -122,9 +121,8 @@ class DesktopNotifierPlugin(PluginBase):
                 return
 
             # Extract recording ID and output path, with fallbacks
-            recording_id = (
-                data.get("recording_id")
-                or data.get("data", {}).get("recording_id")
+            recording_id = data.get("recording_id") or data.get("data", {}).get(
+                "recording_id"
             )
 
             output_path = (
@@ -240,8 +238,8 @@ class DesktopNotifierPlugin(PluginBase):
                     },
                     context=EventContext(
                         timestamp=datetime.now(UTC),
-                        metadata={"recording_id": recording_id}  # type: ignore
-                    )
+                        metadata={"recording_id": recording_id},  # type: ignore
+                    ),
                 )
                 await self.event_bus.publish(error_event)
 

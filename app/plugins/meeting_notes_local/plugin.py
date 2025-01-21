@@ -2,16 +2,17 @@ import asyncio
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime as dt, timezone as tz
+from datetime import UTC
+from datetime import datetime as dt
 from pathlib import Path
 from typing import Any, cast
 
 import aiohttp
 
-from app.core.events import ConcreteEventBus as EventBus, EventPriority
-from app.core.events import Event, EventContext
-from app.models.recording.events import RecordingEvent
+from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import Event, EventContext, EventPriority
 from app.core.plugins import PluginBase
+from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
 
 EventData = dict[str, Any] | RecordingEvent
@@ -238,12 +239,12 @@ Keep each bullet point concise but informative]
                     "ollama_url": self.ollama_url,
                     "prompt_length": len(prompt),
                     "num_ctx": self.num_ctx,
-                    "timestamp": dt.now(tz.utc),
+                    "timestamp": dt.now(UTC),
                 },
             )
 
             async with aiohttp.ClientSession() as session:
-                start_time = dt.now(tz.utc)
+                start_time = dt.now(UTC)
                 async with session.post(
                     self.ollama_url,
                     json={
@@ -256,7 +257,7 @@ Keep each bullet point concise but informative]
                 ) as response:
                     response.raise_for_status()
                     result = await response.json()
-                    end_time = dt.now(tz.utc)
+                    end_time = dt.now(UTC)
                     duration = (end_time - start_time).total_seconds()
 
                     # Log response details
@@ -324,11 +325,11 @@ Keep each bullet point concise but informative]
                     "output_path": str(output_file),
                     "notes_path": str(output_file),
                     "status": "completed",
-                    "timestamp": dt.now(tz.utc),
+                    "timestamp": dt.now(UTC),
                     "current_event": {
                         "meeting_notes": {
                             "status": "completed",
-                            "timestamp": dt.now(tz.utc),
+                            "timestamp": dt.now(UTC),
                             "output_path": str(output_file),
                         }
                     },
@@ -342,8 +343,8 @@ Keep each bullet point concise but informative]
                     data=event_data,
                     context=EventContext(
                         correlation_id=str(uuid.uuid4()),
-                        timestamp=dt.now(tz.utc),
-                        metadata={"source_plugin": self.name}
+                        timestamp=dt.now(UTC),
+                        metadata={"source_plugin": self.name},
                     ),
                     priority=EventPriority.NORMAL,
                 )
@@ -383,7 +384,7 @@ Keep each bullet point concise but informative]
                         "recording_id": recording_id,
                         "meeting_notes": {
                             "status": "error",
-                            "timestamp": dt.now(tz.utc), # type: ignore
+                            "timestamp": dt.now(UTC),  # type: ignore
                             "error": str(e),
                         },
                         # Preserve previous event data
@@ -411,12 +412,16 @@ Keep each bullet point concise but informative]
             return
 
         recording_id = (
-            event_data.payload.get("recording_id", "unknown") if event_data.payload else "unknown"
+            event_data.payload.get("recording_id", "unknown")
+            if event_data.payload
+            else "unknown"
         )
 
         try:
             if self._executor:
-                await self._process_transcript(recording_id, transcript_text, event_data)
+                await self._process_transcript(
+                    recording_id, transcript_text, event_data
+                )
         except Exception as e:
             logger.error("Failed to handle transcript event: %s", str(e), exc_info=True)
 
@@ -513,13 +518,13 @@ Keep each bullet point concise but informative]
                     "output_path": str(output_path),
                     "notes_path": str(output_path),
                     "status": "completed",
-                    "timestamp": dt.now(tz.utc),
+                    "timestamp": dt.now(UTC),
                     "plugin_id": self.name,
                     "data": {
                         "current_event": {
                             "meeting_notes": {
                                 "status": "completed",
-                                "timestamp": dt.now(tz.utc),
+                                "timestamp": dt.now(UTC),
                                 "output_path": str(output_path),
                             }
                         }

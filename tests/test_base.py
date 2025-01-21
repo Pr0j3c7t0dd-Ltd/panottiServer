@@ -1,7 +1,7 @@
-import pytest
 from unittest.mock import AsyncMock
 
-from app.core.plugins import PluginConfig
+import pytest
+
 from tests.conftest import _TestPluginImpl
 
 
@@ -22,9 +22,10 @@ async def test_initialize_success(test_plugin_impl):
 
 async def test_initialize_failure(test_plugin_impl):
     """Test initialization failure"""
+
     async def failing_initialize():
         raise ValueError("Test error")
-    
+
     test_plugin_impl._initialize = failing_initialize
     with pytest.raises(ValueError, match="Test error"):
         await test_plugin_impl.initialize()
@@ -40,9 +41,10 @@ async def test_shutdown_success(test_plugin_impl):
 
 async def test_shutdown_failure(test_plugin_impl):
     """Test shutdown failure"""
+
     async def failing_shutdown():
         raise ValueError("Shutdown error")
-    
+
     test_plugin_impl._shutdown = failing_shutdown
     test_plugin_impl._initialized = True
     with pytest.raises(ValueError, match="Shutdown error"):
@@ -115,7 +117,7 @@ async def test_emit_event_with_event_bus(test_plugin_impl, event_bus):
         "name": "test_event",
         "data": {"data": "test"},
         "correlation_id": "correlation-123",
-        "source_plugin": "test_plugin"
+        "source_plugin": "test_plugin",
     }
     event_bus.publish.assert_awaited_once_with(expected_event)
 
@@ -124,4 +126,4 @@ async def test_emit_event_without_event_bus(plugin_config):
     """Test emit_event without event bus"""
     plugin = _TestPluginImpl(plugin_config, None)
     # Should log warning but not raise error
-    await plugin.emit_event("test_event", {"data": "test"}) 
+    await plugin.emit_event("test_event", {"data": "test"})

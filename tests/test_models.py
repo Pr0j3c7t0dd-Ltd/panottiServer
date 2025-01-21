@@ -1,7 +1,5 @@
 """Tests for core event models."""
 
-import pytest
-from datetime import datetime, UTC
 from uuid import UUID
 
 from app.core.events.models import Event, EventPriority, get_event_name
@@ -13,14 +11,14 @@ def test_event_validators():
     # Test validate_event_id
     event = Event(name="test.event", event_id=None)
     assert UUID(event.event_id)  # Verify it's a valid UUID
-    
+
     # Test validate_event_id with existing value
     event = Event(name="test.event", event_id="123")
     assert event.event_id == "123"
 
     # Test validate_name
     event = Event(name="event")
-    assert event.name == "event"  
+    assert event.name == "event"
 
     # Test validate_name with existing value
     event = Event(name="custom.event")
@@ -41,10 +39,7 @@ def test_event_validators():
     # Test validate_context with dict
     event = Event(
         name="test.event",
-        context=EventContext(
-            correlation_id="123",
-            metadata={"source_plugin": "test"}
-        )
+        context=EventContext(correlation_id="123", metadata={"source_plugin": "test"}),
     )
     assert isinstance(event.context, EventContext)
     assert event.context.correlation_id == "123"
@@ -58,9 +53,9 @@ def test_event_create_classmethod():
         data={"key": "value"},
         correlation_id="123",
         source_plugin="test_plugin",
-        priority=EventPriority.HIGH
+        priority=EventPriority.HIGH,
     )
-    
+
     assert event.name == "test.event"
     assert event.data == {"key": "value"}
     assert event.context.correlation_id == "123"
@@ -70,10 +65,11 @@ def test_event_create_classmethod():
 
 def test_get_event_name():
     """Test get_event_name function."""
+
     # Test with object having event attribute
     class TestEvent:
         event = "test.event"
-    
+
     assert get_event_name(TestEvent()) == "test.event"
 
     # Test with dict

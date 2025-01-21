@@ -1,4 +1,5 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -24,7 +25,7 @@ def test_recording_end_request_full():
         end_time=end_time,
         metadata=metadata,
         status="failed",
-        error_message="Something went wrong"
+        error_message="Something went wrong",
     )
     assert request.recording_id == "test123"
     assert request.end_time == end_time
@@ -37,8 +38,8 @@ def test_recording_end_request_missing_required():
     """Test that RecordingEndRequest requires recording_id"""
     with pytest.raises(ValidationError) as exc_info:
         RecordingEndRequest()
-    
+
     errors = exc_info.value.errors()
     assert len(errors) == 1
     assert errors[0]["loc"] == ("recording_id",)
-    assert errors[0]["type"] == "missing" 
+    assert errors[0]["type"] == "missing"

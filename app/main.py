@@ -6,11 +6,11 @@ import os
 import traceback
 import uuid
 import weakref
-from collections.abc import Callable
-from datetime import datetime, UTC
-from pathlib import Path
-from typing import Any, Awaitable
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -20,13 +20,13 @@ from fastapi.security.api_key import APIKeyHeader
 
 from app.core.events import EventStore
 from app.core.events.bus import EventBus
+from app.core.plugins import PluginManager
 from app.models.database import DatabaseManager
 from app.models.recording.events import (
     RecordingEndRequest,
     RecordingEvent,
     RecordingStartRequest,
 )
-from app.core.plugins import PluginManager
 from app.utils.directory_sync import DirectorySync
 from app.utils.logging_config import setup_logging
 
@@ -43,6 +43,7 @@ event_bus = None
 plugin_manager = None
 directory_sync = None
 background_tasks = weakref.WeakSet()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -180,6 +181,7 @@ async def lifespan(app: FastAPI):
         finally:
             logger.info("Shutdown complete")
 
+
 # Initialize FastAPI app with lifespan
 app = FastAPI(
     title="Recording Events API",
@@ -203,6 +205,7 @@ event_store = EventStore()
 # API key security
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+
 
 async def get_api_key(api_key_header: str = Depends(api_key_header)) -> str:
     """Validate API key from request header.
@@ -401,8 +404,10 @@ async def process_event(event: RecordingEvent) -> None:
         # Create tasks for parallel execution
         if event_bus is None:
             logger.error("Event bus not initialized")
-            raise RuntimeError("Event bus not initialized. Server may still be starting up.")
-            
+            raise RuntimeError(
+                "Event bus not initialized. Server may still be starting up."
+            )
+
         save_task = asyncio.create_task(event.save())
         publish_task = asyncio.create_task(event_bus.publish(event))
 

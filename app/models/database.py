@@ -7,12 +7,12 @@ import os
 import sqlite3
 import threading
 import uuid
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from sqlite3 import Connection
-from typing import Any, AsyncGenerator, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 T = TypeVar("T")
 
@@ -272,12 +272,14 @@ class DatabaseManager:
         return cast(sqlite3.Connection, self._local.connection)
 
     @asynccontextmanager
-    async def get_connection_async(self, name: str = "default") -> AsyncGenerator[Connection, None]:
+    async def get_connection_async(
+        self, name: str = "default"
+    ) -> AsyncGenerator[Connection, None]:
         """Get a database connection asynchronously using a context manager.
-        
+
         Args:
             name: Connection name identifier, defaults to "default"
-            
+
         Returns:
             AsyncGenerator[sqlite3.Connection, None]: SQLite database connection object
         """

@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
-from app.plugins.audio_transcription_local.plugin import AudioTranscriptionLocalPlugin
 from app.core.plugins import PluginConfig
+from app.plugins.audio_transcription_local.plugin import AudioTranscriptionLocalPlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
 
 
@@ -49,7 +49,7 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         mock_db.get_instance = AsyncMock(return_value=mock_db)
         mock_db.get_connection = MagicMock()
         mock_db.execute = AsyncMock()
-        
+
         with patch("pathlib.Path.mkdir") as mock_mkdir, patch(
             "app.models.database.DatabaseManager.get_instance", return_value=mock_db
         ):

@@ -1,5 +1,6 @@
-import pytest
 import asyncio
+
+import pytest
 
 from app.core.events import ConcreteEventBus as EventBus
 from app.core.plugins import PluginBase, PluginConfig
@@ -73,24 +74,24 @@ class BasePluginTest:
 
         await plugin.subscribe("test_event", test_callback)
         await plugin.publish(test_event)
-        
+
         # Wait for all pending tasks to complete
         pending_tasks = event_bus._pending_tasks.copy()
         if pending_tasks:
             await asyncio.gather(*pending_tasks)
-            
+
         assert callback_called
 
         # Test unsubscribe
         callback_called = False
         await plugin.unsubscribe("test_event", test_callback)
         await plugin.publish(test_event)
-        
+
         # Wait for all pending tasks to complete
         pending_tasks = event_bus._pending_tasks.copy()
         if pending_tasks:
             await asyncio.gather(*pending_tasks)
-            
+
         assert not callback_called
 
     async def test_emit_event(self, plugin):

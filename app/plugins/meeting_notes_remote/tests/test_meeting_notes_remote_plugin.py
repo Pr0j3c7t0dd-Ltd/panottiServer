@@ -1,8 +1,10 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, Mock, mock_open
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
 from openai import AsyncOpenAI
-from app.core.events import Event, EventContext, ConcreteEventBus
+
+from app.core.events import ConcreteEventBus
 from app.core.plugins import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
@@ -83,10 +85,13 @@ Speaker 2: I'll prepare the report by next week.
             await plugin_with_mock_bus.initialize()
             mock_mkdir.assert_called_with(parents=True, exist_ok=True)
             plugin_with_mock_bus.event_bus.subscribe.assert_awaited_once_with(
-                "transcription_local.completed", plugin_with_mock_bus.handle_transcription_completed
+                "transcription_local.completed",
+                plugin_with_mock_bus.handle_transcription_completed,
             )
 
-    async def test_handle_transcription_completed_dict_event(self, plugin_with_mock_bus, sample_transcript):
+    async def test_handle_transcription_completed_dict_event(
+        self, plugin_with_mock_bus, sample_transcript
+    ):
         """Test handling transcription completed event with dict data"""
         transcript_path = Path("test_transcript.txt")
         event_data = {
@@ -94,10 +99,13 @@ Speaker 2: I'll prepare the report by next week.
             "transcript_path": str(transcript_path),
         }
 
-        with patch.object(Path, "mkdir"), \
-             patch.object(plugin_with_mock_bus, "_read_transcript", return_value=sample_transcript), \
-             patch.object(plugin_with_mock_bus, "_generate_meeting_notes", return_value=Path("output.md")):
-            
+        with patch.object(Path, "mkdir"), patch.object(
+            plugin_with_mock_bus, "_read_transcript", return_value=sample_transcript
+        ), patch.object(
+            plugin_with_mock_bus,
+            "_generate_meeting_notes",
+            return_value=Path("output.md"),
+        ):
             await plugin_with_mock_bus.initialize()
             await plugin_with_mock_bus.handle_transcription_completed(event_data)
 
@@ -110,11 +118,11 @@ Speaker 2: I'll prepare the report by next week.
     async def test_handle_transcription_completed_no_path(self, plugin_with_mock_bus):
         """Test handling transcription completed event with no transcript path"""
         event_data = {"recording_id": "test_recording"}
-        
+
         with patch.object(Path, "mkdir"):
             await plugin_with_mock_bus.initialize()
             await plugin_with_mock_bus.handle_transcription_completed(event_data)
-            
+
             plugin_with_mock_bus.event_bus.publish.assert_not_called()
 
     async def test_generate_meeting_notes_from_text_empty(self, plugin):
@@ -137,7 +145,7 @@ Speaker 2: I'll prepare the report by next week.
             },
         )
         plugin = MeetingNotesRemotePlugin(config)
-        
+
         assert plugin.output_dir == Path("data/meeting_notes_remote")
         assert plugin.max_concurrent_tasks == 4
         assert plugin.timeout == 600
@@ -167,7 +175,7 @@ Speaker 2: I'll prepare the report by next week.
             },
         )
         plugin = MeetingNotesRemotePlugin(config, event_bus=None)
-        
+
         with patch.object(Path, "mkdir"):
             await plugin.initialize()
             # Should not raise an exception
