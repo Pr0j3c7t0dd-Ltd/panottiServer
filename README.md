@@ -74,6 +74,8 @@ python --version  # Should show Python 3.12.x
 
 ### Quick Setup (Recommended)
 
+> ⚠️ **IMPORTANT**: Before running the setup script, please carefully review its contents at `scripts/setup.py`. This script will make changes to your system including installing dependencies and configuring your environment. Understanding these changes beforehand will help avoid any potential issues during installation.
+
 The easiest way to set up the application is to use the provided setup script. 
 
 #### Running the Setup
@@ -765,5 +767,15 @@ pip freeze > requirements.txt
 ```
 
 Note: Be sure to test your application thoroughly after upgrading packages as new versions may introduce breaking changes.
+
+## Warranty Disclaimer
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU. SHOULD THE SOFTWARE PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR, OR CORRECTION.
+
+IN NO EVENT SHALL PR0J3CTTODD LTD BE LIABLE FOR ANY SPECIAL, INCIDENTAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER (INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF BUSINESS PROFITS, BUSINESS INTERRUPTION, LOSS OF BUSINESS INFORMATION, OR ANY OTHER PECUNIARY LOSS) ARISING OUT OF THE USE OF OR INABILITY TO USE THE SOFTWARE.
+
+For complete terms of use and privacy policy, please visit:
+- Terms and Conditions: https://www.panotti.io/terms-and-conditions
+- Privacy Policy: https://www.panotti.io/privacy-policy
 
 © 2025 Pr0j3ctTodd Ltd. All rights reserved.

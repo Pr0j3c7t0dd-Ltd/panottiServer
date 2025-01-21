@@ -244,11 +244,10 @@ class CleanupFilesPlugin(PluginBase):
                             "cleanup_delay": self.cleanup_delay
                         }
                     },
-                    # Preserve original event metadata
-                    metadata=data.get("metadata", {}),
                     # Preserve input/output paths from previous steps
-                    input_paths=data.get("input_paths", {}),
-                    transcript_paths=data.get("transcript_paths", {})
+                    input_paths=event_data.data.get("paths", {}).get("input", {}),
+                    # Include additional metadata if available
+                    extra_metadata=event_data.context.metadata if hasattr(event_data.context, 'metadata') else {}
                 )
 
                 logger.debug(
@@ -287,11 +286,11 @@ class CleanupFilesPlugin(PluginBase):
                     name="cleanup_files.error",
                     data={
                         # Preserve original event data
-                        "recording": data.get("data", {}).get("recording", {}),
-                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
-                        "transcription": data.get("data", {}).get("transcription", {}),
-                        "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
-                        "desktop_notification": data.get("data", {}).get("desktop_notification", {}),
+                        "recording": data.get("recording", {}) if data else {},
+                        "noise_reduction": data.get("noise_reduction", {}) if data else {},
+                        "transcription": data.get("transcription", {}) if data else {},
+                        "meeting_notes": data.get("meeting_notes", {}) if data else {},
+                        "desktop_notification": data.get("desktop_notification", {}) if data else {},
                         # Add current event data
                         "cleanup_files": {
                             "status": "error",
@@ -303,10 +302,9 @@ class CleanupFilesPlugin(PluginBase):
                         }
                     },
                     # Preserve original event metadata
-                    metadata=data.get("metadata", {}),
+                    metadata=event_data.context.metadata,
                     # Preserve input/output paths from previous steps
-                    input_paths=data.get("input_paths", {}),
-                    transcript_paths=data.get("transcript_paths", {})
+                    input_paths=event_data.data.get("paths", {}).get("input", {})
                 )
                 await self.event_bus.publish(error_event)
 
