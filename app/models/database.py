@@ -38,6 +38,7 @@ class DatabaseManager:
         self.db_path = str(data_dir / "panotti.db")
         self._req_id = str(uuid.uuid4())
         self._executor = ThreadPoolExecutor(max_workers=4)
+        self._shutting_down = False
         self._init_db()
 
     def __enter__(self) -> Connection:
@@ -393,21 +394,38 @@ class DatabaseManager:
 
     async def close(self) -> None:
         """Close database connection and cleanup resources."""
+        if self._shutting_down:
+            return
+
+        self._shutting_down = True
         try:
-            # Shutdown thread pool first
+            # Shutdown thread pool first with proper timeout handling
             if hasattr(self, '_executor'):
-                self._executor.shutdown(wait=True, timeout=10)
+                try:
+                    # Use wait=True without timeout for compatibility
+                    self._executor.shutdown(wait=True)
+                except Exception as e:
+                    logger.error(
+                        "Error shutting down thread pool",
+                        extra={
+                            "req_id": self._req_id,
+                            "error": str(e)
+                        }
+                    )
                 self._executor = None
 
-            # Then close connections
-            async with self._lock:
-                self.close_connections()
-                # Clear the instance
-                DatabaseManager._instance = None
-
-            # Release the lock if it's still held
-            if hasattr(self._lock, '_locked') and self._lock._locked:
-                self._lock.release()
+            # Then close connections and clear instance under lock
+            try:
+                async with asyncio.timeout(10.0):
+                    async with self._lock:
+                        self.close_connections()
+                        # Clear the instance
+                        DatabaseManager._instance = None
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timeout acquiring lock during database shutdown",
+                    extra={"req_id": self._req_id}
+                )
             
             logger.debug(
                 "Database manager cleanup complete",
@@ -422,12 +440,23 @@ class DatabaseManager:
                 }
             )
             raise
+        finally:
+            self._shutting_down = False
 
     def close_connections(self) -> None:
         """Close all connections - useful for cleanup."""
-        if hasattr(self._local, "connection"):
-            self._local.connection.close()
-            del self._local.connection
+        try:
+            if hasattr(self._local, "connection"):
+                self._local.connection.close()
+                del self._local.connection
+        except Exception as e:
+            logger.error(
+                "Error closing connections",
+                extra={
+                    "req_id": self._req_id,
+                    "error": str(e)
+                }
+            )
 
     @classmethod
     async def cleanup(cls) -> None:

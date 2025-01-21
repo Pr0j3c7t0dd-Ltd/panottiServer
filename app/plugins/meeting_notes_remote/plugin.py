@@ -203,14 +203,27 @@ class MeetingNotesRemotePlugin(PluginBase):
                 "timestamp": datetime.now(UTC).isoformat(),
                 "plugin_id": self.name,
                 "data": {
-                    "current_event": {
-                        "meeting_notes": {
-                            "status": "completed",
-                            "timestamp": datetime.now(UTC).isoformat(),
-                            "output_path": str(output_path),
-                        }
+                    # Preserve original event data
+                    "recording": event_data.get("data", {}).get("recording", {}),
+                    "noise_reduction": event_data.get("data", {}).get("noise_reduction", {}),
+                    "transcription": event_data.get("data", {}).get("transcription", {}),
+                    # Add current event data
+                    "meeting_notes": {
+                        "status": "completed",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "output_path": str(output_path),
+                        "provider": self.provider,
+                        "model": self.model
                     }
                 },
+                # Preserve original event metadata
+                "metadata": event_data.get("metadata", {}),
+                # Preserve input/output paths from previous steps
+                "input_paths": {
+                    "microphone": event_data.get("input_paths", {}).get("microphone"),
+                    "system": event_data.get("input_paths", {}).get("system"),
+                },
+                "transcript_paths": event_data.get("transcript_paths", {})
             }
 
             logger.debug(

@@ -30,6 +30,7 @@ class EventBus:
             None  # Will be initialized when event loop is available
         )
         self._req_id = str(uuid.uuid4())
+        self._shutting_down = False
         logger.info(
             "Event bus initialized",
             extra={"req_id": self._req_id, "component": "event_bus"},
@@ -37,6 +38,7 @@ class EventBus:
 
     async def start(self) -> None:
         """Start the event bus background tasks."""
+        self._shutting_down = False
         if self._cleanup_events_task is None:
             self._cleanup_events_task = asyncio.create_task(self._cleanup_old_events())
             logger.debug(
@@ -706,6 +708,10 @@ class EventBus:
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the event bus by canceling pending tasks."""
+        if self._shutting_down:
+            return
+
+        self._shutting_down = True
         logger.info(
             "Starting event bus shutdown",
             extra={
@@ -716,9 +722,14 @@ class EventBus:
         )
 
         try:
-            # First stop accepting new events by clearing subscribers
-            async with self._lock:
-                self._subscribers.clear()
+            # First stop accepting new events and clear state under lock
+            try:
+                async with asyncio.timeout(10.0):
+                    async with self._lock:
+                        self._subscribers.clear()
+                        self._processed_events.clear()
+            except asyncio.TimeoutError:
+                logger.warning("Timeout acquiring lock during shutdown")
 
             # Then stop the cleanup task
             if self._cleanup_events_task and not self._cleanup_events_task.done():
@@ -767,14 +778,8 @@ class EventBus:
                             exc_info=True,
                         )
 
-            # Clear all internal state
+            # Clear remaining state
             self._pending_tasks.clear()
-            async with self._lock:
-                self._processed_events.clear()
-
-            # Release the lock's underlying semaphore
-            if hasattr(self._lock, '_locked') and self._lock._locked:
-                self._lock.release()
 
             logger.info(
                 "Event bus shutdown complete",
@@ -792,3 +797,5 @@ class EventBus:
                 exc_info=True,
             )
             raise
+        finally:
+            self._shutting_down = False
