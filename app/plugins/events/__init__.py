@@ -1,1 +1,0 @@
-"""Event system plugin package."""

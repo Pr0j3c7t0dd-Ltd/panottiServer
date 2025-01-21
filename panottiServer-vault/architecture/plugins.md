@@ -4,6 +4,28 @@
 
 The plugin system in PanottiServer is designed for extensibility and modularity. It uses a combination of YAML configuration and Python implementation files to define and manage plugins. The system supports dynamic loading, event-driven communication, and robust error handling.
 
+## Deprecation Notice
+
+The event system implementation in `app/plugins/events/` is deprecated and will be removed in future versions. All event-related functionality has been moved to `app.core.events`. The timeline for deprecation is:
+
+1. Current Version:
+   - Deprecated warning added to `app/plugins/events/`
+   - All functionality moved to `app.core.events`
+   - Backward compatibility maintained through re-exports
+
+2. Next Major Version:
+   - Remove `app/plugins/events/` directory
+   - All imports must use `app.core.events`
+
+Please update your code to use the core implementation:
+```python
+# Old (deprecated)
+from app.plugins.events import EventBus, EventContext, EventPriority
+
+# New (recommended)
+from app.core.events import EventBus, Event, EventContext, EventPriority
+```
+
 ## Plugin Structure
 
 Each plugin follows this structure:
@@ -50,10 +72,35 @@ config:                   # Plugin-specific configuration
 - Implements robust error handling and logging
 
 ### Event System Integration
-- Event-driven architecture using EventBus
-- Supports asynchronous event handling
-- Provides structured event context
-- Enables plugin-to-plugin communication
+- Event-driven architecture using core EventBus (`app.core.events`)
+- Supports asynchronous event handling with robust error handling
+- Provides structured event context and priority levels
+- Enables plugin-to-plugin communication through centralized event bus
+- Implements event persistence and cleanup
+- Uses Pydantic models for type safety and validation
+- Supports event correlation and tracing
+- Provides comprehensive logging and monitoring
+
+The event system is implemented in `app.core.events` and provides:
+- `EventBus`: Central message broker with async support
+- `Event`: Base event model with validation
+- `EventContext`: Structured context for event metadata
+- `EventPriority`: Priority levels (LOW, NORMAL, HIGH, CRITICAL)
+
+Example usage:
+```python
+from app.core.events import Event, EventContext, EventPriority
+
+# Create and emit an event
+event = Event.create(
+    name="recording_started",
+    data={"recording_id": "rec_123"},
+    correlation_id="corr_id",
+    source_plugin="my_plugin",
+    priority=EventPriority.HIGH
+)
+await self.event_bus.publish(event)
+```
 
 ## Plugin Development Guide
 
