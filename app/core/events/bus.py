@@ -556,7 +556,7 @@ class EventBus:
                 "id": id(handler),
                 "class": getattr(
                     getattr(handler, "__self__", None), "__class__", None
-                ) and getattr(getattr(handler, "__self__", None), "__class__", None).__name__,
+                ) if getattr(handler, "__self__", None) else None,
                 "instance_id": id(getattr(handler, "__self__", None))
                 if hasattr(handler, "__self__")
                 else None,
