@@ -1,4 +1,4 @@
-- run the tests with `xcodebuild test -scheme PanottiAudio -destination 'platform=macOS'`
+- run the tests with `pytest`
 - Only fix one error at a time, then run the tests after each fix. Don't add more tests.
 - If you encounter any errors, fix them one by one.
 - Run the acceptance tests again after each fix to verify that the issue has been fixed.

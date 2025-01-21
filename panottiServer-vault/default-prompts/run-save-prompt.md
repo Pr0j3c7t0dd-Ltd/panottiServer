@@ -1,1 +1,0 @@
-save the original prompt per the rules in @.cursorrules.  Be sure to first calculate the current date and time, and then use that to create the filename.

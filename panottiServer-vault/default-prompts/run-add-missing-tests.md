@@ -1,4 +1,4 @@
-- run `npm run test:coverage`
+- run `pytest`
 - analyze the test coverage and add any missing tests, only add tesess that are missing against the current implementation
 - look at the percentage of test coverage from the report and focus on the first area without full coverage
 - add tests one by one and run the tests after each addition

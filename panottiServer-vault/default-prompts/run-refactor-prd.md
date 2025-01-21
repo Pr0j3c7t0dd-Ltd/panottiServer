@@ -1,1 +1,0 @@
-Rewrite the @todo-app-prd.md  .md file to break down each feature into descrete steps and sub steps.  Always start with the data model for each featue, the api endpoints and then the interface.
