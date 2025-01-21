@@ -458,27 +458,55 @@ Keep each bullet point concise but informative]
                 },
             )
 
-            # Get transcript path
+            # Get transcript path from various possible locations in event data
             transcript_path = None
             if isinstance(event_data, dict):
-                transcript_path = event_data.get("transcript_path") or (
-                    event_data.get("transcript_paths", {}).get("merged")
-                    if event_data.get("transcript_paths")
-                    else None
+                # First check transcription data
+                transcription_data = event_data.get("transcription", {})
+                transcript_paths = transcription_data.get("transcript_paths", {})
+                transcript_path = (
+                    transcript_paths.get("merged")  # First try merged transcript
+                    or transcript_paths.get("system")  # Then try system transcript
+                    or transcript_paths.get("mic")  # Finally try mic transcript
+                    or transcription_data.get("transcript_path")  # Legacy field
+                    or event_data.get("transcript_path")  # Direct field
                 )
+                
+                # If still not found, check original event structure
+                if not transcript_path and "original_event" in event_data:
+                    original_event = event_data["original_event"]
+                    if "transcription" in original_event:
+                        transcript_paths = original_event["transcription"].get("transcript_paths", {})
+                        transcript_path = (
+                            transcript_paths.get("merged")
+                            or transcript_paths.get("system")
+                            or transcript_paths.get("mic")
+                            or original_event["transcription"].get("transcript_path")
+                        )
             else:
-                transcript_path = getattr(event_data, "transcript_path", None) or (
-                    getattr(event_data, "transcript_paths", {}).get("merged")
-                    if hasattr(event_data, "transcript_paths")
-                    else None
-                )
+                # Handle object access pattern
+                transcription = getattr(event_data, "transcription", None)
+                if transcription:
+                    transcript_paths = getattr(transcription, "transcript_paths", {})
+                    if isinstance(transcript_paths, dict):
+                        transcript_path = (
+                            transcript_paths.get("merged")
+                            or transcript_paths.get("system")
+                            or transcript_paths.get("mic")
+                            or getattr(transcription, "transcript_path", None)
+                        )
+                
+                # If still not found, try direct attribute
+                if not transcript_path:
+                    transcript_path = getattr(event_data, "transcript_path", None)
 
             if not transcript_path:
                 logger.warning(
                     "No transcript path found in event",
                     extra={
                         "plugin_name": self.name,
-                        "event_id": getattr(event_data, "event_id", None),
+                        "event_id": event_id,
+                        "event_data": str(event_data),
                     },
                 )
                 return

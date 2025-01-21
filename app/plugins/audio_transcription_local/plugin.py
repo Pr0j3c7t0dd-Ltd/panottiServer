@@ -174,31 +174,30 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 )
                 return
 
-            # Extract paths and metadata from event data
+            # Handle both dictionary and object access patterns
             if isinstance(event_data, dict):
-                recording_id = event_data.get("recording_id")
+                recording_id = event_data["recording_id"]
                 processed_mic_audio = event_data.get("output_path")
-
-                # Get original event data
-                original_event = None
-                if "original_event" in event_data:
-                    original_event = event_data["original_event"]
-                elif "data" in event_data and "current_event" in event_data["data"]:
-                    original_event = event_data["data"]["current_event"]
-
-                logger.debug(
-                    "Original event data",
-                    extra={"plugin": self.name, "original_event": str(original_event)},
-                )
+                original_event = event_data.get("original_event")
 
                 # Extract system audio path
                 original_sys_audio = None
-                if original_event and "recording" in original_event:
-                    original_sys_audio = original_event["recording"]["audio_paths"][
-                        "system"
-                    ]
-                elif "system_audio_path" in event_data:
-                    original_sys_audio = event_data["system_audio_path"]
+                if isinstance(event_data, dict):
+                    original_sys_audio = event_data.get("system_audio_path")  # First check direct path
+                    if not original_sys_audio and "original_event" in event_data:  # Then check in original event
+                        original_event = event_data["original_event"]
+                        if "recording" in original_event:
+                            original_sys_audio = original_event["recording"]["audio_paths"].get("system")
+                else:
+                    original_sys_audio = getattr(event_data, "system_audio_path", None)
+                    if not original_sys_audio and hasattr(event_data, "data"):
+                        data = event_data.data
+                        if isinstance(data, dict):
+                            original_sys_audio = data.get("system_audio_path")
+                            if not original_sys_audio and "original_event" in data:
+                                original_event = data["original_event"]
+                                if "recording" in original_event:
+                                    original_sys_audio = original_event["recording"]["audio_paths"].get("system")
 
                 # Extract metadata
                 metadata = {}
@@ -209,23 +208,23 @@ class AudioTranscriptionLocalPlugin(PluginBase):
 
                 # Store metadata for use in _process_audio
                 self._current_event_metadata = metadata
+
             else:
-                recording_id = event_data.recording_id
+                recording_id = getattr(event_data, "recording_id", None)
+                if recording_id is None and hasattr(event_data, "data"):
+                    recording_id = event_data.data.get("recording_id")
                 processed_mic_audio = getattr(event_data, "output_path", None)
+                if processed_mic_audio is None and hasattr(event_data, "data"):
+                    processed_mic_audio = event_data.data.get("output_path")
 
                 # Get original event data
                 original_event = None
                 if hasattr(event_data, "data"):
                     data = event_data.data
                     if isinstance(data, dict):
-                        original_event = data.get("current_event")
+                        original_event = data.get("original_event")
                     elif hasattr(data, "current_event"):
                         original_event = data.current_event
-
-                logger.debug(
-                    "Original event data (object)",
-                    extra={"plugin": self.name, "original_event": str(original_event)},
-                )
 
                 # Extract system audio path
                 original_sys_audio = getattr(event_data, "system_audio_path", None)
@@ -236,8 +235,25 @@ class AudioTranscriptionLocalPlugin(PluginBase):
 
                 # Extract metadata
                 metadata = getattr(event_data, "metadata", {})
+                if hasattr(event_data, "data"):
+                    metadata = event_data.data.get("metadata", metadata)
                 if original_event and hasattr(original_event, "recording"):
                     metadata = original_event.recording.metadata
+
+                # Store metadata for use in _process_audio
+                self._current_event_metadata = metadata
+
+            logger.debug(
+                "Processing event data",
+                extra={
+                    "plugin": self.name,
+                    "recording_id": recording_id,
+                    "processed_mic_audio": processed_mic_audio,
+                    "original_sys_audio": original_sys_audio,
+                    "original_event": str(original_event),
+                    "metadata": metadata
+                }
+            )
 
             if not recording_id or not processed_mic_audio:
                 logger.error(
@@ -257,13 +273,10 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 },
             )
 
-            # Get speaker labels from metadata
-            mic_label = metadata.get("microphoneLabel", "Microphone")
-            sys_label = metadata.get("systemLabel", "System")
-
             # Process both audio files with speaker labels
-            mic_transcript = await self._process_audio(processed_mic_audio, mic_label)
+            mic_transcript = await self._process_audio(processed_mic_audio, "Microphone")
             sys_transcript = None
+
             if original_sys_audio and os.path.exists(original_sys_audio):
                 logger.info(
                     "Processing system audio",
@@ -273,7 +286,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     },
                 )
                 sys_transcript = await self._process_audio(
-                    original_sys_audio, sys_label
+                    original_sys_audio, "System"
                 )
             else:
                 logger.warning(
@@ -281,8 +294,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     extra={
                         "plugin": self.name,
                         "system_audio_path": original_sys_audio,
-                        "exists": original_sys_audio
-                        and os.path.exists(original_sys_audio),
+                        "exists": original_sys_audio and os.path.exists(original_sys_audio),
                     },
                 )
 
@@ -296,63 +308,36 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "plugin": self.name,
                     "mic_transcript": str(mic_transcript),
                     "sys_transcript": str(sys_transcript),
-                    "mic_label": mic_label,
-                    "sys_label": sys_label,
                     "metadata": metadata,
                 },
             )
 
-            # Merge transcripts
-            transcript_files = [str(mic_transcript)]
-            labels = [mic_label]
+            # Merge transcripts if we have both
+            transcript_files = []
+            labels = []
+
+            if mic_transcript:
+                transcript_files.append(str(mic_transcript))
+                labels.append("Microphone")
             if sys_transcript:
                 transcript_files.append(str(sys_transcript))
-                labels.append(sys_label)
+                labels.append("System")
 
-            self.merge_transcripts(
-                transcript_files=transcript_files,
-                output_path=str(merged_transcript),
-                labels=labels,
-                original_event=metadata,
-            )
+            if len(transcript_files) > 0:
+                self.merge_transcripts(transcript_files, str(merged_transcript), labels, original_event or {})
 
-            # Create enriched event data
-            event = Event.create(
-                name="transcription_local.completed",
-                data={
-                    "recording": {
-                        "audio_paths": {
-                            "system": original_sys_audio,
-                            "microphone": processed_mic_audio,
-                        },
-                        "metadata": metadata,
-                    },
-                    "transcription": {
-                        "status": "completed",
-                        "timestamp": datetime.now().isoformat(),
-                        "transcript_paths": {
-                            "microphone": str(mic_transcript),
-                            "system": str(sys_transcript) if sys_transcript else None,
-                            "merged": str(merged_transcript),
-                        },
-                        "transcript_path": str(merged_transcript),
-                        "speaker_labels": {
-                            "microphone": mic_label,
-                            "system": sys_label,
-                        }
+                # Emit completion event with all transcript paths
+                await self._emit_transcription_event(
+                    recording_id=recording_id,
+                    status="completed",
+                    output_file=str(merged_transcript),
+                    original_event=original_event,
+                    transcript_paths={
+                        "mic": str(mic_transcript) if mic_transcript else None,
+                        "system": str(sys_transcript) if sys_transcript else None,
+                        "merged": str(merged_transcript)
                     }
-                },
-                correlation_id=metadata.get("correlation_id", str(uuid.uuid4())),
-                source_plugin=self.__class__.__name__,
-                priority=EventPriority.NORMAL
-            )
-
-            # Emit enriched event
-            if self.event_bus:
-                await self.event_bus.publish(event)
-            else:
-                logger.warning("No event bus available to publish transcription event")
-
+                )
         except Exception as e:
             logger.error(
                 "Error handling noise reduction completed event",
@@ -367,6 +352,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         output_file: str | None = None,
         error: str | None = None,
         original_event: dict | None = None,
+        transcript_paths: dict[str, str | None] | None = None,
     ) -> None:
         """Emit transcription event."""
         if error:
@@ -402,6 +388,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                         "status": "completed",
                         "timestamp": datetime.now().isoformat(),
                         "output_file": output_file,
+                        "transcript_paths": transcript_paths,
                         "model": self.get_config("model", "base"),
                         "language": self.get_config("language", "en"),
                         "speaker_labels": {

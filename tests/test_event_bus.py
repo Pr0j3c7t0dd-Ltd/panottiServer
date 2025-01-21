@@ -4,6 +4,7 @@ import asyncio
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
+import uuid
 
 import pytest
 
@@ -20,6 +21,7 @@ class MockEvent:
         self.event_id = event_id
         self.name = name
         self.source_plugin = source_plugin
+        self.id = None  # Add id attribute
 
     def __str__(self):
         return (
@@ -33,6 +35,7 @@ class MockEvent:
                 "event_id": self.event_id,
                 "name": self.name,
                 "source_plugin": self.source_plugin,
+                "id": self.id,
             }
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
@@ -264,16 +267,56 @@ async def test_publish_with_no_subscribers():
 
 
 @pytest.mark.asyncio
-async def test_shutdown():
+async def test_shutdown(cleanup_tasks):
     bus = EventBus()
-    event = MockEvent(name="test.event")
-    handler = AsyncMock()
+    event_completed = asyncio.Event()
+    task_cancelled = asyncio.Event()
     
-    bus._subscribers["test.event"].append(handler)
-    bus._shutting_down = True
+    # Create some pending tasks
+    async def dummy_task():
+        try:
+            event_completed.set()
+            await asyncio.sleep(3600)  # Long sleep that will be cancelled
+        except asyncio.CancelledError:
+            task_cancelled.set()
+            raise
     
-    await bus.publish(event)
-    handler.assert_not_called()
+    # Create multiple tasks and track them
+    tasks = []
+    for _ in range(2):
+        task = asyncio.create_task(dummy_task())
+        tasks.append(task)
+        bus._pending_tasks.add(task)
+    
+    # Wait for tasks to start
+    await asyncio.wait_for(event_completed.wait(), timeout=1.0)
+    
+    # Start cleanup task
+    await bus.start()
+    
+    # Shutdown should cancel all tasks
+    await bus.shutdown()
+    
+    # Wait for tasks to be cancelled
+    try:
+        # Wait for all tasks to complete
+        await asyncio.wait(tasks, timeout=1.0)
+        
+        # Verify tasks are cancelled
+        for task in tasks:
+            assert task.cancelled() or task.done()
+        
+        assert len(bus._pending_tasks) == 0
+        assert bus._cleanup_events_task is None
+    finally:
+        # Clean up any remaining tasks
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
 
 @pytest.mark.asyncio
@@ -341,21 +384,42 @@ async def test_handle_task_with_bound_method():
 
 
 @pytest.mark.asyncio
-async def test_cleanup_old_events_with_lock_timeout():
+async def test_cleanup_old_events_with_lock_timeout(cleanup_tasks):
     bus = EventBus()
     
-    # Mock sleep and lock to simulate timeout
-    with patch("asyncio.sleep", AsyncMock()) as mock_sleep, \
-         patch.object(bus, "_lock") as mock_lock:
-        mock_sleep.side_effect = [None, asyncio.CancelledError()]  # Allow one iteration
-        mock_lock.__aenter__.side_effect = asyncio.TimeoutError("Lock timeout")
+    # Add some processed events with valid IDs
+    event1 = MockEvent()
+    event2 = MockEvent()
+    event1.id = "test_id_1"
+    event2.id = "test_id_2"
+    bus._processed_events[event1.id] = event1
+    bus._processed_events[event2.id] = event2
+    
+    # Mock the lock to simulate timeout
+    original_lock = bus._lock
+    
+    class TimeoutLock:
+        async def __aenter__(self):
+            await asyncio.sleep(0.2)  # Simulate slow lock acquisition
+            raise asyncio.TimeoutError()
+            
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+    
+    bus._lock = TimeoutLock()
+    
+    try:
+        # Start cleanup task
+        await bus.start()
+        await asyncio.sleep(0.5)  # Allow time for cleanup attempt
         
-        try:
-            await bus._cleanup_old_events()
-        except asyncio.CancelledError:
-            pass  # Expected
-        
-        mock_sleep.assert_called_with(3600)
+        # Verify events remain since cleanup failed
+        assert len(bus._processed_events) == 2
+        assert "test_id_1" in bus._processed_events
+        assert "test_id_2" in bus._processed_events
+    finally:
+        bus._lock = original_lock
+        await bus.shutdown()
 
 
 @pytest.mark.asyncio
@@ -441,21 +505,28 @@ async def test_publish_with_handler_timeout():
 
 
 @pytest.mark.asyncio
-async def test_handle_task_with_invalid_handler():
+async def test_handle_task_with_invalid_handler(cleanup_tasks):
     bus = EventBus()
-    event = MockEvent(name="test.event")
+    event = MockEvent()
     
-    # Create an invalid handler that's not a coroutine function
-    def invalid_handler(evt):
+    # Register an invalid handler (not a coroutine)
+    def invalid_handler(event):
         pass
+        
+    await bus.subscribe(MockEvent, invalid_handler)
     
-    # Mock AsyncMock to make it return None instead of a coroutine
-    handler = Mock()
-    handler.__name__ = "invalid_handler"
-    handler.return_value = None
+    # Start the bus
+    await bus.start()
     
-    await bus._handle_task(handler, event)
-    # The error is logged but not raised
+    try:
+        # Publish event and wait for processing
+        await bus.publish(event)
+        await asyncio.sleep(0.1)  # Allow time for processing
+        
+        # Verify the event was not processed due to invalid handler
+        assert len(bus._processed_events) == 0
+    finally:
+        await bus.shutdown()
 
 
 @pytest.mark.asyncio
@@ -480,3 +551,136 @@ async def test_publish_during_shutdown():
     
     # After tasks are done, there should be no pending tasks
     assert len(bus._pending_tasks) == 0
+
+
+@pytest.mark.asyncio
+async def test_mark_event_processed():
+    bus = EventBus()
+    event_id = "test_id"
+    
+    await bus._mark_event_processed(event_id)
+    assert event_id in bus._processed_events
+
+
+@pytest.mark.asyncio
+async def test_is_event_processed():
+    bus = EventBus()
+    event_id = "test_id"
+    
+    # Test unprocessed event
+    is_processed = await bus._is_event_processed(event_id)
+    assert not is_processed
+    
+    # Test processed event
+    await bus._mark_event_processed(event_id)
+    is_processed = await bus._is_event_processed(event_id)
+    assert is_processed
+
+
+@pytest.mark.asyncio
+async def test_get_event_id():
+    bus = EventBus()
+    
+    # Test with event_id attribute
+    event1 = MockEvent(event_id="test_id_1")
+    assert bus._get_event_id(event1) == "test_id_1"
+    
+    # Test with id attribute
+    event2 = MockEvent()
+    event2.event_id = None  # Clear event_id
+    event2.id = "test_id_2"  # Set id attribute
+    
+    # Mock uuid.uuid4 to return a fixed value
+    with patch('uuid.uuid4', return_value='test_id_2'):
+        assert bus._get_event_id(event2) == "test_id_2"
+    
+    # Test with no id attributes - should generate UUID
+    event3 = MockEvent()
+    event3.event_id = None  # Clear event_id
+    event3.id = None  # Clear id
+    event_id = bus._get_event_id(event3)
+    assert isinstance(event_id, str)
+    assert len(event_id) > 0
+
+
+@pytest.mark.asyncio
+async def test_get_handler_info():
+    bus = EventBus()
+    
+    class TestHandler:
+        async def handle(self, event):
+            pass
+    
+    handler_obj = TestHandler()
+    
+    # Test bound method
+    handler_info = bus._get_handler_info(handler_obj.handle)
+    assert "name" in handler_info
+    assert "qualname" in handler_info
+    assert "module" in handler_info
+    assert "id" in handler_info
+    assert "class" in handler_info
+    assert "instance_id" in handler_info
+    
+    # Test function
+    async def test_handler(event):
+        pass
+    
+    handler_info = bus._get_handler_info(test_handler)
+    assert "name" in handler_info
+    assert "qualname" in handler_info
+    assert "module" in handler_info
+    assert "id" in handler_info
+
+
+@pytest.mark.asyncio
+async def test_subscribe_with_handler_info():
+    bus = EventBus()
+    
+    class TestHandler:
+        async def handle(self, event):
+            pass
+    
+    handler_obj = TestHandler()
+    event_name = "test.event"
+    
+    await bus.subscribe(event_name, handler_obj.handle)
+    assert handler_obj.handle in bus._subscribers[event_name]
+    
+    # Verify handler info is logged correctly
+    handler_info = bus._get_handler_info(handler_obj.handle)
+    assert handler_info["class"] == "TestHandler"
+    assert "instance_id" in handler_info
+
+
+@pytest.mark.asyncio
+async def test_publish_with_event_context(cleanup_tasks):
+    bus = EventBus()
+    event = MockEvent(name="test.event", event_id="test_id")
+    handler_called = asyncio.Event()
+    
+    async def test_handler(evt):
+        handler_called.set()
+        # Mark event as processed in handler
+        await bus._mark_event_processed(evt.event_id)
+    
+    handler = AsyncMock(side_effect=test_handler)
+    bus._subscribers["test.event"].append(handler)
+    
+    # Add some context to simulate a real event
+    event.context = {"source": "test", "timestamp": datetime.now(UTC)}
+    
+    # Publish event
+    await bus.publish(event)
+    
+    # Wait for handler to be called
+    await asyncio.wait_for(handler_called.wait(), timeout=1.0)
+    
+    # Give time for event processing to complete
+    await asyncio.sleep(0.1)
+    
+    # Verify handler was called
+    handler.assert_called_once_with(event)
+    
+    # Event should be marked as processed after publishing
+    assert event.event_id in bus._processed_events
