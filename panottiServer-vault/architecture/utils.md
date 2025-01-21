@@ -9,33 +9,23 @@ The utils package provides common functionality, configurations, and helper func
 ```
 utils/
 ├── __init__.py
-├── logging_config.py    # Logging configuration and setup
-├── config.py           # Configuration management
-└── helpers/           # Helper functions
-    ├── __init__.py
-    ├── async_utils.py  # Async helper functions
-    └── validation.py   # Validation utilities
+├── logging_config.py     # Logging configuration and setup
+└── directory_sync.py    # Directory synchronization utilities
 ```
 
 ## Core Components
 
-### 1. Logging Configuration
+### 1. Logging Configuration (`logging_config.py`)
 - Structured logging setup
-- Log formatting
-- Log levels
+- Log formatting and levels
 - Context injection
+- Error tracking
 
-### 2. Configuration Management
-- Environment variables
-- Configuration files
-- Secrets management
-- Runtime configuration
-
-### 3. Helper Functions
-- Async utilities
-- Validation helpers
-- Type conversion
-- Common operations
+### 2. Directory Synchronization (`directory_sync.py`)
+- File system operations
+- Directory monitoring
+- Change detection
+- Synchronization utilities
 
 ## Design Principles
 

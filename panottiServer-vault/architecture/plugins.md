@@ -4,27 +4,27 @@
 
 The plugin system in PanottiServer is designed for extensibility and modularity. It uses a combination of YAML configuration and Python implementation files to define and manage plugins. The system supports dynamic loading, event-driven communication, and robust error handling.
 
-## Deprecation Notice
+## Event System Migration Complete
 
-The event system implementation in `app/plugins/events/` is deprecated and will be removed in future versions. All event-related functionality has been moved to `app.core.events`. The timeline for deprecation is:
+The event system has been fully migrated from `app/plugins/events/` to `app.core.events`. All event-related functionality is now centralized in the core package:
 
-1. Current Version:
-   - Deprecated warning added to `app/plugins/events/`
-   - All functionality moved to `app.core.events`
-   - Backward compatibility maintained through re-exports
-
-2. Next Major Version:
-   - Remove `app/plugins/events/` directory
-   - All imports must use `app.core.events`
-
-Please update your code to use the core implementation:
 ```python
-# Old (deprecated)
-from app.plugins.events import EventBus, EventContext, EventPriority
-
-# New (recommended)
-from app.core.events import EventBus, Event, EventContext, EventPriority
+# Use the core event system implementation
+from app.core.events import (
+    EventBus,
+    Event,
+    EventContext,
+    EventPriority,
+    EventHandler
+)
 ```
+
+The new implementation in `app.core.events` provides:
+- Robust async event processing
+- Event persistence and replay capabilities
+- Type-safe event models
+- Dedicated event handlers
+- Improved error handling and logging
 
 ## Plugin Structure
 

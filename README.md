@@ -405,7 +405,6 @@ Content-Type: application/json
 }
 ```
 
-
 ## Plugin Development
 
 To create a custom plugin:
@@ -426,39 +425,46 @@ your_plugin/
 
 ### System Architecture
 
-The application follows a modular, plugin-based architecture:
+The application follows a modular, event-driven architecture:
 
 ```
 app/
 ├── core/                     # Core system interfaces and protocols
 │   ├── __init__.py
-│   ├── events/              # Event system interfaces
-│   │   ├── __init__.py     # EventBus protocol
-│   │   └── models.py       # Core event models
-│   └── plugins/            # Plugin system core
-│       ├── __init__.py     # Plugin exports
-│       ├── interface.py    # Plugin base class and config
-│       ├── manager.py      # Plugin lifecycle management
-│       └── protocol.py     # Plugin protocols and interfaces
-├── plugins/                # Plugin implementations
+│   └── events/              # Event system implementation
+│       ├── __init__.py      # Event system exports
+│       ├── bus.py          # EventBus implementation
+│       ├── models.py       # Event models
+│       ├── persistence.py  # Event persistence
+│       ├── types.py       # Type definitions
+│       └── handlers/      # Event handlers
+├── models/                  # Domain models
 │   ├── __init__.py
-│   ├── example/           # Example plugin
-│   │   ├── __init__.py
-│   │   ├── plugin.py
-│   │   └── plugin.yaml
-│   └── ...                # Other plugins
+│   ├── database.py         # Database functionality
+│   └── recording/          # Recording-related models
+│       ├── __init__.py
+│       └── events.py       # Recording event models
+├── plugins/                # Plugin implementations
+│   ├── base.py            # Plugin base classes
+│   ├── manager.py         # Plugin management
+│   └── [plugin_name]/     # Individual plugins
+└── utils/                 # Utility functions
+    ├── logging_config.py  # Logging configuration
+    └── directory_sync.py # Directory synchronization
 ```
 
 ### Event System
 
-The event system uses a publish-subscribe pattern with the following components:
+The event system is now part of the core package and uses a publish-subscribe pattern with the following components:
 
-- **EventBus**: Central message broker that handles event distribution
+- **EventBus**: Robust asynchronous message broker for event distribution
+- **Event**: Base class for all system events
 - **EventContext**: Provides metadata and priority for each event
 - **EventPriority**: Defines priority levels (LOW, NORMAL, HIGH)
+- **EventHandler**: Base class for event handlers
+- **EventPersistence**: Event storage and replay capabilities
 
-Events are handled asynchronously, with error handling to ensure one failed handler doesn't affect others.
-
+Events are handled asynchronously with comprehensive error handling and logging.
 
 ### Creating a New Plugin
 
@@ -467,10 +473,15 @@ Events are handled asynchronously, with error handling to ensure one failed hand
 
 ```python
 from app.core.plugins import PluginBase, PluginConfig
+from app.core.events import EventBus, Event, EventHandler
 
 class MyPlugin(PluginBase):
-    def __init__(self, config: PluginConfig, event_bus=None):
+    def __init__(self, config: PluginConfig, event_bus: EventBus = None):
         super().__init__(config, event_bus)
+        
+    def handle_event(self, event: Event) -> None:
+        # Event handling logic here
+        pass
 ```
 
 ### Available Plugins
@@ -778,4 +789,4 @@ For complete terms of use and privacy policy, please visit:
 - Terms and Conditions: https://www.panotti.io/terms-and-conditions
 - Privacy Policy: https://www.panotti.io/privacy-policy
 
-© 2025 Pr0j3ctTodd Ltd. All rights reserved.
+ Copyright © 2025 Pr0j3ctTodd Ltd. All rights reserved.

@@ -10,9 +10,13 @@ PanottiServer is designed as a modular, event-driven system for audio processing
 app/
 ├── core/                     # Core system interfaces and protocols
 │   ├── __init__.py
-│   └── events/              # Event system interfaces
-│       ├── __init__.py      # EventBus protocol
-│       └── models.py        # Core event models
+│   └── events/              # Event system implementation
+│       ├── __init__.py      # Event system exports
+│       ├── bus.py          # EventBus implementation
+│       ├── models.py       # Event models
+│       ├── persistence.py  # Event persistence
+│       ├── types.py       # Type definitions
+│       └── handlers/      # Event handlers
 ├── models/                  # Domain models
 │   ├── __init__.py
 │   ├── database.py         # Database functionality
@@ -33,7 +37,11 @@ app/
    - Defines fundamental interfaces and protocols
    - Implements dependency inversion principle
    - Houses system-wide contracts and models
-   - Event system architecture
+   - Event system implementation with:
+     - Robust EventBus with async support
+     - Event persistence and replay
+     - Type-safe event models
+     - Dedicated event handlers
 
 2. **Plugin System**
    - Dynamic plugin discovery and loading
