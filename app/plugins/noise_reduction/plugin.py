@@ -569,6 +569,29 @@ class NoiseReductionPlugin(PluginBase):
                     event_data.context.metadata if hasattr(event_data, "context") else {}
                 )
 
+            # Log metadata presence and content
+            if not metadata:
+                logger.error(
+                    "No metadata found in event data",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "event_type": type(event_data).__name__,
+                    },
+                )
+            else:
+                logger.debug(
+                    "Metadata found in event data",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "metadata": metadata,
+                        "metadata_keys": list(metadata.keys()),
+                    },
+                )
+
             if not recording_id:
                 logger.error(
                     "No recording_id found in event data",
@@ -689,7 +712,33 @@ class NoiseReductionPlugin(PluginBase):
     ) -> Path | None:
         """Process the audio files for noise reduction."""
         try:
-            logger.debug(
+            # Log metadata status at start of processing
+            if event_metadata is None:
+                logger.warning(
+                    "No metadata provided for audio processing",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "system_path": system_audio_path,
+                        "mic_path": microphone_audio_path,
+                    },
+                )
+            else:
+                logger.debug(
+                    "Processing audio files with metadata",
+                    extra={
+                        "req_id": self._req_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "metadata": event_metadata,
+                        "metadata_keys": list(event_metadata.keys()),
+                        "system_path": system_audio_path,
+                        "mic_path": microphone_audio_path,
+                    },
+                )
+
+            logger.info(
                 "Processing audio files",
                 extra={
                     "req_id": self._req_id,

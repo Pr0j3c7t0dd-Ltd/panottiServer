@@ -179,6 +179,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 recording_id = event_data["recording_id"]
                 processed_mic_audio = event_data.get("output_path")
                 original_event = event_data.get("original_event", {})
+                metadata = event_data.get("metadata", {})
 
                 # Extract system audio path with better validation
                 original_sys_audio = event_data.get("system_audio_path")
@@ -222,7 +223,13 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 if processed_mic_audio is None and hasattr(event_data, "data"):
                     processed_mic_audio = event_data.data.get("output_path")
 
-                # Get original event data
+                # Get metadata and original event data
+                metadata = getattr(event_data, "metadata", {})
+                if metadata is None:
+                    metadata = {}
+                if hasattr(event_data, "data"):
+                    metadata = event_data.data.get("metadata", metadata)
+
                 original_event = None
                 if hasattr(event_data, "data"):
                     data = event_data.data
@@ -249,8 +256,98 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "processed_mic_audio": processed_mic_audio,
                     "original_sys_audio": original_sys_audio,
                     "original_event": str(original_event),
+                    "metadata": str(metadata),
                 },
             )
+
+            # Extract and validate metadata from both sources
+            combined_metadata = {}
+            
+            # Extract metadata from event_data
+            if metadata:
+                if isinstance(metadata, dict):
+                    combined_metadata.update(metadata)
+                else:
+                    logger.warning(
+                        "Metadata is not a dictionary",
+                        extra={
+                            "plugin": self.name,
+                            "metadata_type": type(metadata).__name__
+                        }
+                    )
+
+            # Extract metadata from original_event
+            if original_event:
+                if isinstance(original_event, dict):
+                    # Extract metadata directly from original_event
+                    event_metadata = original_event.get("metadata", {})
+                    if isinstance(event_metadata, dict):
+                        combined_metadata.update(event_metadata)
+                    
+                    # Extract recording metadata if available
+                    recording_data = original_event.get("recording", {})
+                    if isinstance(recording_data, dict):
+                        recording_metadata = recording_data.get("metadata", {})
+                        if isinstance(recording_metadata, dict):
+                            combined_metadata.update(recording_metadata)
+                else:
+                    logger.warning(
+                        "Original event is not a dictionary",
+                        extra={
+                            "plugin": self.name,
+                            "original_event_type": type(original_event).__name__
+                        }
+                    )
+
+            # Log metadata status
+            if not combined_metadata:
+                logger.error(
+                    "No valid metadata found in event",
+                    extra={
+                        "plugin": self.name,
+                        "recording_id": recording_id,
+                        "event_metadata": str(metadata),
+                        "original_event_metadata": str(original_event.get("metadata") if isinstance(original_event, dict) else None)
+                    }
+                )
+            else:
+                logger.debug(
+                    "Successfully extracted metadata",
+                    extra={
+                        "plugin": self.name,
+                        "recording_id": recording_id,
+                        "metadata_keys": list(combined_metadata.keys())
+                    }
+                )
+
+            # Extract speaker labels from combined metadata
+            mic_label = combined_metadata.get("microphone_label", "Microphone")
+            sys_label = combined_metadata.get("system_label", "System")
+
+            # Check for empty metadata in both places
+            if (metadata is None or (isinstance(metadata, dict) and not metadata)) and \
+               (original_event is None or (isinstance(original_event, dict) and not original_event)):
+                logger.error(
+                    "Empty metadata received in noise reduction event",
+                    extra={
+                        "plugin": self.name,
+                        "recording_id": recording_id,
+                        "event_data": str(event_data),
+                        "metadata": str(metadata),
+                        "original_event": str(original_event)
+                    }
+                )
+            else:
+                # Log non-empty metadata contents
+                metadata_content = metadata if metadata else original_event
+                logger.debug(
+                    "Processing noise reduction event with metadata",
+                    extra={
+                        "plugin": self.name,
+                        "recording_id": recording_id,
+                        "metadata_content": str(metadata_content)
+                    }
+                )
 
             if not recording_id or not processed_mic_audio:
                 logger.error(
@@ -335,9 +432,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             )
 
             # Get metadata and speaker labels
-            metadata = original_event.get("metadata", {}) if original_event else {}
-            mic_label = metadata.get("microphone_label", "Microphone")
-            sys_label = metadata.get("system_label", "System")
+            mic_label = combined_metadata.get("microphone_label", "Microphone")
+            sys_label = combined_metadata.get("system_label", "System")
 
             # Merge transcripts if we have both
             transcript_files = []
@@ -387,9 +483,25 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             return
 
         # Extract metadata and labels from original event
-        metadata = original_event.get("metadata", {}) if original_event else {}
-        speaker_label = original_event.get("speaker_label") if original_event else None
-        system_label = original_event.get("system_label") if original_event else None
+        combined_metadata = {}
+        
+        # Extract metadata from original event
+        if original_event and isinstance(original_event, dict):
+            # Direct metadata
+            event_metadata = original_event.get("metadata", {})
+            if isinstance(event_metadata, dict):
+                combined_metadata.update(event_metadata)
+            
+            # Recording metadata
+            recording_data = original_event.get("recording", {})
+            if isinstance(recording_data, dict):
+                recording_metadata = recording_data.get("metadata", {})
+                if isinstance(recording_metadata, dict):
+                    combined_metadata.update(recording_metadata)
+
+        # Get speaker labels and correlation ID
+        speaker_label = combined_metadata.get("microphone_label", "Microphone")
+        system_label = combined_metadata.get("system_label", "System")
         correlation_id = (
             original_event.get("context", {}).get("correlation_id", str(uuid.uuid4()))
             if original_event else str(uuid.uuid4())
@@ -415,7 +527,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                                 "system": system_label
                             }
                         },
-                        "metadata": metadata  # Include metadata in error event
+                        "metadata": combined_metadata  # Include metadata in error event
                     },
                     correlation_id=correlation_id,
                     source_plugin=self.name,
@@ -440,7 +552,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                                 "system": system_label
                             }
                         },
-                        "metadata": metadata  # Include metadata in completion event
+                        "metadata": combined_metadata  # Include metadata in completion event
                     },
                     correlation_id=correlation_id,
                     source_plugin=self.name,
