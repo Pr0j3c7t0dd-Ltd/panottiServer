@@ -534,6 +534,13 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     priority=EventPriority.NORMAL
                 )
             else:
+                # Create event context with metadata
+                context = EventContext(
+                    correlation_id=correlation_id,
+                    metadata=combined_metadata,
+                    source_plugin=self.name
+                )
+
                 event = Event.create(
                     name="transcription_local.completed",
                     data={
@@ -558,6 +565,9 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL
                 )
+
+                # Set the context with metadata
+                event.context = context
 
             await self.event_bus.publish(event)
 

@@ -444,10 +444,41 @@ Keep each bullet point concise but informative]
             logger.error("Failed to handle transcript event: %s", str(e), exc_info=True)
 
     async def handle_transcription_completed(self, event_data: Event) -> None:
-        """Handle transcription completed event"""
-        try:
-            event_id = str(uuid.uuid4())  # Generate new event ID
+        """Handle transcription completed event."""
+        event_id = getattr(event_data, "event_id", None) or str(uuid.uuid4())
+        recording_id = event_data.data.get("recording_id")
+        
+        # Get metadata from event context if available, otherwise from data
+        metadata = {}
+        if hasattr(event_data, "context") and hasattr(event_data.context, "metadata"):
+            metadata = event_data.context.metadata
+        else:
+            metadata = event_data.data.get("metadata", {})
 
+        # Log metadata presence and content
+        if not metadata:
+            logger.error(
+                "No metadata found in event data",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "event_type": type(event_data).__name__,
+                },
+            )
+        else:
+            logger.debug(
+                "Found metadata in event data",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "event_type": type(event_data).__name__,
+                    "metadata": metadata,
+                },
+            )
+
+        try:
             logger.info(
                 "Processing transcription completed event",
                 extra={
@@ -482,11 +513,6 @@ Keep each bullet point concise but informative]
                 return
 
             # Generate meeting notes
-            recording_id = None
-            if hasattr(event_data, "data") and isinstance(event_data.data, dict):
-                recording_data = event_data.data.get("recording", {})
-                recording_id = recording_data.get("recording_id")
-
             output_path = await self._generate_meeting_notes(
                 transcript_path, event_id, recording_id
             )
@@ -533,10 +559,12 @@ Keep each bullet point concise but informative]
                             }
                         }
                         # Include metadata in completion event data
-                        if isinstance(event_data, dict):
+                        if hasattr(event_data, "context") and hasattr(event_data.context, "metadata"):
+                            completion_data["metadata"] = event_data.context.metadata
+                        elif isinstance(event_data, dict):
                             completion_data["metadata"] = event_data.get("metadata", {})
                         else:
-                            completion_data["metadata"] = getattr(event_data.context, "metadata", {}) if hasattr(event_data, "context") else {}
+                            completion_data["metadata"] = event_data.data.get("metadata", {})
                         
                         completion_event = Event.create(
                             name="meeting_notes_local.completed",

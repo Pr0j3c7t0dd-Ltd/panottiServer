@@ -565,9 +565,7 @@ class NoiseReductionPlugin(PluginBase):
                 recording_id = event_data.data.get("recording_id")
                 mic_path = event_data.data.get("microphone_audio_path")
                 sys_path = event_data.data.get("system_audio_path")
-                metadata = (
-                    event_data.context.metadata if hasattr(event_data, "context") else {}
-                )
+                metadata = event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
 
             # Log metadata presence and content
             if not metadata:

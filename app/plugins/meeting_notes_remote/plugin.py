@@ -146,6 +146,33 @@ class MeetingNotesRemotePlugin(PluginBase):
 
     async def handle_transcription_completed(self, event_data: Event | RecordingEvent) -> None:
         """Handle transcription completed event"""
+        event_id = event_data.event_id
+        recording_id = event_data.data.get("recording_id")
+        metadata = event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
+
+        # Log metadata presence and content
+        if not metadata:
+            logger.error(
+                "No metadata found in event data",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "event_type": type(event_data).__name__,
+                },
+            )
+        else:
+            logger.debug(
+                "Found metadata in event data",
+                extra={
+                    "req_id": event_id,
+                    "plugin_name": self.name,
+                    "recording_id": recording_id,
+                    "event_type": type(event_data).__name__,
+                    "metadata": metadata,
+                },
+            )
+
         try:
             # Get transcript path
             transcript_path = await self._get_transcript_path(event_data)
