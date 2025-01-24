@@ -405,32 +405,36 @@ Keep each bullet point concise but informative]
                 # Emit error event with preserved chain
                 error_data = {
                     # Preserve original event data
-                    "recording": original_event.data.get("recording", {}),
-                    "noise_reduction": original_event.data.get("noise_reduction", {}),
-                    "transcription": original_event.data.get("transcription", {}),
+                    "recording": original_event.data.get("recording", {}) if hasattr(original_event, "data") else {},
+                    "noise_reduction": original_event.data.get("noise_reduction", {}) if hasattr(original_event, "data") else {},
+                    "transcription": original_event.data.get("transcription", {}) if hasattr(original_event, "data") else {},
                     # Add current event data
-                    "meeting_notes_local": {
+                    "meeting_notes": {
                         "status": "error",
                         "timestamp": dt.now(UTC).isoformat(),
                         "recording_id": recording_id,
-                        "error": str(e)
+                        "error": str(e),
+                        "config": {
+                            "model": self.model,
+                            "num_ctx": self.num_ctx,
+                            "timeout": self.timeout,
+                            "max_concurrent_tasks": self.max_concurrent_tasks
+                        }
                     },
-                    # Include metadata in error event - handle both dict and Event objects
-                    "metadata": (
-                        original_event.get("metadata", {})
-                        if isinstance(original_event, dict)
-                        else getattr(original_event.context, "metadata", {})
-                        if hasattr(original_event, "context")
-                        else {}
-                    )
+                    "metadata": original_event.data.get("metadata", {}) if hasattr(original_event, "data") else {},
+                    "context": {
+                        "correlation_id": getattr(original_event, "correlation_id", str(uuid.uuid4())),
+                        "source_plugin": self.name,
+                        "metadata": original_event.data.get("metadata", {}) if hasattr(original_event, "data") else {}
+                    }
                 }
                 
                 error_event = Event.create(
                     name="meeting_notes_local.error",
                     data=error_data,
-                    correlation_id=getattr(original_event.context, "correlation_id", str(uuid.uuid4())),
+                    correlation_id=getattr(original_event, "correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL,
+                    priority=EventPriority.NORMAL
                 )
                 await self.event_bus.publish(error_event)
 
@@ -548,49 +552,43 @@ Keep each bullet point concise but informative]
                 # Emit completion event
                 if self.event_bus:
                     try:
+                        # Extract metadata
+                        metadata = event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
+
                         completion_data = {
-                            "recording": event_data.data.get("recording", {}),
-                            "noise_reduction": event_data.data.get("noise_reduction", {}),
-                            "transcription": event_data.data.get("transcription", {}),
-                            "meeting_notes_local": {
-                                "status": "completed",
-                                "timestamp": dt.now(UTC).isoformat(),
-                                "recording_id": recording_id,
-                                "output_path": str(output_path),
-                                "notes_path": str(output_path),
-                                "input_paths": {
-                                    "transcript": str(transcript_path),
-                                },
-                                "speaker_label": event_data.data.get("speaker_label"),
-                                "system_label": event_data.data.get("system_label")
-                            },
+                            "recording": event_data.data.get("recording", {}) if hasattr(event_data, "data") else {},
+                            "noise_reduction": event_data.data.get("noise_reduction", {}) if hasattr(event_data, "data") else {},
+                            "transcription": event_data.data.get("transcription", {}) if hasattr(event_data, "data") else {},
                             "meeting_notes": {
                                 "status": "completed",
                                 "timestamp": dt.now(UTC).isoformat(),
                                 "recording_id": recording_id,
-                                "output_path": str(output_path),
                                 "notes_path": str(output_path),
                                 "input_paths": {
                                     "transcript": str(transcript_path),
                                 },
+                                "config": {
+                                    "model": self.model,
+                                    "num_ctx": self.num_ctx,
+                                    "timeout": self.timeout,
+                                    "max_concurrent_tasks": self.max_concurrent_tasks
+                                }
+                            },
+                            "metadata": metadata,
+                            "context": {
+                                "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                                "source_plugin": self.name,
+                                "metadata": metadata
                             }
                         }
-                        # Include metadata in completion event data
-                        if hasattr(event_data, "context") and hasattr(event_data.context, "metadata"):
-                            completion_data["metadata"] = event_data.context.metadata
-                        elif isinstance(event_data, dict):
-                            completion_data["metadata"] = event_data.get("metadata", {})
-                        else:
-                            completion_data["metadata"] = event_data.data.get("metadata", {})
                         
                         completion_event = Event.create(
                             name="meeting_notes_local.completed",
                             data=completion_data,
-                            correlation_id=getattr(event_data, "correlation_id", None) or str(uuid.uuid4()),
-                            source_plugin=self.__class__.__name__,
-                            priority=EventPriority.NORMAL,
+                            correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                            source_plugin=self.name,
+                            priority=EventPriority.NORMAL
                         )
-
                         await self.event_bus.publish(completion_event)
                         logger.info(
                             "Published meeting notes completion event",

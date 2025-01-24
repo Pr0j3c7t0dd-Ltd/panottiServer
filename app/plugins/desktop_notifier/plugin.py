@@ -153,6 +153,9 @@ class DesktopNotifierPlugin(PluginBase):
                 },
             )
 
+            # Extract metadata
+            metadata = data.get("metadata", {})
+
             # Send notification
             await self._send_notification(recording_id, output_path)
 
@@ -190,17 +193,23 @@ class DesktopNotifierPlugin(PluginBase):
                         "desktop_notification": {
                             "status": "completed",
                             "timestamp": datetime.now(UTC).isoformat(),
-                            "notification_type": "terminal-notifier",
-                            "settings": {"auto_open_notes": auto_open},
                             "recording_id": recording_id,
-                            "output_path": output_path,
+                            "notes_path": output_path,
+                            "notification_sent": True,
+                            "config": {
+                                "auto_open": self.get_config("auto_open", True)
+                            }
                         },
-                        # Preserve metadata
-                        "metadata": data.get("metadata", {}) or data.get("data", {}).get("metadata", {})
+                        "metadata": metadata,
+                        "context": {
+                            "correlation_id": data.get("correlation_id", str(uuid.uuid4())),
+                            "source_plugin": self.name,
+                            "metadata": metadata
+                        }
                     },
-                    correlation_id=getattr(event_data, "correlation_id", None) or data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                    correlation_id=data.get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL,
+                    priority=EventPriority.NORMAL
                 )
                 logger.debug(
                     "Publishing completion event",
@@ -232,24 +241,29 @@ class DesktopNotifierPlugin(PluginBase):
                 error_event = Event.create(
                     name="desktop_notification.error",
                     data={
-                        # Preserve original event data
                         "recording": data.get("data", {}).get("recording", {}),
                         "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
                         "transcription": data.get("data", {}).get("transcription", {}),
                         "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
-                        # Add current event data
                         "desktop_notification": {
                             "status": "error",
                             "timestamp": datetime.now(UTC).isoformat(),
+                            "recording_id": recording_id,
                             "error": str(e),
-                            "recording_id": recording_id
+                            "config": {
+                                "auto_open": self.get_config("auto_open", True)
+                            }
                         },
-                        # Preserve metadata
-                        "metadata": data.get("metadata", {}) or data.get("data", {}).get("metadata", {})
+                        "metadata": metadata if "metadata" in locals() else {},
+                        "context": {
+                            "correlation_id": data.get("correlation_id", str(uuid.uuid4())),
+                            "source_plugin": self.name,
+                            "metadata": metadata if "metadata" in locals() else {}
+                        }
                     },
-                    correlation_id=getattr(event_data, "correlation_id", None) or data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                    correlation_id=data.get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL,
+                    priority=EventPriority.NORMAL
                 )
                 await self.event_bus.publish(error_event)
 

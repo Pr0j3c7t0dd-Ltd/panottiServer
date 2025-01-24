@@ -212,26 +212,39 @@ class MeetingNotesRemotePlugin(PluginBase):
 
             if self.event_bus:
                 try:
+                    # Extract metadata
+                    metadata = event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
+
                     completion_event = Event.create(
                         name="meeting_notes_remote.completed",
                         data={
                             "recording": event_data.data.get("recording", {}) if hasattr(event_data, "data") else {},
                             "noise_reduction": event_data.data.get("noise_reduction", {}) if hasattr(event_data, "data") else {},
                             "transcription": event_data.data.get("transcription", {}) if hasattr(event_data, "data") else {},
-                            "meeting_notes_remote": {
+                            "meeting_notes": {
                                 "status": "completed",
-                                "timestamp": dt.now(UTC).isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                                 "recording_id": recording_id,
-                                "output_path": str(output_path),
                                 "notes_path": str(output_path),
                                 "input_paths": {
                                     "transcript": str(transcript_path),
                                 },
+                                "config": {
+                                    "provider": self.provider,
+                                    "model": self.model,
+                                    "timeout": self.timeout,
+                                    "max_concurrent_tasks": self.max_concurrent_tasks
+                                }
                             },
-                            "metadata": metadata,  # Pass through the metadata
+                            "metadata": metadata,
+                            "context": {
+                                "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                                "source_plugin": self.name,
+                                "metadata": metadata
+                            }
                         },
+                        correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
                         source_plugin=self.name,
-                        correlation_id=getattr(event_data.context, "correlation_id", str(uuid.uuid4())) if hasattr(event_data, "context") else str(uuid.uuid4()),
                         priority=EventPriority.NORMAL
                     )
 
@@ -284,15 +297,42 @@ class MeetingNotesRemotePlugin(PluginBase):
                             "recording_id": recording_id,
                             "error": str(e)
                         },
-                        "metadata": metadata,  # Pass through the metadata
+                        "metadata": event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {},
+                        "context": {
+                            "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                            "source_plugin": self.name,
+                            "metadata": event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
+                        }
                     }
 
                     error_event = Event.create(
                         name="meeting_notes_remote.error",
-                        data=error_data,
-                        correlation_id=getattr(event_data.context, "correlation_id", None) or str(uuid.uuid4()),
+                        data={
+                            "recording": event_data.data.get("recording", {}) if hasattr(event_data, "data") else {},
+                            "noise_reduction": event_data.data.get("noise_reduction", {}) if hasattr(event_data, "data") else {},
+                            "transcription": event_data.data.get("transcription", {}) if hasattr(event_data, "data") else {},
+                            "meeting_notes": {
+                                "status": "error",
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "recording_id": recording_id,
+                                "error": str(e),
+                                "config": {
+                                    "provider": self.provider,
+                                    "model": self.model,
+                                    "timeout": self.timeout,
+                                    "max_concurrent_tasks": self.max_concurrent_tasks
+                                }
+                            },
+                            "metadata": event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {},
+                            "context": {
+                                "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                                "source_plugin": self.name,
+                                "metadata": event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
+                            }
+                        },
+                        correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
                         source_plugin=self.name,
-                        priority=EventPriority.NORMAL,
+                        priority=EventPriority.NORMAL
                     )
                     await self.event_bus.publish(error_event)
                 except Exception as e:
@@ -303,6 +343,16 @@ class MeetingNotesRemotePlugin(PluginBase):
                             "error": str(e),
                         },
                     )
+            else:
+                logger.warning(
+                    "No event bus available to publish error event",
+                    extra={
+                        "plugin_name": self.name,
+                        "event_name": "meeting_notes_remote.error",
+                        "recording_id": recording_id,
+                        "error": str(e),
+                    },
+                )
 
     async def _get_transcript_path(self, event: Event | RecordingEvent) -> Path | None:
         """Extract transcript path from event."""

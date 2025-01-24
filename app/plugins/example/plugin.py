@@ -111,26 +111,31 @@ class ExamplePlugin(PluginBase):
             # Example processing
             debug_mode = self.get_config("debug_mode", False)
             example_setting = self.get_config("example_setting")
+            recording_id = event_data.get("data", {}).get("recording", {}).get("id")
 
             # Example of emitting a completion event with preserved event chain
             if self.event_bus:
                 completion_event = Event.create(
                     name="example.completed",
                     data={
-                        # Preserve original event data
                         "recording": event_data.get("data", {}).get("recording", {}),
-                        # Add current event data
                         "example": {
                             "status": "completed",
                             "timestamp": datetime.now(UTC).isoformat(),
-                            "debug_mode": debug_mode,
-                            "example_setting": example_setting,
-                            "event_id": getattr(context, "event_id", None)
+                            "recording_id": recording_id,
+                            "config": {
+                                "debug_mode": debug_mode,
+                                "example_setting": example_setting
+                            }
                         },
-                        # Preserve metadata
-                        "metadata": event_data.get("metadata", {}) or event_data.get("data", {}).get("metadata", {})
+                        "metadata": event_data.get("data", {}).get("metadata", {}),
+                        "context": {
+                            "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                            "source_plugin": self.name,
+                            "metadata": event_data.get("data", {}).get("metadata", {})
+                        }
                     },
-                    correlation_id=getattr(context, "correlation_id", None) or str(uuid.uuid4()),
+                    correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL,
                 )

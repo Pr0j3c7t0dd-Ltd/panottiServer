@@ -176,32 +176,65 @@ class AudioTranscriptionLocalPlugin(PluginBase):
 
             # Handle both dictionary and object access patterns
             if isinstance(event_data, dict):
-                recording_id = event_data["recording_id"]
-                processed_mic_audio = event_data.get("output_path")
-                original_event = event_data.get("original_event", {})
-                metadata = event_data.get("metadata", {})
+                data = event_data.get("data", {})
+                noise_reduction_data = data.get("noise_reduction", {})
+                recording_data = data.get("recording", {})
+                metadata = data.get("metadata", {})
+                context = data.get("context", {})
 
-                # Extract system audio path with better validation
-                original_sys_audio = event_data.get("system_audio_path")
-                
-                # If not found directly, try getting from original event
-                if not original_sys_audio and original_event:
-                    if isinstance(original_event, dict):
-                        recording = original_event.get("recording", {})
-                        if isinstance(recording, dict):
-                            audio_paths = recording.get("audio_paths", {})
-                            if isinstance(audio_paths, dict):
-                                original_sys_audio = audio_paths.get("system")
+                # Combine metadata from both sources
+                combined_metadata = {}
+                combined_metadata.update(metadata)
+                combined_metadata.update(context.get("metadata", {}))
 
-                # Validate paths exist
-                if not processed_mic_audio or not os.path.exists(processed_mic_audio):
+                # Get recording ID and audio paths
+                recording_id = noise_reduction_data.get("recording_id")
+                processed_mic_audio = noise_reduction_data.get("output_path")
+                original_sys_audio = noise_reduction_data.get("system_audio_path")
+
+                # Get speaker labels from metadata
+                speaker_labels = combined_metadata.get("speaker_labels", {})
+                if not speaker_labels and recording_data:
+                    speaker_labels = {
+                        "microphone": combined_metadata.get("microphoneLabel"),
+                        "system": combined_metadata.get("systemLabel")
+                    }
+
+                logger.debug(
+                    "Processing event data",
+                    extra={
+                        "plugin": self.name,
+                        "recording_id": recording_id,
+                        "processed_mic_audio": processed_mic_audio,
+                        "original_sys_audio": original_sys_audio,
+                        "speaker_labels": speaker_labels,
+                        "original_event": str(event_data),
+                        "metadata": json.dumps(combined_metadata),
+                    },
+                )
+
+                # Validate required data
+                if not recording_id or not processed_mic_audio:
                     logger.error(
-                        "Microphone audio file not found",
+                        "Missing required data in noise reduction event",
                         extra={
                             "plugin": self.name,
-                            "mic_audio_path": processed_mic_audio,
-                            "event_data": str(event_data)
-                        }
+                            "recording_id": recording_id,
+                            "processed_mic_audio": processed_mic_audio,
+                            "original_sys_audio": original_sys_audio,
+                            "event_data": str(event_data),
+                        },
+                    )
+                    return
+
+                # Validate audio files exist
+                if not os.path.exists(processed_mic_audio):
+                    logger.error(
+                        "Processed microphone audio file not found",
+                        extra={
+                            "plugin": self.name,
+                            "processed_mic_audio": processed_mic_audio,
+                        },
                     )
                     return
 
@@ -210,8 +243,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                         "System audio file not found",
                         extra={
                             "plugin": self.name,
-                            "system_audio_path": original_sys_audio
-                        }
+                            "original_sys_audio": original_sys_audio,
+                        },
                     )
                     original_sys_audio = None
 
@@ -487,25 +520,34 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         
         # Extract metadata from original event
         if original_event and isinstance(original_event, dict):
-            # Direct metadata
+            # Direct metadata from event
             event_metadata = original_event.get("metadata", {})
             if isinstance(event_metadata, dict):
                 combined_metadata.update(event_metadata)
             
-            # Recording metadata
-            recording_data = original_event.get("recording", {})
-            if isinstance(recording_data, dict):
-                recording_metadata = recording_data.get("metadata", {})
-                if isinstance(recording_metadata, dict):
-                    combined_metadata.update(recording_metadata)
+            # Context metadata
+            context = original_event.get("context", {})
+            if isinstance(context, dict):
+                context_metadata = context.get("metadata", {})
+                if isinstance(context_metadata, dict):
+                    combined_metadata.update(context_metadata)
+
+        # Log metadata for debugging
+        logger.debug(
+            "Processing metadata from event",
+            extra={
+                "plugin": self.name,
+                "recording_id": recording_id,
+                "event_metadata": str(event_metadata),
+                "original_event_metadata": str(original_event),
+                "combined_metadata": str(combined_metadata)
+            }
+        )
 
         # Get speaker labels and correlation ID
-        speaker_label = combined_metadata.get("microphone_label", "Microphone")
-        system_label = combined_metadata.get("system_label", "System")
-        correlation_id = (
-            original_event.get("context", {}).get("correlation_id", str(uuid.uuid4()))
-            if original_event else str(uuid.uuid4())
-        )
+        speaker_label = combined_metadata.get("microphoneLabel", "Microphone")
+        system_label = combined_metadata.get("systemLabel", "System")
+        correlation_id = str(original_event.get("correlation_id", "")) if original_event else str(uuid.uuid4())
 
         try:
             if error:
@@ -518,29 +560,28 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                             "status": "error",
                             "timestamp": datetime.now(UTC).isoformat(),
                             "recording_id": recording_id,
-                            "output_file": output_file,
                             "error": error,
-                            "model": self.get_config("model", "base"),
-                            "language": self.get_config("language", "en"),
-                            "speaker_labels": {
-                                "microphone": speaker_label,
-                                "system": system_label
+                            "config": {
+                                "model": self.get_config("model", "base"),
+                                "language": self.get_config("language", "en"),
+                                "speaker_labels": {
+                                    "microphone": speaker_label,
+                                    "system": system_label
+                                }
                             }
                         },
-                        "metadata": combined_metadata  # Include metadata in error event
+                        "metadata": combined_metadata,
+                        "context": {
+                            "correlation_id": correlation_id,
+                            "source_plugin": self.name,
+                            "metadata": combined_metadata
+                        }
                     },
                     correlation_id=correlation_id,
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL
                 )
             else:
-                # Create event context with metadata
-                context = EventContext(
-                    correlation_id=correlation_id,
-                    metadata=combined_metadata,
-                    source_plugin=self.name
-                )
-
                 event = Event.create(
                     name="transcription_local.completed",
                     data={
@@ -552,22 +593,26 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                             "recording_id": recording_id,
                             "output_file": output_file,
                             "transcript_paths": transcript_paths,
-                            "model": self.get_config("model", "base"),
-                            "language": self.get_config("language", "en"),
-                            "speaker_labels": {
-                                "microphone": speaker_label,
-                                "system": system_label
+                            "config": {
+                                "model": self.get_config("model", "base"),
+                                "language": self.get_config("language", "en"),
+                                "speaker_labels": {
+                                    "microphone": speaker_label,
+                                    "system": system_label
+                                }
                             }
                         },
-                        "metadata": combined_metadata  # Include metadata in completion event
+                        "metadata": combined_metadata,
+                        "context": {
+                            "correlation_id": correlation_id,
+                            "source_plugin": self.name,
+                            "metadata": combined_metadata
+                        }
                     },
                     correlation_id=correlation_id,
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL
                 )
-
-                # Set the context with metadata
-                event.context = context
 
             await self.event_bus.publish(event)
 

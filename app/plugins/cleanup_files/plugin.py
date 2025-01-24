@@ -223,7 +223,7 @@ class CleanupFilesPlugin(PluginBase):
                 return
 
             # Extract metadata
-            metadata = data.get("metadata", {}) or data.get("data", {}).get("metadata", {})
+            metadata = data.get("metadata", {})
 
             # Clean up files
             cleaned_files = await self._cleanup_files(recording_id)
@@ -240,20 +240,23 @@ class CleanupFilesPlugin(PluginBase):
                         "desktop_notification": data.get("data", {}).get("desktop_notification", {}),
                         "cleanup_files": {
                             "status": "completed",
-                            "timestamp": datetime.now().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "recording_id": recording_id,
                             "cleaned_files": cleaned_files,
-                            "include_dirs": [str(d) for d in self.include_dirs],
-                            "exclude_dirs": [str(d) for d in self.exclude_dirs],
-                            "cleanup_delay": self.cleanup_delay
+                            "config": {
+                                "include_dirs": [str(d) for d in self.include_dirs],
+                                "exclude_dirs": [str(d) for d in self.exclude_dirs],
+                                "cleanup_delay": self.cleanup_delay
+                            }
                         },
                         "metadata": metadata,
                         "context": {
-                            "correlation_id": data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                            "correlation_id": data.get("correlation_id", str(uuid.uuid4())),
                             "source_plugin": self.name,
                             "metadata": metadata
                         }
                     },
-                    correlation_id=data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                    correlation_id=data.get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL
                 )
@@ -293,27 +296,30 @@ class CleanupFilesPlugin(PluginBase):
                 error_event = Event.create(
                     name="cleanup_files.error",
                     data={
-                        "recording": data.get("recording", {}) if data else {},
-                        "noise_reduction": data.get("noise_reduction", {}) if data else {},
-                        "transcription": data.get("transcription", {}) if data else {},
-                        "meeting_notes": data.get("meeting_notes", {}) if data else {},
-                        "desktop_notification": data.get("desktop_notification", {}) if data else {},
+                        "recording": data.get("data", {}).get("recording", {}) if data else {},
+                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}) if data else {},
+                        "transcription": data.get("data", {}).get("transcription", {}) if data else {},
+                        "meeting_notes": data.get("data", {}).get("meeting_notes", {}) if data else {},
+                        "desktop_notification": data.get("data", {}).get("desktop_notification", {}) if data else {},
                         "cleanup_files": {
                             "status": "error",
-                            "timestamp": datetime.now().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "recording_id": recording_id if "recording_id" in locals() else "unknown",
                             "error": str(e),
-                            "include_dirs": [str(d) for d in self.include_dirs],
-                            "exclude_dirs": [str(d) for d in self.exclude_dirs],
-                            "cleanup_delay": self.cleanup_delay
+                            "config": {
+                                "include_dirs": [str(d) for d in self.include_dirs],
+                                "exclude_dirs": [str(d) for d in self.exclude_dirs],
+                                "cleanup_delay": self.cleanup_delay
+                            }
                         },
-                        "metadata": metadata,
+                        "metadata": metadata if "metadata" in locals() else {},
                         "context": {
-                            "correlation_id": data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                            "correlation_id": data.get("correlation_id", str(uuid.uuid4())),
                             "source_plugin": self.name,
-                            "metadata": metadata
+                            "metadata": metadata if "metadata" in locals() else {}
                         }
                     },
-                    correlation_id=data.get("context", {}).get("correlation_id", str(uuid.uuid4())),
+                    correlation_id=data.get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL
                 )
