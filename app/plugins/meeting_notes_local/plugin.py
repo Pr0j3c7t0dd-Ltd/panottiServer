@@ -273,7 +273,8 @@ Keep each bullet point concise but informative]
                         },
                     )
 
-                    return cast(str, result.get("response", ""))
+                    # Clean and return the response
+                    return cast(str, self._clean_llm_response(result.get("response", "")))
 
         except aiohttp.ClientError as e:
             logger.error(
@@ -301,6 +302,22 @@ Keep each bullet point concise but informative]
                 exc_info=True,
             )
             return f"Error generating meeting notes: {e}"
+
+    def _clean_llm_response(self, response: str) -> str:
+        """Clean the LLM response by removing thinking tags and markdown code blocks."""
+        # Remove thinking tags and their content
+        while "<think>" in response and "</think>" in response:
+            start = response.find("<think>")
+            end = response.find("</think>") + len("</think>")
+            response = response[:start] + response[end:]
+        
+        # Remove markdown code blocks
+        response = response.replace("```markdown", "").replace("```", "")
+        
+        # Trim whitespace
+        response = response.strip()
+        
+        return response
 
     async def _process_transcript(
         self, recording_id: str, transcript_text: str, original_event: Event

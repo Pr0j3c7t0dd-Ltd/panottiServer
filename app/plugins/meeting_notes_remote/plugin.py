@@ -394,6 +394,22 @@ class MeetingNotesRemotePlugin(PluginBase):
             )
             raise
 
+    def _clean_llm_response(self, response: str) -> str:
+        """Clean the LLM response by removing thinking tags and markdown code blocks."""
+        # Remove thinking tags and their content
+        while "<think>" in response and "</think>" in response:
+            start = response.find("<think>")
+            end = response.find("</think>") + len("</think>")
+            response = response[:start] + response[end:]
+        
+        # Remove markdown code blocks
+        response = response.replace("```markdown", "").replace("```", "")
+        
+        # Trim whitespace
+        response = response.strip()
+        
+        return response
+
     async def _generate_notes_with_llm(
         self, transcript: str, event_id: str
     ) -> str | None:
@@ -507,7 +523,10 @@ Keep each bullet point concise but informative]
                         ],
                         temperature=0,
                     )
-                    return response.choices[0].message.content
+                    content = response.choices[0].message.content
+                    if not content:
+                        raise ValueError("Received empty response from OpenAI")
+                    return self._clean_llm_response(content)
 
                 elif self.provider == "anthropic":
                     response = await self.client.messages.create(  # type: ignore
@@ -517,14 +536,14 @@ Keep each bullet point concise but informative]
                         system=self.SYSTEM_PROMPT,
                         temperature=0,
                     )
-                    return response.content[0].text  # type: ignore
+                    return self._clean_llm_response(response.content[0].text)  # type: ignore
 
                 elif self.provider == "google":
                     response = await self.client.generate_content_async(  # type: ignore
                         f"{self.SYSTEM_PROMPT}\n\n{user_prompt}",
                         generation_config=genai.types.GenerationConfig(temperature=0),
                     )
-                    return response.text
+                    return self._clean_llm_response(response.text)
 
             except Exception as e:
                 logger.error(
