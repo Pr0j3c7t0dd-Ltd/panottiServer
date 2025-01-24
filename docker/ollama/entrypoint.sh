@@ -12,8 +12,8 @@ done
 echo "Ollama is ready!"
 
 # Pull the model
-echo "Pulling llama3.1:latest model..."
-ollama pull llama3.1:latest
+echo "Pulling deepseek-r1:8b model..."
+ollama pull deepseek-r1:8b
 
 # Keep the container running
 wait 

@@ -9,7 +9,7 @@ config:
   # - For Docker on macOS/Windows using host Ollama: "http://host.docker.internal:11434/api/generate"
   # - For Docker on Linux using host Ollama: "http://172.17.0.1:11434/api/generate"
   ollama_url: "http://localhost:11434/api/generate"
-  model_name: "llama3.1:latest"
+  model_name: "deepseek-r1:8b"
   num_ctx: 131072
   max_concurrent_tasks: 4
   timeout: 900

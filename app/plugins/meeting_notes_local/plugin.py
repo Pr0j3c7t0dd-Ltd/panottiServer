@@ -30,7 +30,7 @@ class MeetingNotesLocalPlugin(PluginBase):
 
         # Default values
         self.ollama_url = "http://localhost:11434/api/generate"
-        self.model = "llama3.1:latest"
+        self.model = "deepseek-r1:8b"
         self.output_dir = Path("data/meeting_notes_local")
         self.num_ctx = 128000
         self.max_concurrent_tasks = 4
