@@ -454,7 +454,7 @@ Please ensure the notes are clear, concise, and well-organized using markdown fo
 
 IMPORTANT:
 1. Do not use placeholders - extract and use the actual values from the METADATA JSON and the transcript.
-2. For attendees, use ONLY the email addresses or names from event.attendees in the METADATA JSON, not the speakers list.
+2. For attendees, use ONLY the email addresses or names from eventAttendees in the METADATA JSON, not the speakers list.
 3. Don't include any other information in the notes, just the meeting notes.
 
 START Transcript:
@@ -475,12 +475,12 @@ VALIDATION REQUIREMENTS:
 
 Create meeting notes with the following sections:
 
-# [Meeting Title (Use the exact meeting title from the METADATA JSON event.title field)]
+# [Meeting Title (Use the exact meeting title from the METADATA JSON eventTitle field, if not available, create a short, descriptive title based on the transcription content)]
 
 ## Meeting Information
-- Date: [Format EXACTLY as: "January 1, 2025 at 10:00 AM"]
-- Duration: [Format EXACTLY as: "X hours Y minutes"]
-- Attendees: [List ONLY the email addresses from event.attendees in the METADATA JSON, one per line with a hyphen]
+- Date: [Use the exact meeting title from the METADATA JSON recordingStarted field, Format EXACTLY as: "January 1, 2025 at 10:00 AM"]
+- Duration: [Use the last timesamp in the transcript to determine the duration, Format EXACTLY as: "X hours Y minutes"]
+- Attendees: [List ONLY the email addresses from eventAttendees in the METADATA JSON, one per line with a hyphen. If no eventAttendees are available, use "Unknown"]
 
 ## Executive Summary
 [Provide a brief, high-level overview of the meeting's purpose and key outcomes in 2-3 sentences]
