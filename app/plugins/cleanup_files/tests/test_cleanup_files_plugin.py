@@ -94,7 +94,10 @@ class TestCleanupFilesPlugin(BasePluginTest):
             event = publish_call[0][0]
             assert isinstance(event, Event)
             assert event.name == "cleanup_files.completed"
-            assert event.data["cleanup_files"]["cleaned_files"] == ["file1.txt", "file2.txt"]
+            assert event.data["cleanup_files"]["cleaned_files"] == [
+                "file1.txt",
+                "file2.txt",
+            ]
             assert event.data["cleanup_files"]["status"] == "completed"
             assert isinstance(event.data["cleanup_files"]["timestamp"], str)
             assert len(event.data["cleanup_files"]["config"]["include_dirs"]) == 2

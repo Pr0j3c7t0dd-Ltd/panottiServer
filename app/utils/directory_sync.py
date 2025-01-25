@@ -235,7 +235,7 @@ class DirectorySync:
             logger.error(
                 "Error stopping directory monitoring",
                 extra={"error": str(e)},
-                exc_info=True
+                exc_info=True,
             )
             raise
 

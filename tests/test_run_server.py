@@ -1,9 +1,7 @@
-import os
 import pathlib
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-from dotenv import load_dotenv
 
 import run_server
 
@@ -26,11 +24,11 @@ def test_main_with_env_vars(mock_env_vars):
     """Test main function with environment variables set"""
     with patch("uvicorn.run") as mock_run:
         run_server.main()
-        
+
         base_dir = pathlib.Path(run_server.__file__).parent
         expected_ssl_keyfile = str(base_dir / "ssl" / "key.pem")
         expected_ssl_certfile = str(base_dir / "ssl" / "cert.pem")
-        
+
         mock_run.assert_called_once_with(
             "app.main:app",
             host="0.0.0.0",
@@ -45,11 +43,11 @@ def test_main_with_defaults(mock_env_vars_default):
     """Test main function with default values"""
     with patch("uvicorn.run") as mock_run:
         run_server.main()
-        
+
         base_dir = pathlib.Path(run_server.__file__).parent
         expected_ssl_keyfile = str(base_dir / "ssl" / "key.pem")
         expected_ssl_certfile = str(base_dir / "ssl" / "cert.pem")
-        
+
         mock_run.assert_called_once_with(
             "app.main:app",
             host="127.0.0.1",
@@ -74,4 +72,4 @@ def test_script_execution():
             mock_main.assert_called_once()
         finally:
             # Restore original __name__
-            run_server.__name__ = original_name 
+            run_server.__name__ = original_name

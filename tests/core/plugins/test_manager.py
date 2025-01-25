@@ -1,6 +1,4 @@
-import asyncio
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -14,9 +12,11 @@ from app.core.plugins.manager import PluginManager
 def event_bus():
     return ConcreteEventBus()
 
+
 @pytest.fixture
 def plugin_manager(event_bus, tmp_plugin_dir):
     return PluginManager(plugin_dir=tmp_plugin_dir, event_bus=event_bus)
+
 
 @pytest.fixture
 def tmp_plugin_dir(tmp_path):
@@ -25,11 +25,14 @@ def tmp_plugin_dir(tmp_path):
     plugin_dir.mkdir(parents=True)
     return plugin_dir
 
+
 @pytest.fixture
 def TestPluginClass():
     """Fixture providing a base test plugin class."""
+
     class TestPlugin(PluginBase):
         """Base test plugin class with tracking of lifecycle methods."""
+
         def __init__(self, config, event_bus=None):
             super().__init__(config, event_bus)
             self.initialize_called = False
@@ -54,20 +57,11 @@ async def test_plugin_dependency_sorting(plugin_manager):
     """Test that plugins are sorted correctly based on dependencies."""
     # Create test configs
     plugin1_config = PluginConfig(
-        name="plugin1",
-        version="1.0.0",
-        dependencies=["plugin2"]
+        name="plugin1", version="1.0.0", dependencies=["plugin2"]
     )
-    plugin2_config = PluginConfig(
-        name="plugin2",
-        version="1.0.0",
-        dependencies=[]
-    )
+    plugin2_config = PluginConfig(name="plugin2", version="1.0.0", dependencies=[])
 
-    plugin_manager.configs = {
-        "plugin1": plugin1_config,
-        "plugin2": plugin2_config
-    }
+    plugin_manager.configs = {"plugin1": plugin1_config, "plugin2": plugin2_config}
 
     sorted_plugins = plugin_manager._sort_by_dependencies(plugin_manager.configs)
     assert len(sorted_plugins) == 2
@@ -77,25 +71,17 @@ async def test_plugin_dependency_sorting(plugin_manager):
 
 async def test_plugin_initialization_order(plugin_manager, TestPluginClass):
     """Test that plugins are initialized in the correct order based on dependencies."""
+
     class ConcreteOrderedTestPlugin(TestPluginClass):
         pass
 
     # Create test configs
     plugin1_config = PluginConfig(
-        name="plugin1",
-        version="1.0.0",
-        dependencies=["plugin2"]
+        name="plugin1", version="1.0.0", dependencies=["plugin2"]
     )
-    plugin2_config = PluginConfig(
-        name="plugin2",
-        version="1.0.0",
-        dependencies=[]
-    )
+    plugin2_config = PluginConfig(name="plugin2", version="1.0.0", dependencies=[])
 
-    plugin_manager.configs = {
-        "plugin1": plugin1_config,
-        "plugin2": plugin2_config
-    }
+    plugin_manager.configs = {"plugin1": plugin1_config, "plugin2": plugin2_config}
 
     # Create a mock module class
     class MockModule:
@@ -103,45 +89,52 @@ async def test_plugin_initialization_order(plugin_manager, TestPluginClass):
             self.ConcreteOrderedTestPlugin = ConcreteOrderedTestPlugin
             self.__file__ = f"{name}/plugin.py"
             self.__name__ = f"app.plugins.{name}"
-    
-    with patch("importlib.import_module", side_effect=lambda name: MockModule(name.split(".")[-1])) as mock_import:
+
+    with patch(
+        "importlib.import_module",
+        side_effect=lambda name: MockModule(name.split(".")[-1]),
+    ) as mock_import:
         await plugin_manager.initialize_plugins()
-        
+
         # Verify import order
         assert mock_import.call_count == 2
         calls = mock_import.call_args_list
-        assert calls[0][0][0] == "app.plugins.plugin2"  # plugin2 should be imported first
-        assert calls[1][0][0] == "app.plugins.plugin1"  # plugin1 should be imported second
+        assert (
+            calls[0][0][0] == "app.plugins.plugin2"
+        )  # plugin2 should be imported first
+        assert (
+            calls[1][0][0] == "app.plugins.plugin1"
+        )  # plugin1 should be imported second
 
 
 async def test_plugin_lifecycle(plugin_manager, TestPluginClass):
     """Test plugin initialization and shutdown lifecycle."""
     config = PluginConfig(name="test", version="1.0.0")
     plugin_manager.configs["test"] = config
-    
+
     # Create a concrete plugin class
     class ConcreteTestPlugin(TestPluginClass):
         pass
-    
+
     # Create a mock module
     class MockModule:
         def __init__(self):
             self.ConcreteTestPlugin = ConcreteTestPlugin
             self.__file__ = "test_plugin.py"
             self.__name__ = "app.plugins.test"
-    
+
     with patch("importlib.import_module", return_value=MockModule()):
         # Initialize plugins
         await plugin_manager.initialize_plugins()
-        
+
         # Verify plugin was initialized
         assert "test" in plugin_manager.plugins
         test_plugin = plugin_manager.plugins["test"]
         assert test_plugin.initialize_called
-        
+
         # Shutdown plugins
         await plugin_manager.shutdown_plugins()
-        
+
         # Verify plugin was shutdown
         assert test_plugin.shutdown_called
 
@@ -159,13 +152,13 @@ async def test_plugin_config_loading(plugin_manager, tmp_plugin_dir):
         "name": "plugin1",
         "version": "1.0.0",
         "enabled": True,
-        "dependencies": ["plugin2"]
+        "dependencies": ["plugin2"],
     }
     plugin2_config = {
         "name": "plugin2",
         "version": "1.0.0",
         "enabled": True,
-        "dependencies": []
+        "dependencies": [],
     }
 
     with open(plugin1_dir / "plugin.yaml", "w") as f:

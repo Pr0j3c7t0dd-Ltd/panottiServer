@@ -1,9 +1,6 @@
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch, call
-import os
-import numpy as np
-import concurrent.futures
 import asyncio
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
@@ -126,7 +123,9 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         # Test recording ID and paths
         recording_id = "test_recording"
         audio_path = "/path/to/audio.wav"
-        transcript_path = str(Path("data/transcripts_local/test_recording_transcript.txt"))
+        transcript_path = str(
+            Path("data/transcripts_local/test_recording_transcript.txt")
+        )
 
         event_data = {
             "name": "noise_reduction.completed",
@@ -139,28 +138,26 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
                     "recording_id": recording_id,
                 },
                 "metadata": {
-                    "speaker_labels": {
-                        "microphone": "Microphone",
-                        "system": "System"
-                    }
-                }
-            }
+                    "speaker_labels": {"microphone": "Microphone", "system": "System"}
+                },
+            },
         }
 
         # Create mock transcription results
         mock_segments = [
             MagicMock(text="Test", start=0.0, end=1.0),
-            MagicMock(text="transcription", start=1.0, end=2.0)
+            MagicMock(text="transcription", start=1.0, end=2.0),
         ]
         mock_transcript = MagicMock(text="Test transcription")
 
         # Set up the mocks
-        with patch.object(plugin, "_process_audio", new_callable=AsyncMock) as mock_process_audio, \
-             patch.object(plugin, "_init_model"), \
-             patch.object(plugin, "_model", mock_whisper), \
-             patch("builtins.open", mock_open()) as mock_file, \
-             patch("os.path.exists") as mock_exists:
-
+        with patch.object(
+            plugin, "_process_audio", new_callable=AsyncMock
+        ) as mock_process_audio, patch.object(plugin, "_init_model"), patch.object(
+            plugin, "_model", mock_whisper
+        ), patch("builtins.open", mock_open()) as mock_file, patch(
+            "os.path.exists"
+        ) as mock_exists:
             # Configure the mocks
             mock_process_audio.return_value = (mock_segments, mock_transcript)
             mock_exists.return_value = True
@@ -173,9 +170,9 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
 
             # Verify _process_audio was called with correct arguments
             mock_process_audio.assert_called_once_with(
-                str(Path(audio_path)), 
+                str(Path(audio_path)),
                 "Microphone",
-                {"speaker_labels": {"microphone": "Microphone", "system": "System"}}
+                {"speaker_labels": {"microphone": "Microphone", "system": "System"}},
             )
 
             # Verify file operations
@@ -211,18 +208,8 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         mock_segments[0].end = 1.0
         mock_segments[0].text = "Transcript content"
         mock_segments[0].words = [
-            MagicMock(
-                start=0.0,
-                end=0.5,
-                word="Transcript",
-                probability=0.9
-            ),
-            MagicMock(
-                start=0.5,
-                end=1.0,
-                word="content",
-                probability=0.9
-            )
+            MagicMock(start=0.0, end=0.5, word="Transcript", probability=0.9),
+            MagicMock(start=0.5, end=1.0, word="content", probability=0.9),
         ]
 
         mock_result = MagicMock()
@@ -233,13 +220,13 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         mock_whisper.transcribe.return_value = (mock_segments, mock_result)
 
         # Set up mocks
-        with patch.object(plugin, "_init_model"), \
-             patch.object(plugin, "_model", mock_whisper), \
-             patch("builtins.open", mock_open()) as mock_file, \
-             patch("pathlib.Path.mkdir") as mock_mkdir, \
-             patch("os.path.exists", return_value=True), \
-             patch("asyncio.get_running_loop") as mock_loop:
-
+        with patch.object(plugin, "_init_model"), patch.object(
+            plugin, "_model", mock_whisper
+        ), patch("builtins.open", mock_open()) as mock_file, patch(
+            "pathlib.Path.mkdir"
+        ) as mock_mkdir, patch("os.path.exists", return_value=True), patch(
+            "asyncio.get_running_loop"
+        ) as mock_loop:
             # Create a mock loop
             mock_loop_instance = MagicMock()
             mock_loop.return_value = mock_loop_instance
@@ -266,13 +253,17 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
                     func()  # Execute the file writing function
                     return await write_future
 
-            mock_loop_instance.run_in_executor = AsyncMock(side_effect=executor_side_effect)
+            mock_loop_instance.run_in_executor = AsyncMock(
+                side_effect=executor_side_effect
+            )
 
             # Call the method
-            result = await plugin.transcribe_audio(audio_path, output_path, label, metadata)
+            result = await plugin.transcribe_audio(
+                audio_path, output_path, label, metadata
+            )
 
             # Verify file operations
-            mock_file.assert_called_with(Path(output_path), 'w')
+            mock_file.assert_called_with(Path(output_path), "w")
             mock_mkdir.assert_called_with(parents=True, exist_ok=True)
 
             # Verify model call
@@ -285,7 +276,7 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
                     min_silence_duration_ms=500,
                     speech_pad_ms=100,
                 ),
-                beam_size=5
+                beam_size=5,
             )
 
             # Verify result

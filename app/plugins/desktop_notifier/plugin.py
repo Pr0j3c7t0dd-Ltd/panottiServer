@@ -3,16 +3,16 @@
 import os
 import subprocess
 import threading
-import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
-from app.core.events import ConcreteEventBus as EventBus, Event, EventPriority, EventContext
+from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import Event, EventPriority
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.database import DatabaseManager
-from app.models.recording.events import EventContext, RecordingEvent
+from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -123,7 +123,7 @@ class DesktopNotifierPlugin(PluginBase):
             recording = data.get("recording", {})
             recording_id = (
                 transcription.get("recording_id")  # New structure
-                or recording.get("recording_id")   # Legacy structure
+                or recording.get("recording_id")  # Legacy structure
                 or "unknown"
             )
 
@@ -135,8 +135,8 @@ class DesktopNotifierPlugin(PluginBase):
                 meeting_notes.get("notes_path")  # New event structure
                 or meeting_notes_local.get("output_path")  # Legacy structure
                 or meeting_notes_remote.get("output_path")  # Legacy structure
-                or meeting_notes_local.get("notes_path")    # Legacy structure
-                or meeting_notes_remote.get("notes_path")   # Legacy structure
+                or meeting_notes_local.get("notes_path")  # Legacy structure
+                or meeting_notes_remote.get("notes_path")  # Legacy structure
                 or data.get("output_path")  # Fallback for old event structure
             )
 
@@ -193,7 +193,9 @@ class DesktopNotifierPlugin(PluginBase):
                     data={
                         # Preserve original event data
                         "recording": data.get("data", {}).get("recording", {}),
-                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
+                        "noise_reduction": data.get("data", {}).get(
+                            "noise_reduction", {}
+                        ),
                         "transcription": data.get("data", {}).get("transcription", {}),
                         "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
                         # Add current event data
@@ -203,20 +205,20 @@ class DesktopNotifierPlugin(PluginBase):
                             "recording_id": recording_id,
                             "notes_path": output_path,
                             "notification_sent": True,
-                            "config": {
-                                "auto_open": self.get_config("auto_open", True)
-                            }
+                            "config": {"auto_open": self.get_config("auto_open", True)},
                         },
                         "metadata": metadata,
                         "context": {
-                            "correlation_id": data.get("correlation_id", str(uuid.uuid4())),
+                            "correlation_id": data.get(
+                                "correlation_id", str(uuid.uuid4())
+                            ),
                             "source_plugin": self.name,
-                            "metadata": metadata
-                        }
+                            "metadata": metadata,
+                        },
                     },
                     correlation_id=data.get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL
+                    priority=EventPriority.NORMAL,
                 )
                 logger.debug(
                     "Publishing completion event",
@@ -249,7 +251,9 @@ class DesktopNotifierPlugin(PluginBase):
                     name="desktop_notification.error",
                     data={
                         "recording": data.get("data", {}).get("recording", {}),
-                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
+                        "noise_reduction": data.get("data", {}).get(
+                            "noise_reduction", {}
+                        ),
                         "transcription": data.get("data", {}).get("transcription", {}),
                         "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
                         "desktop_notification": {
@@ -257,20 +261,20 @@ class DesktopNotifierPlugin(PluginBase):
                             "timestamp": datetime.now(UTC).isoformat(),
                             "recording_id": recording_id,
                             "error": str(e),
-                            "config": {
-                                "auto_open": self.get_config("auto_open", True)
-                            }
+                            "config": {"auto_open": self.get_config("auto_open", True)},
                         },
                         "metadata": metadata if "metadata" in locals() else {},
                         "context": {
-                            "correlation_id": data.get("correlation_id", str(uuid.uuid4())),
+                            "correlation_id": data.get(
+                                "correlation_id", str(uuid.uuid4())
+                            ),
                             "source_plugin": self.name,
-                            "metadata": metadata if "metadata" in locals() else {}
-                        }
+                            "metadata": metadata if "metadata" in locals() else {},
+                        },
                     },
                     correlation_id=data.get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(error_event)
 

@@ -189,7 +189,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
                 None,  # system_audio_path
                 None,  # microphone_audio_path
                 {},  # metadata
-                event_data  # original event data
+                event_data,  # original event data
             )
 
     async def test_handle_recording_ended_dict_format(self, initialized_plugin):
@@ -205,7 +205,9 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "source_plugin": "other_plugin",
         }
 
-        with patch.object(initialized_plugin, "_process_audio_files", new_callable=AsyncMock) as mock_process:
+        with patch.object(
+            initialized_plugin, "_process_audio_files", new_callable=AsyncMock
+        ) as mock_process:
             mock_process.return_value = None
             await initialized_plugin.handle_recording_ended(event_data)
 
@@ -397,7 +399,6 @@ class TestNoiseReductionPlugin(BasePluginTest):
             # Actually call the function directly
             if func == initialized_plugin._subtract_bleed_time_domain:
                 func(*args)
-            return None
 
         with patch.object(
             initialized_plugin, "_translate_path_to_container", side_effect=lambda x: x
@@ -410,9 +411,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
             return_value=(np.random.randn(1000), 44100),
         ), patch("app.plugins.noise_reduction.plugin.sf.write"), patch.object(
             loop, "run_in_executor", side_effect=mock_run_in_executor
-        ), patch(
-            "os.path.exists", return_value=True
-        ), patch(
+        ), patch("os.path.exists", return_value=True), patch(
             "app.models.database.DatabaseManager.get_instance_async",
             return_value=AsyncMock(),
         ):
@@ -438,10 +437,14 @@ class TestNoiseReductionPlugin(BasePluginTest):
             "metadata": {},
         }
 
-        with patch.object(initialized_plugin, "_process_audio_files", new_callable=AsyncMock) as mock_process:
+        with patch.object(
+            initialized_plugin, "_process_audio_files", new_callable=AsyncMock
+        ) as mock_process:
             mock_process.return_value = None
             await initialized_plugin.handle_recording_ended(event_data)
-            mock_process.assert_called_once_with(recording_id, None, None, {}, event_data)
+            mock_process.assert_called_once_with(
+                recording_id, None, None, {}, event_data
+            )
 
     @pytest.mark.asyncio
     async def test_process_audio_files_error_handling(self, initialized_plugin):
@@ -471,12 +474,16 @@ class TestNoiseReductionPlugin(BasePluginTest):
         # Test with absolute path
         abs_path = "/absolute/path/to/file.wav"
         with patch("os.path.exists", return_value=True):
-            assert initialized_plugin._translate_path_to_container(abs_path) == os.path.join(initialized_plugin._recordings_dir, "file.wav")
+            assert initialized_plugin._translate_path_to_container(
+                abs_path
+            ) == os.path.join(initialized_plugin._recordings_dir, "file.wav")
 
         # Test with relative path
         rel_path = "relative/path/to/file.wav"
         with patch("os.path.exists", return_value=True):
-            assert initialized_plugin._translate_path_to_container(rel_path) == os.path.join(initialized_plugin._recordings_dir, "file.wav")
+            assert initialized_plugin._translate_path_to_container(
+                rel_path
+            ) == os.path.join(initialized_plugin._recordings_dir, "file.wav")
 
     def test_wiener_filter(self, initialized_plugin):
         """Test Wiener filter implementation"""

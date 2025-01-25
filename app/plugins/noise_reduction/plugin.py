@@ -7,7 +7,7 @@ import sqlite3
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from sqlite3 import Connection
 from typing import Any, Union
@@ -17,7 +17,8 @@ import soundfile as sf
 from scipy import signal
 from scipy.signal import butter, filtfilt
 
-from app.core.events import ConcreteEventBus as EventBus, Event, EventPriority, EventContext
+from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import Event, EventContext, EventPriority
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.database import DatabaseManager, get_db_async
 from app.utils.logging_config import get_logger
@@ -154,10 +155,10 @@ class NoiseReductionPlugin(PluginBase):
     #  Time alignment helpers
     # ------------------------------------------------------------------------
     def _align_signals_by_fft(
-        self, 
-        mic_data: Union[np.ndarray, tuple[np.ndarray, np.ndarray]], 
-        sys_data: Union[np.ndarray, tuple[np.ndarray, np.ndarray]], 
-        sample_rate: int
+        self,
+        mic_data: Union[np.ndarray, tuple[np.ndarray, np.ndarray]],
+        sys_data: Union[np.ndarray, tuple[np.ndarray, np.ndarray]],
+        sample_rate: int,
     ) -> tuple[np.ndarray, np.ndarray, float]:
         """
         Align signals using FFT cross-correlation and calculate the lag.
@@ -176,7 +177,9 @@ class NoiseReductionPlugin(PluginBase):
         def convert_to_mono(audio_data):
             if isinstance(audio_data, tuple):
                 # For stereo, average the channels
-                return np.mean([channel.astype(np.float32) for channel in audio_data], axis=0)
+                return np.mean(
+                    [channel.astype(np.float32) for channel in audio_data], axis=0
+                )
             return audio_data.astype(np.float32)
 
         mic_chunk = convert_to_mono(mic_data[:chunk_len])
@@ -263,11 +266,13 @@ class NoiseReductionPlugin(PluginBase):
     # ------------------------------------------------------------------------
     # 2) Advanced frequency-domain bleed removal
     # ------------------------------------------------------------------------
-    def _resample_if_needed(self, audio_data: np.ndarray, src_sr: int, target_sr: int) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    def _resample_if_needed(
+        self, audio_data: np.ndarray, src_sr: int, target_sr: int
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """Resample audio data if source and target sample rates differ."""
         if src_sr == target_sr:
             return audio_data
-        
+
         # Calculate number of samples for target length
         target_length = int(len(audio_data) * target_sr / src_sr)
         return signal.resample(audio_data, target_length)
@@ -288,13 +293,13 @@ class NoiseReductionPlugin(PluginBase):
         # Read original files and get initial length
         mic_data, mic_sr = sf.read(mic_file)
         sys_data, sys_sr = sf.read(sys_file)
-        
+
         # Ensure we have numpy arrays
         mic_data = np.asarray(mic_data)
         sys_data = np.asarray(sys_data)
-        
+
         original_length = len(mic_data)  # Store original length for final check
-        
+
         # If sample rates differ, resample system audio to match microphone
         if mic_sr != sys_sr:
             logger.info(
@@ -569,8 +574,12 @@ class NoiseReductionPlugin(PluginBase):
                     "plugin_name": self.name,
                     "plugin_enabled": self.config.enabled,
                     "plugin_version": self.config.version,
-                    "recording_id": event_data.get("recording_id") if isinstance(event_data, dict) else event_data.data.get("recording_id"),
-                    "event_id": event_data.get("event_id") if isinstance(event_data, dict) else event_data.event_id,
+                    "recording_id": event_data.get("recording_id")
+                    if isinstance(event_data, dict)
+                    else event_data.data.get("recording_id"),
+                    "event_id": event_data.get("event_id")
+                    if isinstance(event_data, dict)
+                    else event_data.event_id,
                     "event_type": type(event_data).__name__,
                     "event_data": str(event_data),
                     "event_bus_type": type(self.event_bus).__name__
@@ -595,7 +604,11 @@ class NoiseReductionPlugin(PluginBase):
                 recording_id = event_data.data.get("recording_id")
                 mic_path = event_data.data.get("microphone_audio_path")
                 sys_path = event_data.data.get("system_audio_path")
-                metadata = event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
+                metadata = (
+                    event_data.data.get("metadata", {})
+                    if hasattr(event_data, "data")
+                    else {}
+                )
 
             # Log metadata presence and content
             if not metadata:
@@ -723,11 +736,7 @@ class NoiseReductionPlugin(PluginBase):
                 raise
 
             await self._process_audio_files(
-                recording_id,
-                sys_path,
-                mic_path,
-                metadata,
-                event_data
+                recording_id, sys_path, mic_path, metadata, event_data
             )
 
         except Exception as e:
@@ -781,7 +790,11 @@ class NoiseReductionPlugin(PluginBase):
                     "recording_id": recording_id,
                     "system_audio_path": system_audio_path,
                     "microphone_audio_path": microphone_audio_path,
-                    "correlation_id": str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                    "correlation_id": str(
+                        event_metadata.get("correlation_id", uuid.uuid4())
+                    )
+                    if event_metadata
+                    else str(uuid.uuid4()),
                 },
             )
 
@@ -801,7 +814,11 @@ class NoiseReductionPlugin(PluginBase):
                         "system_path": system_audio_path,
                         "mic_path": microphone_audio_path,
                         "is_docker": os.path.exists("/.dockerenv"),
-                        "correlation_id": str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                        "correlation_id": str(
+                            event_metadata.get("correlation_id", uuid.uuid4())
+                        )
+                        if event_metadata
+                        else str(uuid.uuid4()),
                     },
                 )
                 # Emit error event with preserved data
@@ -809,7 +826,11 @@ class NoiseReductionPlugin(PluginBase):
                     error_event = Event(
                         name="noise_reduction.error",
                         data={
-                            "recording": original_event.get("recording", {}) if isinstance(original_event, dict) else {} if original_event is None else original_event.data.get("recording", {}),
+                            "recording": original_event.get("recording", {})
+                            if isinstance(original_event, dict)
+                            else {}
+                            if original_event is None
+                            else original_event.data.get("recording", {}),
                             "noise_reduction": {
                                 "status": "error",
                                 "timestamp": datetime.now(UTC).isoformat(),
@@ -819,15 +840,21 @@ class NoiseReductionPlugin(PluginBase):
                                     "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
                                     "noise_reduce_factor": self._noise_reduce_factor,
                                     "wiener_alpha": self._wiener_alpha,
-                                }
-                            }
+                                },
+                            },
                         },
                         context=EventContext(
-                            correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                            correlation_id=str(
+                                event_metadata.get("correlation_id", uuid.uuid4())
+                            )
+                            if event_metadata
+                            else str(uuid.uuid4()),
                             source_plugin=self.__class__.__name__,
-                            metadata=event_metadata if event_metadata is not None else {}
+                            metadata=event_metadata
+                            if event_metadata is not None
+                            else {},
                         ),
-                        priority=EventPriority.NORMAL
+                        priority=EventPriority.NORMAL,
                     )
                     await self.event_bus.publish(error_event)
                 return None
@@ -838,7 +865,10 @@ class NoiseReductionPlugin(PluginBase):
                 loop = asyncio.get_running_loop()
 
                 if self._freq_domain_bleed_removal:
-                    output_path = self._output_directory / f"{recording_id}_mic_bleed_removed_freq.wav"
+                    output_path = (
+                        self._output_directory
+                        / f"{recording_id}_mic_bleed_removed_freq.wav"
+                    )
                     await loop.run_in_executor(
                         self._executor,
                         self._remove_bleed_frequency_domain,
@@ -851,7 +881,10 @@ class NoiseReductionPlugin(PluginBase):
                     final_output = output_path
 
                 elif self._time_domain_subtraction:
-                    output_path = self._output_directory / f"{recording_id}_mic_bleed_removed_time.wav"
+                    output_path = (
+                        self._output_directory
+                        / f"{recording_id}_mic_bleed_removed_time.wav"
+                    )
                     await loop.run_in_executor(
                         self._executor,
                         self._subtract_bleed_time_domain,
@@ -864,7 +897,10 @@ class NoiseReductionPlugin(PluginBase):
                     final_output = output_path
 
                 else:
-                    output_path = self._output_directory / f"{recording_id}_microphone_cleaned.wav"
+                    output_path = (
+                        self._output_directory
+                        / f"{recording_id}_microphone_cleaned.wav"
+                    )
                     await loop.run_in_executor(
                         self._executor,
                         self.reduce_noise,
@@ -904,8 +940,14 @@ class NoiseReductionPlugin(PluginBase):
             # Emit completed event
             if self.event_bus:
                 # Get correlation ID from original event or create new one
-                correlation_id = original_event.get("context", {}).get("correlation_id", str(uuid.uuid4())) if isinstance(original_event, dict) else getattr(original_event, "correlation_id", str(uuid.uuid4()))
-                
+                correlation_id = (
+                    original_event.get("context", {}).get(
+                        "correlation_id", str(uuid.uuid4())
+                    )
+                    if isinstance(original_event, dict)
+                    else getattr(original_event, "correlation_id", str(uuid.uuid4()))
+                )
+
                 # Combine metadata from original event and current metadata
                 combined_metadata = {}
                 if isinstance(original_event, dict):
@@ -919,13 +961,17 @@ class NoiseReductionPlugin(PluginBase):
                 if "speaker_labels" not in combined_metadata:
                     combined_metadata["speaker_labels"] = {
                         "microphone": combined_metadata.get("microphoneLabel"),
-                        "system": combined_metadata.get("systemLabel")
+                        "system": combined_metadata.get("systemLabel"),
                     }
 
                 completed_event = Event.create(
                     name="noise_reduction.completed",
                     data={
-                        "recording": original_event.get("recording", {}) if isinstance(original_event, dict) else {} if original_event is None else original_event.data.get("recording", {}),
+                        "recording": original_event.get("recording", {})
+                        if isinstance(original_event, dict)
+                        else {}
+                        if original_event is None
+                        else original_event.data.get("recording", {}),
                         "noise_reduction": {
                             "status": "completed",
                             "timestamp": datetime.now(UTC).isoformat(),
@@ -933,7 +979,9 @@ class NoiseReductionPlugin(PluginBase):
                             "output_path": str(final_output),
                             "system_audio_path": system_audio_path,
                             "microphone_audio_path": microphone_audio_path,
-                            "method": "frequency_domain" if self._freq_domain_bleed_removal else "time_domain",
+                            "method": "frequency_domain"
+                            if self._freq_domain_bleed_removal
+                            else "time_domain",
                             "config": {
                                 "time_domain_subtraction": self._time_domain_subtraction,
                                 "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
@@ -942,18 +990,18 @@ class NoiseReductionPlugin(PluginBase):
                                 "highpass_cutoff": self._highpass_cutoff,
                                 "spectral_floor": self._spectral_floor,
                                 "smoothing_factor": self._smoothing_factor,
-                            }
+                            },
                         },
                         "metadata": combined_metadata,
                         "context": {
                             "correlation_id": correlation_id,
                             "source_plugin": self.name,
-                            "metadata": combined_metadata
-                        }
+                            "metadata": combined_metadata,
+                        },
                     },
                     correlation_id=correlation_id,
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(completed_event)
 
@@ -967,7 +1015,11 @@ class NoiseReductionPlugin(PluginBase):
                     "plugin_name": self.name,
                     "recording_id": recording_id,
                     "error": str(e),
-                    "correlation_id": str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                    "correlation_id": str(
+                        event_metadata.get("correlation_id", uuid.uuid4())
+                    )
+                    if event_metadata
+                    else str(uuid.uuid4()),
                 },
             )
             # Emit error event with preserved data
@@ -976,7 +1028,11 @@ class NoiseReductionPlugin(PluginBase):
                     name="noise_reduction.error",
                     data={
                         # Preserve original recording data
-                        "recording": original_event.get("recording", {}) if isinstance(original_event, dict) else {} if original_event is None else original_event.data.get("recording", {}),
+                        "recording": original_event.get("recording", {})
+                        if isinstance(original_event, dict)
+                        else {}
+                        if original_event is None
+                        else original_event.data.get("recording", {}),
                         "noise_reduction": {
                             "status": "error",
                             "timestamp": datetime.now(UTC).isoformat(),
@@ -986,15 +1042,19 @@ class NoiseReductionPlugin(PluginBase):
                                 "freq_domain_bleed_removal": self._freq_domain_bleed_removal,
                                 "noise_reduce_factor": self._noise_reduce_factor,
                                 "wiener_alpha": self._wiener_alpha,
-                            }
-                        }
+                            },
+                        },
                     },
                     context=EventContext(
-                        correlation_id=str(event_metadata.get("correlation_id", uuid.uuid4())) if event_metadata else str(uuid.uuid4()),
+                        correlation_id=str(
+                            event_metadata.get("correlation_id", uuid.uuid4())
+                        )
+                        if event_metadata
+                        else str(uuid.uuid4()),
                         source_plugin=self.__class__.__name__,
-                        metadata=event_metadata if event_metadata is not None else {}
+                        metadata=event_metadata if event_metadata is not None else {},
                     ),
-                    priority=EventPriority.NORMAL
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(error_event)
             raise

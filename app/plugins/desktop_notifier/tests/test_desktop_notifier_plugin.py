@@ -77,12 +77,10 @@ class TestDesktopNotifierPlugin(BasePluginTest):
         """Test handling meeting notes completed with dict event"""
         event_data = {
             "recording": {"recording_id": "test_recording"},
-            "meeting_notes_local": {
-                "output_path": "/path/to/notes.txt"
-            },
+            "meeting_notes_local": {"output_path": "/path/to/notes.txt"},
             "metadata": {},
             "correlation_id": "test-correlation-id",
-            "source_plugin": "test-plugin"
+            "source_plugin": "test-plugin",
         }
 
         with patch.object(plugin, "_send_notification") as mock_send:
@@ -101,10 +99,8 @@ class TestDesktopNotifierPlugin(BasePluginTest):
             name="meeting_notes_local.completed",
             data={
                 "recording": {"recording_id": "test_recording"},
-                "meeting_notes_local": {
-                    "output_path": "/path/to/notes.txt"
-                }
-            }
+                "meeting_notes_local": {"output_path": "/path/to/notes.txt"},
+            },
         )
 
         with patch.object(plugin, "_send_notification") as mock_send:
@@ -135,9 +131,7 @@ class TestDesktopNotifierPlugin(BasePluginTest):
         event_data = {
             "recording_id": "test_recording",
             "output_path": "/path/to/notes.txt",
-            "context": {
-                "correlation_id": "test_correlation_id"
-            }
+            "context": {"correlation_id": "test_correlation_id"},
         }
 
         with patch.object(plugin, "_send_notification") as mock_send:

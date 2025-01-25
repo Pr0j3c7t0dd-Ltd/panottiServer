@@ -1,12 +1,12 @@
 """Event bus implementation."""
 
 import asyncio
+import inspect
 import traceback
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
-import inspect
 
 from app.utils.logging_config import get_logger
 
@@ -554,9 +554,9 @@ class EventBus:
                 "module": getattr(handler, "__module__", None),
                 "qualname": getattr(handler, "__qualname__", None),
                 "id": id(handler),
-                "class": getattr(
-                    getattr(handler, "__self__", None), "__class__", None
-                ) if getattr(handler, "__self__", None) else None,
+                "class": getattr(getattr(handler, "__self__", None), "__class__", None)
+                if getattr(handler, "__self__", None)
+                else None,
                 "instance_id": id(getattr(handler, "__self__", None))
                 if hasattr(handler, "__self__")
                 else None,
@@ -739,7 +739,7 @@ class EventBus:
                 # Cancel tasks in batches to avoid overwhelming the event loop
                 batch_size = 50
                 for i in range(0, len(pending_tasks), batch_size):
-                    batch = pending_tasks[i:i + batch_size]
+                    batch = pending_tasks[i : i + batch_size]
                     for task in batch:
                         if not task.done():
                             task.cancel()

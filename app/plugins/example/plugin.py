@@ -3,8 +3,9 @@
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
 from datetime import datetime
+from typing import Any
+
 from pytz import UTC
 
 from app.core.events import Event, EventContext, EventPriority
@@ -125,17 +126,21 @@ class ExamplePlugin(PluginBase):
                             "recording_id": recording_id,
                             "config": {
                                 "debug_mode": debug_mode,
-                                "example_setting": example_setting
-                            }
+                                "example_setting": example_setting,
+                            },
                         },
                         "metadata": event_data.get("data", {}).get("metadata", {}),
                         "context": {
-                            "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                            "correlation_id": getattr(
+                                event_data, "correlation_id", str(uuid.uuid4())
+                            ),
                             "source_plugin": self.name,
-                            "metadata": event_data.get("data", {}).get("metadata", {})
-                        }
+                            "metadata": event_data.get("data", {}).get("metadata", {}),
+                        },
                     },
-                    correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                    correlation_id=getattr(
+                        event_data, "correlation_id", str(uuid.uuid4())
+                    ),
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL,
                 )
@@ -174,12 +179,14 @@ class ExamplePlugin(PluginBase):
                             "error": str(e),
                             "debug_mode": debug_mode,
                             "example_setting": example_setting,
-                            "event_id": getattr(context, "event_id", None)
+                            "event_id": getattr(context, "event_id", None),
                         },
                         # Preserve metadata
-                        "metadata": event_data.get("metadata", {}) or event_data.get("data", {}).get("metadata", {})
+                        "metadata": event_data.get("metadata", {})
+                        or event_data.get("data", {}).get("metadata", {}),
                     },
-                    correlation_id=getattr(context, "correlation_id", None) or str(uuid.uuid4()),
+                    correlation_id=getattr(context, "correlation_id", None)
+                    or str(uuid.uuid4()),
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL,
                 )

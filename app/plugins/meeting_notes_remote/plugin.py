@@ -2,7 +2,9 @@ import asyncio
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime as dt, UTC, datetime
+from datetime import UTC
+from datetime import datetime
+from datetime import datetime as dt
 from pathlib import Path
 from typing import Any, Literal
 
@@ -11,7 +13,8 @@ import httpx
 from anthropic import AsyncAnthropic  # Update import statement
 from openai import AsyncOpenAI
 
-from app.core.events import ConcreteEventBus as EventBus, Event, EventPriority, EventContext
+from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import Event, EventPriority
 from app.core.plugins import PluginBase  # Updated import path
 from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
@@ -144,14 +147,16 @@ class MeetingNotesRemotePlugin(PluginBase):
             )
             raise
 
-    async def handle_transcription_completed(self, event_data: Event | RecordingEvent) -> None:
+    async def handle_transcription_completed(
+        self, event_data: Event | RecordingEvent
+    ) -> None:
         """Handle transcription completed event"""
         event_id = event_data.event_id
-        
+
         # Get data from transcription section
         transcription_data = event_data.data.get("transcription", {})
         recording_id = transcription_data.get("recording_id")
-        
+
         # Get metadata from event data structure
         metadata = {}
         if hasattr(event_data, "data"):
@@ -159,7 +164,7 @@ class MeetingNotesRemotePlugin(PluginBase):
             context = event_data.data.get("context", {})
             if isinstance(context, dict):
                 metadata.update(context.get("metadata", {}))
-            
+
             # Then try direct metadata
             direct_metadata = event_data.data.get("metadata", {})
             if isinstance(direct_metadata, dict):
@@ -208,9 +213,17 @@ class MeetingNotesRemotePlugin(PluginBase):
                     completion_event = Event.create(
                         name="meeting_notes_remote.completed",
                         data={
-                            "recording": event_data.data.get("recording", {}) if hasattr(event_data, "data") else {},
-                            "noise_reduction": event_data.data.get("noise_reduction", {}) if hasattr(event_data, "data") else {},
-                            "transcription": event_data.data.get("transcription", {}) if hasattr(event_data, "data") else {},
+                            "recording": event_data.data.get("recording", {})
+                            if hasattr(event_data, "data")
+                            else {},
+                            "noise_reduction": event_data.data.get(
+                                "noise_reduction", {}
+                            )
+                            if hasattr(event_data, "data")
+                            else {},
+                            "transcription": event_data.data.get("transcription", {})
+                            if hasattr(event_data, "data")
+                            else {},
                             "meeting_notes": {
                                 "status": "completed",
                                 "timestamp": datetime.now(UTC).isoformat(),
@@ -223,19 +236,23 @@ class MeetingNotesRemotePlugin(PluginBase):
                                     "provider": self.provider,
                                     "model": self.model,
                                     "timeout": self.timeout,
-                                    "max_concurrent_tasks": self.max_concurrent_tasks
-                                }
+                                    "max_concurrent_tasks": self.max_concurrent_tasks,
+                                },
                             },
                             "metadata": metadata,
                             "context": {
-                                "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                                "correlation_id": getattr(
+                                    event_data, "correlation_id", str(uuid.uuid4())
+                                ),
                                 "source_plugin": self.name,
-                                "metadata": metadata
-                            }
+                                "metadata": metadata,
+                            },
                         },
-                        correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                        correlation_id=getattr(
+                            event_data, "correlation_id", str(uuid.uuid4())
+                        ),
                         source_plugin=self.name,
-                        priority=EventPriority.NORMAL
+                        priority=EventPriority.NORMAL,
                     )
                     await self.event_bus.publish(completion_event)
                     logger.info(
@@ -277,29 +294,49 @@ class MeetingNotesRemotePlugin(PluginBase):
                 try:
                     error_data = {
                         # Preserve original event data
-                        "recording": event_data.data.get("recording", {}) if hasattr(event_data, "data") else {},
-                        "noise_reduction": event_data.data.get("noise_reduction", {}) if hasattr(event_data, "data") else {},
-                        "transcription": event_data.data.get("transcription", {}) if hasattr(event_data, "data") else {},
+                        "recording": event_data.data.get("recording", {})
+                        if hasattr(event_data, "data")
+                        else {},
+                        "noise_reduction": event_data.data.get("noise_reduction", {})
+                        if hasattr(event_data, "data")
+                        else {},
+                        "transcription": event_data.data.get("transcription", {})
+                        if hasattr(event_data, "data")
+                        else {},
                         "meeting_notes_remote": {
                             "status": "error",
                             "timestamp": dt.now(UTC).isoformat(),
                             "recording_id": recording_id,
-                            "error": str(e)
+                            "error": str(e),
                         },
-                        "metadata": event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {},
+                        "metadata": event_data.data.get("metadata", {})
+                        if hasattr(event_data, "data")
+                        else {},
                         "context": {
-                            "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                            "correlation_id": getattr(
+                                event_data, "correlation_id", str(uuid.uuid4())
+                            ),
                             "source_plugin": self.name,
-                            "metadata": event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
-                        }
+                            "metadata": event_data.data.get("metadata", {})
+                            if hasattr(event_data, "data")
+                            else {},
+                        },
                     }
 
                     error_event = Event.create(
                         name="meeting_notes_remote.error",
                         data={
-                            "recording": event_data.data.get("recording", {}) if hasattr(event_data, "data") else {},
-                            "noise_reduction": event_data.data.get("noise_reduction", {}) if hasattr(event_data, "data") else {},
-                            "transcription": event_data.data.get("transcription", {}) if hasattr(event_data, "data") else {},
+                            "recording": event_data.data.get("recording", {})
+                            if hasattr(event_data, "data")
+                            else {},
+                            "noise_reduction": event_data.data.get(
+                                "noise_reduction", {}
+                            )
+                            if hasattr(event_data, "data")
+                            else {},
+                            "transcription": event_data.data.get("transcription", {})
+                            if hasattr(event_data, "data")
+                            else {},
                             "meeting_notes": {
                                 "status": "error",
                                 "timestamp": datetime.now(UTC).isoformat(),
@@ -309,19 +346,27 @@ class MeetingNotesRemotePlugin(PluginBase):
                                     "provider": self.provider,
                                     "model": self.model,
                                     "timeout": self.timeout,
-                                    "max_concurrent_tasks": self.max_concurrent_tasks
-                                }
+                                    "max_concurrent_tasks": self.max_concurrent_tasks,
+                                },
                             },
-                            "metadata": event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {},
+                            "metadata": event_data.data.get("metadata", {})
+                            if hasattr(event_data, "data")
+                            else {},
                             "context": {
-                                "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                                "correlation_id": getattr(
+                                    event_data, "correlation_id", str(uuid.uuid4())
+                                ),
                                 "source_plugin": self.name,
-                                "metadata": event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
-                            }
+                                "metadata": event_data.data.get("metadata", {})
+                                if hasattr(event_data, "data")
+                                else {},
+                            },
                         },
-                        correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                        correlation_id=getattr(
+                            event_data, "correlation_id", str(uuid.uuid4())
+                        ),
                         source_plugin=self.name,
-                        priority=EventPriority.NORMAL
+                        priority=EventPriority.NORMAL,
                     )
                     await self.event_bus.publish(error_event)
                 except Exception as e:
@@ -354,7 +399,7 @@ class MeetingNotesRemotePlugin(PluginBase):
         # Handle generic Event type
         if hasattr(event, "data") and isinstance(event.data, dict):
             transcription_data = event.data.get("transcription", {})
-            
+
             logger.debug(
                 "Examining transcription data",
                 extra={
@@ -362,20 +407,20 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "transcription_data": transcription_data,
                     "has_output_file": "output_file" in transcription_data,
                     "has_transcript_paths": "transcript_paths" in transcription_data,
-                }
+                },
             )
-            
+
             # First try to get single output file
             if transcription_data.get("output_file"):
                 logger.debug(
                     "Found output_file",
                     extra={
                         "plugin_name": self.name,
-                        "output_file": transcription_data["output_file"]
-                    }
+                        "output_file": transcription_data["output_file"],
+                    },
                 )
                 return Path(transcription_data["output_file"])
-                
+
             # Then try multiple transcript paths - prefer merged, then system, then mic
             transcript_paths = transcription_data.get("transcript_paths", {})
             if transcript_paths:
@@ -383,8 +428,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "Found transcript_paths",
                     extra={
                         "plugin_name": self.name,
-                        "transcript_paths": transcript_paths
-                    }
+                        "transcript_paths": transcript_paths,
+                    },
                 )
                 # Prefer merged transcript if available
                 if transcript_paths.get("merged"):
@@ -395,14 +440,14 @@ class MeetingNotesRemotePlugin(PluginBase):
                 # Finally try microphone transcript
                 elif transcript_paths.get("mic"):
                     return Path(transcript_paths["mic"])
-                    
+
         logger.warning(
             "No transcript path found in event",
             extra={
                 "plugin_name": self.name,
                 "event_id": getattr(event, "event_id", None),
-                "event_data": str(event)
-            }
+                "event_data": str(event),
+            },
         )
         return None
 
@@ -440,13 +485,13 @@ class MeetingNotesRemotePlugin(PluginBase):
             start = response.find("<think>")
             end = response.find("</think>") + len("</think>")
             response = response[:start] + response[end:]
-        
+
         # Remove markdown code blocks
         response = response.replace("```markdown", "").replace("```", "")
-        
+
         # Trim whitespace
         response = response.strip()
-        
+
         return response
 
     async def _generate_notes_with_llm(

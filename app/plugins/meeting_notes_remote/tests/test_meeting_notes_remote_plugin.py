@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from openai import AsyncOpenAI
 
-from app.core.events import Event, EventPriority, ConcreteEventBus
+from app.core.events import ConcreteEventBus, Event, EventPriority
 from app.core.plugins import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
@@ -104,7 +104,7 @@ Speaker 2: I'll prepare the report by next week.
             },
             source_plugin="transcription_local",
             correlation_id="test_correlation_id",
-            priority=EventPriority.NORMAL
+            priority=EventPriority.NORMAL,
         )
 
         with patch.object(Path, "mkdir"), patch.object(
@@ -127,19 +127,17 @@ Speaker 2: I'll prepare the report by next week.
             assert call_args.data["meeting_notes"]["status"] == "completed"
             assert call_args.data["meeting_notes"]["recording_id"] == "test_recording"
             assert call_args.data["meeting_notes"]["notes_path"] == "output.md"
-            assert call_args.data["meeting_notes"]["input_paths"]["transcript"] == str(transcript_path)
+            assert call_args.data["meeting_notes"]["input_paths"]["transcript"] == str(
+                transcript_path
+            )
 
     async def test_handle_transcription_completed_no_path(self, plugin_with_mock_bus):
         """Test handling transcription completed event with no transcript path"""
         event_data = Event.create(
             name="transcription_local.completed",
-            data={
-                "transcription": {
-                    "recording_id": "test_recording"
-                }
-            },
+            data={"transcription": {"recording_id": "test_recording"}},
             correlation_id="test-123",
-            source_plugin="test_plugin"
+            source_plugin="test_plugin",
         )
 
         with patch.object(Path, "mkdir"):
@@ -152,7 +150,9 @@ Speaker 2: I'll prepare the report by next week.
         """Test meeting notes generation with empty text"""
         event_id = "test_event"
         with patch.object(plugin, "_generate_notes_with_llm") as mock_generate:
-            mock_generate.return_value = "No transcript text found to generate notes from."
+            mock_generate.return_value = (
+                "No transcript text found to generate notes from."
+            )
             result = await plugin._generate_notes_with_llm("", event_id)
             assert result == "No transcript text found to generate notes from."
             mock_generate.assert_called_once_with("", event_id)

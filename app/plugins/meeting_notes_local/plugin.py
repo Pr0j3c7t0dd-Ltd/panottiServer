@@ -10,7 +10,7 @@ from typing import Any, cast
 import aiohttp
 
 from app.core.events import ConcreteEventBus as EventBus
-from app.core.events import Event, EventContext, EventPriority
+from app.core.events import Event, EventPriority
 from app.core.plugins import PluginBase
 from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
@@ -274,7 +274,9 @@ Keep each bullet point concise but informative]
                     )
 
                     # Clean and return the response
-                    return cast(str, self._clean_llm_response(result.get("response", "")))
+                    return cast(
+                        str, self._clean_llm_response(result.get("response", ""))
+                    )
 
         except aiohttp.ClientError as e:
             logger.error(
@@ -310,13 +312,13 @@ Keep each bullet point concise but informative]
             start = response.find("<think>")
             end = response.find("</think>") + len("</think>")
             response = response[:start] + response[end:]
-        
+
         # Remove markdown code blocks
         response = response.replace("```markdown", "").replace("```", "")
-        
+
         # Trim whitespace
         response = response.strip()
-        
+
         return response
 
     async def _process_transcript(
@@ -348,8 +350,12 @@ Keep each bullet point concise but informative]
                         "output_path": str(output_file),
                         "notes_path": str(output_file),
                         "input_paths": {
-                            "transcript": str(original_event.data.get("transcription", {}).get("output_file", ""))
-                        }
+                            "transcript": str(
+                                original_event.data.get("transcription", {}).get(
+                                    "output_file", ""
+                                )
+                            )
+                        },
                     },
                     "meeting_notes": {
                         "status": "completed",
@@ -358,20 +364,30 @@ Keep each bullet point concise but informative]
                         "output_path": str(output_file),
                         "notes_path": str(output_file),
                         "input_paths": {
-                            "transcript": str(original_event.data.get("transcription", {}).get("output_file", ""))
-                        }
-                    }
+                            "transcript": str(
+                                original_event.data.get("transcription", {}).get(
+                                    "output_file", ""
+                                )
+                            )
+                        },
+                    },
                 }
                 # Include metadata in event data
                 if isinstance(original_event, dict):
                     event_data["metadata"] = original_event.get("metadata", {})
                 else:
-                    event_data["metadata"] = getattr(original_event.context, "metadata", {}) if hasattr(original_event, "context") else {}
-                
+                    event_data["metadata"] = (
+                        getattr(original_event.context, "metadata", {})
+                        if hasattr(original_event, "context")
+                        else {}
+                    )
+
                 event = Event.create(
                     name="meeting_notes_local.completed",
                     data=event_data,
-                    correlation_id=getattr(original_event.context, "correlation_id", str(uuid.uuid4())),
+                    correlation_id=getattr(
+                        original_event.context, "correlation_id", str(uuid.uuid4())
+                    ),
                     source_plugin=self.name,
                     priority=EventPriority.NORMAL,
                 )
@@ -405,9 +421,15 @@ Keep each bullet point concise but informative]
                 # Emit error event with preserved chain
                 error_data = {
                     # Preserve original event data
-                    "recording": original_event.data.get("recording", {}) if hasattr(original_event, "data") else {},
-                    "noise_reduction": original_event.data.get("noise_reduction", {}) if hasattr(original_event, "data") else {},
-                    "transcription": original_event.data.get("transcription", {}) if hasattr(original_event, "data") else {},
+                    "recording": original_event.data.get("recording", {})
+                    if hasattr(original_event, "data")
+                    else {},
+                    "noise_reduction": original_event.data.get("noise_reduction", {})
+                    if hasattr(original_event, "data")
+                    else {},
+                    "transcription": original_event.data.get("transcription", {})
+                    if hasattr(original_event, "data")
+                    else {},
                     # Add current event data
                     "meeting_notes": {
                         "status": "error",
@@ -418,23 +440,31 @@ Keep each bullet point concise but informative]
                             "model": self.model,
                             "num_ctx": self.num_ctx,
                             "timeout": self.timeout,
-                            "max_concurrent_tasks": self.max_concurrent_tasks
-                        }
+                            "max_concurrent_tasks": self.max_concurrent_tasks,
+                        },
                     },
-                    "metadata": original_event.data.get("metadata", {}) if hasattr(original_event, "data") else {},
+                    "metadata": original_event.data.get("metadata", {})
+                    if hasattr(original_event, "data")
+                    else {},
                     "context": {
-                        "correlation_id": getattr(original_event, "correlation_id", str(uuid.uuid4())),
+                        "correlation_id": getattr(
+                            original_event, "correlation_id", str(uuid.uuid4())
+                        ),
                         "source_plugin": self.name,
-                        "metadata": original_event.data.get("metadata", {}) if hasattr(original_event, "data") else {}
-                    }
+                        "metadata": original_event.data.get("metadata", {})
+                        if hasattr(original_event, "data")
+                        else {},
+                    },
                 }
-                
+
                 error_event = Event.create(
                     name="meeting_notes_local.error",
                     data=error_data,
-                    correlation_id=getattr(original_event, "correlation_id", str(uuid.uuid4())),
+                    correlation_id=getattr(
+                        original_event, "correlation_id", str(uuid.uuid4())
+                    ),
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(error_event)
 
@@ -467,11 +497,11 @@ Keep each bullet point concise but informative]
     async def handle_transcription_completed(self, event_data: Event) -> None:
         """Handle transcription completed event."""
         event_id = getattr(event_data, "event_id", None) or str(uuid.uuid4())
-        
+
         # Get data from transcription section
         transcription_data = event_data.data.get("transcription", {})
         recording_id = transcription_data.get("recording_id")
-        
+
         # Get metadata from event context if available, otherwise from data
         metadata = {}
         if hasattr(event_data, "data"):
@@ -479,7 +509,7 @@ Keep each bullet point concise but informative]
             context = event_data.data.get("context", {})
             if isinstance(context, dict):
                 metadata.update(context.get("metadata", {}))
-            
+
             # Then try direct metadata
             direct_metadata = event_data.data.get("metadata", {})
             if isinstance(direct_metadata, dict):
@@ -562,12 +592,24 @@ Keep each bullet point concise but informative]
                 if self.event_bus:
                     try:
                         # Extract metadata
-                        metadata = event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
+                        metadata = (
+                            event_data.data.get("metadata", {})
+                            if hasattr(event_data, "data")
+                            else {}
+                        )
 
                         completion_data = {
-                            "recording": event_data.data.get("recording", {}) if hasattr(event_data, "data") else {},
-                            "noise_reduction": event_data.data.get("noise_reduction", {}) if hasattr(event_data, "data") else {},
-                            "transcription": event_data.data.get("transcription", {}) if hasattr(event_data, "data") else {},
+                            "recording": event_data.data.get("recording", {})
+                            if hasattr(event_data, "data")
+                            else {},
+                            "noise_reduction": event_data.data.get(
+                                "noise_reduction", {}
+                            )
+                            if hasattr(event_data, "data")
+                            else {},
+                            "transcription": event_data.data.get("transcription", {})
+                            if hasattr(event_data, "data")
+                            else {},
                             "meeting_notes": {
                                 "status": "completed",
                                 "timestamp": dt.now(UTC).isoformat(),
@@ -580,23 +622,27 @@ Keep each bullet point concise but informative]
                                     "model": self.model,
                                     "num_ctx": self.num_ctx,
                                     "timeout": self.timeout,
-                                    "max_concurrent_tasks": self.max_concurrent_tasks
-                                }
+                                    "max_concurrent_tasks": self.max_concurrent_tasks,
+                                },
                             },
                             "metadata": metadata,
                             "context": {
-                                "correlation_id": getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                                "correlation_id": getattr(
+                                    event_data, "correlation_id", str(uuid.uuid4())
+                                ),
                                 "source_plugin": self.name,
-                                "metadata": metadata
-                            }
+                                "metadata": metadata,
+                            },
                         }
-                        
+
                         completion_event = Event.create(
                             name="meeting_notes_local.completed",
                             data=completion_data,
-                            correlation_id=getattr(event_data, "correlation_id", str(uuid.uuid4())),
+                            correlation_id=getattr(
+                                event_data, "correlation_id", str(uuid.uuid4())
+                            ),
                             source_plugin=self.name,
-                            priority=EventPriority.NORMAL
+                            priority=EventPriority.NORMAL,
                         )
                         await self.event_bus.publish(completion_event)
                         logger.info(
@@ -608,7 +654,7 @@ Keep each bullet point concise but informative]
                             },
                         )
                         return
-                    except Exception as e:
+                    except Exception:
                         logger.error(
                             "Failed to publish completion event",
                             extra={
@@ -649,7 +695,7 @@ Keep each bullet point concise but informative]
         # Handle generic Event type
         if hasattr(event, "data") and isinstance(event.data, dict):
             transcription_data = event.data.get("transcription", {})
-            
+
             logger.debug(
                 "Examining transcription data",
                 extra={
@@ -657,20 +703,20 @@ Keep each bullet point concise but informative]
                     "transcription_data": transcription_data,
                     "has_output_file": "output_file" in transcription_data,
                     "has_transcript_paths": "transcript_paths" in transcription_data,
-                }
+                },
             )
-            
+
             # First try to get single output file
             if transcription_data.get("output_file"):
                 logger.debug(
                     "Found output_file",
                     extra={
                         "plugin_name": self.name,
-                        "output_file": transcription_data["output_file"]
-                    }
+                        "output_file": transcription_data["output_file"],
+                    },
                 )
                 return Path(transcription_data["output_file"])
-                
+
             # Then try multiple transcript paths - prefer merged, then system, then mic
             transcript_paths = transcription_data.get("transcript_paths", {})
             if transcript_paths:
@@ -678,8 +724,8 @@ Keep each bullet point concise but informative]
                     "Found transcript_paths",
                     extra={
                         "plugin_name": self.name,
-                        "transcript_paths": transcript_paths
-                    }
+                        "transcript_paths": transcript_paths,
+                    },
                 )
                 # Prefer merged transcript if available
                 if transcript_paths.get("merged"):
@@ -690,14 +736,14 @@ Keep each bullet point concise but informative]
                 # Finally try microphone transcript
                 elif transcript_paths.get("mic"):
                     return Path(transcript_paths["mic"])
-                    
+
         logger.warning(
             "No transcript path found in event",
             extra={
                 "plugin_name": self.name,
                 "event_id": getattr(event, "event_id", None),
-                "event_data": str(event)
-            }
+                "event_data": str(event),
+            },
         )
         return None
 

@@ -404,17 +404,14 @@ class DatabaseManager:
         self._shutting_down = True
         try:
             # Shutdown thread pool first with proper timeout handling
-            if hasattr(self, '_executor') and self._executor is not None:
+            if hasattr(self, "_executor") and self._executor is not None:
                 try:
                     # Use wait=True without timeout for compatibility
                     self._executor.shutdown(wait=True)
                 except Exception as e:
                     logger.error(
                         "Error shutting down thread pool",
-                        extra={
-                            "req_id": self._req_id,
-                            "error": str(e)
-                        }
+                        extra={"req_id": self._req_id, "error": str(e)},
                     )
                 self._executor = None
 
@@ -428,20 +425,16 @@ class DatabaseManager:
             except asyncio.TimeoutError:
                 logger.warning(
                     "Timeout acquiring lock during database shutdown",
-                    extra={"req_id": self._req_id}
+                    extra={"req_id": self._req_id},
                 )
-            
+
             logger.debug(
-                "Database manager cleanup complete",
-                extra={"req_id": self._req_id}
+                "Database manager cleanup complete", extra={"req_id": self._req_id}
             )
         except Exception as e:
             logger.error(
                 "Error during database cleanup",
-                extra={
-                    "req_id": self._req_id,
-                    "error": str(e)
-                }
+                extra={"req_id": self._req_id, "error": str(e)},
             )
             raise
         finally:
@@ -456,10 +449,7 @@ class DatabaseManager:
         except Exception as e:
             logger.error(
                 "Error closing connections",
-                extra={
-                    "req_id": self._req_id,
-                    "error": str(e)
-                }
+                extra={"req_id": self._req_id, "error": str(e)},
             )
 
     @classmethod

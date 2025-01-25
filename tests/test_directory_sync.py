@@ -216,7 +216,9 @@ def test_directory_sync_stop_monitoring_timeout(app_root):
     ):
         sync = DirectorySync(app_root)
         mock_observer = MagicMock(spec=Observer)
-        mock_observer.is_alive.return_value = True  # Observer didn't stop within timeout
+        mock_observer.is_alive.return_value = (
+            True  # Observer didn't stop within timeout
+        )
         sync.observers["src"] = mock_observer
 
         sync.stop_monitoring()

@@ -138,20 +138,15 @@ Speaker 2: I'll prepare the report by next week.
                     "status": "completed",
                     "recording_id": "test_recording",
                     "output_file": str(transcript_path),
-                    "transcript_paths": {
-                        "merged": str(transcript_path)
-                    }
+                    "transcript_paths": {"merged": str(transcript_path)},
                 },
-                "metadata": {
-                    "title": "Test Meeting",
-                    "date": "2024-01-20T10:00:00Z"
-                },
+                "metadata": {"title": "Test Meeting", "date": "2024-01-20T10:00:00Z"},
                 "context": {
                     "correlation_id": "test_id",
-                    "source_plugin": "transcription_local"
-                }
+                    "source_plugin": "transcription_local",
+                },
             },
-            context=EventContext(correlation_id="test_id")
+            context=EventContext(correlation_id="test_id"),
         )
 
         mock_read = AsyncMock(return_value=sample_transcript)

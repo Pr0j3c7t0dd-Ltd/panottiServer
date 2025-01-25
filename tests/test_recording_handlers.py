@@ -137,4 +137,6 @@ async def test_handle_recording_ended_error():
 
         assert "validation error" in str(exc_info.value).lower()
         mock_logger.error.assert_called_once()
-        assert "Error handling recording.ended event" in mock_logger.error.call_args[0][0]
+        assert (
+            "Error handling recording.ended event" in mock_logger.error.call_args[0][0]
+        )

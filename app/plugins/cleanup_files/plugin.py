@@ -5,11 +5,12 @@ import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.core.events import ConcreteEventBus as EventBus, Event, EventContext, EventPriority
+from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import Event, EventPriority
 from app.core.plugins import PluginBase, PluginConfig
 from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
@@ -205,7 +206,8 @@ class CleanupFilesPlugin(PluginBase):
                         else "root.data.recording_id"
                         if "data" in data and "recording_id" in data["data"]
                         else "root.desktop_notification.recording_id"
-                        if "desktop_notification" in data and "recording_id" in data["desktop_notification"]
+                        if "desktop_notification" in data
+                        and "recording_id" in data["desktop_notification"]
                         else "unknown"
                     ),
                 },
@@ -234,10 +236,14 @@ class CleanupFilesPlugin(PluginBase):
                     name="cleanup_files.completed",
                     data={
                         "recording": data.get("data", {}).get("recording", {}),
-                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}),
+                        "noise_reduction": data.get("data", {}).get(
+                            "noise_reduction", {}
+                        ),
                         "transcription": data.get("data", {}).get("transcription", {}),
                         "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
-                        "desktop_notification": data.get("data", {}).get("desktop_notification", {}),
+                        "desktop_notification": data.get("data", {}).get(
+                            "desktop_notification", {}
+                        ),
                         "cleanup_files": {
                             "status": "completed",
                             "timestamp": datetime.now(UTC).isoformat(),
@@ -246,19 +252,21 @@ class CleanupFilesPlugin(PluginBase):
                             "config": {
                                 "include_dirs": [str(d) for d in self.include_dirs],
                                 "exclude_dirs": [str(d) for d in self.exclude_dirs],
-                                "cleanup_delay": self.cleanup_delay
-                            }
+                                "cleanup_delay": self.cleanup_delay,
+                            },
                         },
                         "metadata": metadata,
                         "context": {
-                            "correlation_id": data.get("correlation_id", str(uuid.uuid4())),
+                            "correlation_id": data.get(
+                                "correlation_id", str(uuid.uuid4())
+                            ),
                             "source_plugin": self.name,
-                            "metadata": metadata
-                        }
+                            "metadata": metadata,
+                        },
                     },
                     correlation_id=data.get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL
+                    priority=EventPriority.NORMAL,
                 )
 
                 logger.debug(
@@ -296,32 +304,50 @@ class CleanupFilesPlugin(PluginBase):
                 error_event = Event.create(
                     name="cleanup_files.error",
                     data={
-                        "recording": data.get("data", {}).get("recording", {}) if data else {},
-                        "noise_reduction": data.get("data", {}).get("noise_reduction", {}) if data else {},
-                        "transcription": data.get("data", {}).get("transcription", {}) if data else {},
-                        "meeting_notes": data.get("data", {}).get("meeting_notes", {}) if data else {},
-                        "desktop_notification": data.get("data", {}).get("desktop_notification", {}) if data else {},
+                        "recording": data.get("data", {}).get("recording", {})
+                        if data
+                        else {},
+                        "noise_reduction": data.get("data", {}).get(
+                            "noise_reduction", {}
+                        )
+                        if data
+                        else {},
+                        "transcription": data.get("data", {}).get("transcription", {})
+                        if data
+                        else {},
+                        "meeting_notes": data.get("data", {}).get("meeting_notes", {})
+                        if data
+                        else {},
+                        "desktop_notification": data.get("data", {}).get(
+                            "desktop_notification", {}
+                        )
+                        if data
+                        else {},
                         "cleanup_files": {
                             "status": "error",
                             "timestamp": datetime.now(UTC).isoformat(),
-                            "recording_id": recording_id if "recording_id" in locals() else "unknown",
+                            "recording_id": recording_id
+                            if "recording_id" in locals()
+                            else "unknown",
                             "error": str(e),
                             "config": {
                                 "include_dirs": [str(d) for d in self.include_dirs],
                                 "exclude_dirs": [str(d) for d in self.exclude_dirs],
-                                "cleanup_delay": self.cleanup_delay
-                            }
+                                "cleanup_delay": self.cleanup_delay,
+                            },
                         },
                         "metadata": metadata if "metadata" in locals() else {},
                         "context": {
-                            "correlation_id": data.get("correlation_id", str(uuid.uuid4())),
+                            "correlation_id": data.get(
+                                "correlation_id", str(uuid.uuid4())
+                            ),
                             "source_plugin": self.name,
-                            "metadata": metadata if "metadata" in locals() else {}
-                        }
+                            "metadata": metadata if "metadata" in locals() else {},
+                        },
                     },
                     correlation_id=data.get("correlation_id", str(uuid.uuid4())),
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(error_event)
 

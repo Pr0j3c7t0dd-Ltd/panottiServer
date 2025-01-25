@@ -1,6 +1,5 @@
 """Test configuration for example plugin."""
 
-import os
 import sys
 from pathlib import Path
 
