@@ -764,24 +764,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             f.write("# Merged Transcript\n\n")
             f.write("## Metadata\n\n")
 
-            # Create metadata object
-            metadata = {
-                "event": {
-                    "title": original_event.get("metadata", {}).get("event_title"),
-                    "provider": original_event.get("metadata", {}).get("event_provider"),
-                    "providerId": original_event.get("metadata", {}).get("event_provider_id"),
-                    "started": original_event.get("metadata", {}).get("recordingStarted"),
-                    "ended": original_event.get("metadata", {}).get("recordingEnded"),
-                    "attendees": original_event.get("metadata", {}).get("event_attendees", []),
-                },
-                "speakers": {
-                    "system": labels[1] if len(labels) > 1 else "System",
-                    "microphone": labels[0] if len(labels) > 0 else "Microphone",
-                    "labels": labels
-                },
-                "transcriptionCompleted": datetime.now(tz=timezone.utc).isoformat(),
-                "metadata": original_event.get("metadata", {})
-            }
+            # Use original metadata
+            metadata = original_event.get("metadata", {})
 
             # Write metadata as JSON in markdown code block
             f.write("```json\n")
