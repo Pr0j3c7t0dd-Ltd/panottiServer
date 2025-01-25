@@ -16,7 +16,7 @@ The working code to be implemented is below, no need to change, apart to incorpo
 
 Ensure you add a detailed README.md to the plugin, with any information needed for additional python package requirements.txt
 
-Make sure the plugin.yaml file for the new plugin includes the ollama_url (defaulted to http://localhost:11434/api/generate) and model_name (defaulted to deepseek-r1:8b).  It should also include num_ctx (defaulted to 128000).  Update the plugin to use these values.
+Make sure the plugin.yaml file for the new plugin includes the ollama_url (defaulted to http://localhost:11434/api/generate) and model_name (defaulted to llama3.1:8b).  It should also include num_ctx (defaulted to 128000).  Update the plugin to use these values.
 
 Look at the current example plugin in the /app/plugins/example ,  /app/plugins/noise_reduction and /app/plugins/audio_transcription directories to get context on how to create the plugin.  Especially pay attention to how worker threads are handled in the noise_reduction plugin as an example.
 
@@ -36,7 +36,7 @@ import requests
 
 class MeetingNotesGenerator:
 
-def __init__(self, model_name="deepseek-r1:8b"):
+def __init__(self, model_name="llama3.1:8b"):
 
 self.ollama_url = "http://localhost:11434/api/generate"
 

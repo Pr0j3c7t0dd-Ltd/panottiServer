@@ -42,8 +42,8 @@ panottiServer features an extensible plugin architecture that allows you to crea
 - Rust (for FastAPI's Pydantic V2)
 - Poetry (dependency management)
 - Ollama (for meeting notes generation)
-  - Default model: `deepseek-r1:8b` (reasoning LLM)
-  - Alternative: `llama3.1:latest` (other Ollama models are also supported)
+  - Default model: `llama3.1:8b` (other Ollama models are also supported)
+  - Alternative: `deepseek-r1:8b` (reasoning LLM)
 - OpenAI Whisper (for audio transcription)
 - Minimum 8GB RAM available for Docker operations
 - Docker with memory allocation:
@@ -557,7 +557,7 @@ The server comes with several built-in plugins. Here's a summary of each plugin 
 - **Dependencies**: audio_transcription
 - **Description**: Generates meeting notes using local Ollama LLM
 - **Features**:
-  - Uses deepseek-r1:8b model by default
+  - Uses llama3.1:8b model by default
   - Configurable Ollama URL for Docker/local setup
   - Large context window (131K tokens)
 
@@ -744,7 +744,7 @@ This implementation uses FastAPI with Pydantic V2, which requires Rust for its h
 
 For optimal meeting notes generation, this application requires a large language model. We recommend:
 
-- **Default**: `deepseek-r1:8b` - Good balance of quality and resource usage (minimum 24GB RAM)
+- **Default**: `llama3.1:8b` - Good balance of quality and resource usage (minimum 24GB RAM)
 - **Optional**: `llama3.3:70b` - Better quality notes but requires significant resources (minimum 80GB RAM)
 
 Note: The model choice impacts the quality of:
@@ -754,7 +754,7 @@ Note: The model choice impacts the quality of:
 
 Configure your preferred model in the meeting notes `plugin.yaml` file:
 ```yaml
-model_name: "deepseek-r1:8b"  # or llama3.3:70b
+model_name: "llama3.1:8b"  # or llama3.3:70b
 ```
 
 Important memory considerations:

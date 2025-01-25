@@ -37,7 +37,7 @@ services:
       - SSL_KEY_FILE=/app/ssl/key.pem
       - UVICORN_HOST=0.0.0.0
       - API_PORT=${API_PORT}
-      - OLLAMA_MODEL=deepseek-r1:8b
+      - OLLAMA_MODEL=llama3.1:8b
       - OLLAMA_TIMEOUT=600
     restart: unless-stopped
     healthcheck:

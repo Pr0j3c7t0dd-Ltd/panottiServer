@@ -212,6 +212,9 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "system": combined_metadata.get("systemLabel")
                 }
 
+            mic_label = speaker_labels.get("microphone", "Microphone")
+            sys_label = speaker_labels.get("system", "System")
+
             logger.debug(
                 "Processing event data",
                 extra={
@@ -249,8 +252,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             )
 
             # Process both audio files with speaker labels
-            mic_transcript = await self._process_audio(processed_mic_audio, "Microphone")
-            sys_transcript = None
+            mic_transcript = await self._process_audio(processed_mic_audio, mic_label, combined_metadata) if processed_mic_audio else None
+            sys_transcript = await self._process_audio(original_sys_audio, sys_label, combined_metadata) if original_sys_audio else None
 
             if original_sys_audio:
                 if os.path.exists(original_sys_audio):
@@ -263,7 +266,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     )
                     try:
                         sys_transcript = await self._process_audio(
-                            original_sys_audio, "System"
+                            original_sys_audio, sys_label, combined_metadata
                         )
                         if not sys_transcript:
                             logger.error(
@@ -314,23 +317,18 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             )
 
             # Get metadata and speaker labels
-            mic_label = combined_metadata.get("microphone_label", "Microphone")
-            sys_label = combined_metadata.get("system_label", "System")
-
-            # Merge transcripts if we have both
-            transcript_files = []
             labels = []
 
             if mic_transcript:
-                transcript_files.append(str(mic_transcript))
                 labels.append(mic_label)
             if sys_transcript:
-                transcript_files.append(str(sys_transcript))
                 labels.append(sys_label)
 
-            if len(transcript_files) > 0:
+            if len(labels) > 0:
+                # Filter out None values from transcript list
+                transcript_files = [f for f in [str(mic_transcript) if mic_transcript else None, str(sys_transcript) if sys_transcript else None] if f is not None]
                 await self.merge_transcripts(
-                    transcript_files, 
+                    transcript_files,
                     str(merged_transcript), 
                     labels, 
                     event_data if isinstance(event_data, dict) else event_data.dict()
@@ -599,7 +597,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             return False
 
     async def transcribe_audio(
-        self, audio_path: str, output_path: str, label: str
+        self, audio_path: str, output_path: str, label: str, metadata: dict | None = None
     ) -> Path:
         """Transcribe an audio file using Whisper"""
         try:
@@ -624,7 +622,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 )
             )
 
-            # Write transcript
+            # Create output directory if it doesn't exist
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -633,6 +631,14 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     # Write header
                     f.write("# Audio Transcript\n\n")
                     f.write(f"Speaker: {label}\n\n")
+                    
+                    # Write metadata if provided
+                    if metadata:
+                        f.write("## Metadata\n\n")
+                        f.write("```json\n")
+                        f.write(json.dumps(metadata, indent=2))
+                        f.write("\n```\n\n")
+                    
                     f.write("## Segments\n\n")
 
                     # Process segments
@@ -764,16 +770,17 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     "title": original_event.get("metadata", {}).get("event_title"),
                     "provider": original_event.get("metadata", {}).get("event_provider"),
                     "providerId": original_event.get("metadata", {}).get("event_provider_id"),
-                    "started": original_event.get("metadata", {}).get("recording_started"),
-                    "ended": original_event.get("metadata", {}).get("recording_ended"),
+                    "started": original_event.get("metadata", {}).get("recordingStarted"),
+                    "ended": original_event.get("metadata", {}).get("recordingEnded"),
                     "attendees": original_event.get("metadata", {}).get("event_attendees", []),
                 },
                 "speakers": {
-                    "system": original_event.get("metadata", {}).get("system_label"),
-                    "microphone": original_event.get("metadata", {}).get("microphone_label"),
+                    "system": labels[1] if len(labels) > 1 else "System",
+                    "microphone": labels[0] if len(labels) > 0 else "Microphone",
                     "labels": labels
                 },
                 "transcriptionCompleted": datetime.now(tz=timezone.utc).isoformat(),
+                "metadata": original_event.get("metadata", {})
             }
 
             # Write metadata as JSON in markdown code block
@@ -801,7 +808,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 f.write(f"[{minutes:02d}:{seconds:05.2f}] {label}: {text}\n")
 
     async def _process_audio(
-        self, audio_path: str, speaker_label: str | None = None
+        self, audio_path: str, speaker_label: str | None = None, metadata: dict | None = None
     ) -> Path | None:
         """Process audio file and return transcript path"""
         try:
@@ -833,7 +840,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 transcript_path = await self.transcribe_audio(
                     audio_path,
                     str(output_path),
-                    speaker_label or "Speaker"
+                    speaker_label or "Speaker",
+                    metadata
                 )
 
                 if not transcript_path or not os.path.exists(transcript_path):

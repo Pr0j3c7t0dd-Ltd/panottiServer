@@ -52,7 +52,7 @@ class TestMeetingNotesLocalPlugin(BasePluginTest):
             enabled=True,
             config={
                 "ollama_url": "http://localhost:11434/api/generate",
-                "model_name": "deepseek-r1:8b",
+                "model_name": "llama3.1:8b",
                 "output_directory": "data/meeting_notes_local",
                 "num_ctx": 128000,
                 "max_concurrent_tasks": 2,
@@ -219,7 +219,7 @@ Speaker 2: I'll prepare the report by next week.
     def test_plugin_configuration(self, plugin):
         """Test plugin configuration parameters"""
         assert plugin.ollama_url == "http://localhost:11434/api/generate"
-        assert plugin.model == "deepseek-r1:8b"
+        assert plugin.model == "llama3.1:8b"
         assert isinstance(plugin.output_dir, Path)
         assert str(plugin.output_dir) == "data/meeting_notes_local"
         assert plugin.num_ctx == 128000
