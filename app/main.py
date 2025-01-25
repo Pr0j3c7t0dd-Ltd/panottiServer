@@ -294,7 +294,10 @@ async def api_logging_middleware(
             },
         )
         # Don't re-raise CancelledError to allow graceful shutdown
-        return Response(status_code=503, content="Service shutting down")
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Service shutting down"},
+        )
 
     except Exception as e:
         logger.error(
@@ -306,7 +309,10 @@ async def api_logging_middleware(
                 "request": {"method": request.method, "url": str(request.url)},
             },
         )
-        raise
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)},
+        )
 
 
 @app.exception_handler(RequestValidationError)
