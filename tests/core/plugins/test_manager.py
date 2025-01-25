@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+import asyncio
 
 from app.core.events import ConcreteEventBus
 from app.core.plugins.interface import PluginBase, PluginConfig
@@ -177,3 +178,314 @@ async def test_plugin_config_loading(plugin_manager, tmp_plugin_dir):
     assert "plugin2" in plugin_manager.configs
     assert plugin_manager.configs["plugin1"].dependencies == ["plugin2"]
     assert not plugin_manager.configs["plugin2"].dependencies
+
+
+async def test_discover_plugins_yaml_error(plugin_manager, tmp_plugin_dir):
+    """Test error handling when loading invalid YAML config."""
+    plugin_dir = tmp_plugin_dir / "invalid_plugin"
+    plugin_dir.mkdir()
+    
+    # Create invalid YAML file
+    with open(plugin_dir / "plugin.yaml", "w") as f:
+        f.write("invalid: yaml: content: {")
+    
+    configs = await plugin_manager.discover_plugins()
+    assert len(configs) == 0
+
+
+async def test_initialize_plugins_import_error(plugin_manager):
+    """Test error handling when plugin module import fails."""
+    config = PluginConfig(name="nonexistent", version="1.0.0")
+    plugin_manager.configs["nonexistent"] = config
+    
+    await plugin_manager.initialize_plugins()
+    assert "nonexistent" not in plugin_manager.plugins
+
+
+async def test_circular_dependency_sorting(plugin_manager):
+    """Test sorting of plugins with circular dependencies."""
+    plugin1_config = PluginConfig(
+        name="plugin1", version="1.0.0", dependencies=["plugin2"]
+    )
+    plugin2_config = PluginConfig(
+        name="plugin2", version="1.0.0", dependencies=["plugin1"]
+    )
+    
+    plugin_manager.configs = {
+        "plugin1": plugin1_config,
+        "plugin2": plugin2_config,
+    }
+    
+    # The current implementation will handle circular dependencies by visiting each node once
+    sorted_plugins = plugin_manager._sort_by_dependencies(plugin_manager.configs)
+    assert len(sorted_plugins) == 2
+    # The order will depend on which plugin is visited first, but both should be included
+    assert all(p.name in ["plugin1", "plugin2"] for p in sorted_plugins)
+
+
+async def test_plugin_initialization_error(plugin_manager, TestPluginClass):
+    """Test error handling during plugin initialization."""
+    class FailingPlugin(TestPluginClass):
+        async def _initialize(self):
+            raise RuntimeError("Initialization failed")
+
+    class MockModule:
+        def __init__(self):
+            self.ConcreteTestPlugin = FailingPlugin
+            self.__file__ = "failing_plugin.py"
+            self.__name__ = "app.plugins.failing"
+
+    config = PluginConfig(name="failing", version="1.0.0")
+    plugin_manager.configs["failing"] = config
+
+    with patch("importlib.import_module", return_value=MockModule()):
+        await plugin_manager.initialize_plugins()
+        assert "failing" not in plugin_manager.plugins
+
+
+async def test_plugin_shutdown_error(plugin_manager, TestPluginClass):
+    """Test error handling during plugin shutdown."""
+    class FailingShutdownPlugin(TestPluginClass):
+        async def _shutdown(self):
+            raise RuntimeError("Shutdown failed")
+
+    class MockModule:
+        def __init__(self):
+            self.ConcreteTestPlugin = FailingShutdownPlugin
+            self.__file__ = "failing_plugin.py"
+            self.__name__ = "app.plugins.failing"
+
+    config = PluginConfig(name="failing", version="1.0.0")
+    plugin_manager.configs["failing"] = config
+
+    with patch("importlib.import_module", return_value=MockModule()):
+        await plugin_manager.initialize_plugins()
+        assert "failing" in plugin_manager.plugins
+        await plugin_manager.shutdown_plugins()
+
+
+def test_get_plugin_nonexistent(plugin_manager):
+    """Test getting a non-existent plugin."""
+    assert plugin_manager.get_plugin("nonexistent") is None
+
+
+async def test_missing_plugin_class(plugin_manager):
+    """Test error handling when plugin class is missing."""
+    class MockModule:
+        def __init__(self):
+            self.__file__ = "missing_plugin.py"
+            self.__name__ = "app.plugins.missing"
+            # No ConcreteTestPlugin class defined
+
+    config = PluginConfig(name="missing", version="1.0.0")
+    plugin_manager.configs["missing"] = config
+
+    with patch("importlib.import_module", return_value=MockModule()):
+        await plugin_manager.initialize_plugins()
+        assert "missing" not in plugin_manager.plugins
+
+
+async def test_plugin_manager_no_event_bus():
+    """Test plugin manager initialization without event bus."""
+    plugin_manager = PluginManager(plugin_dir="plugins")
+    assert plugin_manager.event_bus is None
+    
+    # Test discover_plugins without event bus
+    configs = await plugin_manager.discover_plugins()
+    assert len(configs) == 0
+
+
+async def test_discover_plugins_no_plugin_dir(tmp_path):
+    """Test plugin discovery with non-existent plugin directory."""
+    nonexistent_dir = tmp_path / "nonexistent"
+    plugin_manager = PluginManager(plugin_dir=str(nonexistent_dir))
+    configs = await plugin_manager.discover_plugins()
+    assert len(configs) == 0
+
+
+async def test_discover_plugins_invalid_plugin_dir(tmp_path):
+    """Test plugin discovery with invalid plugin directory (file instead of dir)."""
+    invalid_dir = tmp_path / "invalid"
+    invalid_dir.touch()  # Create a file instead of a directory
+    plugin_manager = PluginManager(plugin_dir=str(invalid_dir))
+    configs = await plugin_manager.discover_plugins()
+    assert len(configs) == 0
+
+
+async def test_plugin_initialization_missing_module(plugin_manager):
+    """Test plugin initialization with missing module."""
+    config = PluginConfig(name="missing_module", version="1.0.0")
+    plugin_manager.configs["missing_module"] = config
+    
+    with patch("importlib.import_module", side_effect=ModuleNotFoundError("No module named 'missing_module'")):
+        await plugin_manager.initialize_plugins()
+        assert "missing_module" not in plugin_manager.plugins
+
+
+async def test_plugin_shutdown_with_error_and_continue(plugin_manager, TestPluginClass):
+    """Test plugin shutdown continues after error."""
+    class FailingShutdownPlugin(TestPluginClass):
+        async def _shutdown(self):
+            raise RuntimeError("Shutdown failed")
+
+    class SuccessfulShutdownPlugin(TestPluginClass):
+        pass
+
+    class MockModuleFailing:
+        def __init__(self):
+            self.ConcreteTestPlugin = FailingShutdownPlugin
+            self.__file__ = "failing_plugin.py"
+            self.__name__ = "app.plugins.failing"
+
+    class MockModuleSuccessful:
+        def __init__(self):
+            self.ConcreteTestPlugin = SuccessfulShutdownPlugin
+            self.__file__ = "successful_plugin.py"
+            self.__name__ = "app.plugins.successful"
+
+    failing_config = PluginConfig(name="failing", version="1.0.0")
+    successful_config = PluginConfig(name="successful", version="1.0.0")
+    plugin_manager.configs = {
+        "failing": failing_config,
+        "successful": successful_config
+    }
+
+    with patch("importlib.import_module", side_effect=[MockModuleFailing(), MockModuleSuccessful()]):
+        await plugin_manager.initialize_plugins()
+        assert "failing" in plugin_manager.plugins
+        assert "successful" in plugin_manager.plugins
+        
+        await plugin_manager.shutdown_plugins()
+        # Plugins remain in the manager even if shutdown fails
+        assert "failing" in plugin_manager.plugins
+        assert "successful" in plugin_manager.plugins
+
+
+async def test_discover_plugins_with_empty_config(plugin_manager, tmp_plugin_dir):
+    """Test plugin discovery with empty config file."""
+    plugin_dir = tmp_plugin_dir / "empty_plugin"
+    plugin_dir.mkdir()
+    
+    # Create empty YAML file
+    with open(plugin_dir / "plugin.yaml", "w") as f:
+        f.write("")
+    
+    configs = await plugin_manager.discover_plugins()
+    assert len(configs) == 0
+
+
+async def test_discover_plugins_with_missing_required_fields(plugin_manager, tmp_plugin_dir):
+    """Test plugin discovery with missing required fields."""
+    plugin_dir = tmp_plugin_dir / "invalid_plugin"
+    plugin_dir.mkdir()
+    
+    # Create YAML file missing required fields
+    with open(plugin_dir / "plugin.yaml", "w") as f:
+        f.write("version: 1.0.0")  # Missing name field
+    
+    configs = await plugin_manager.discover_plugins()
+    assert len(configs) == 0
+
+
+async def test_plugin_initialization_with_invalid_module(plugin_manager):
+    """Test plugin initialization with invalid module."""
+    config = PluginConfig(name="invalid", version="1.0.0")
+    plugin_manager.configs["invalid"] = config
+    
+    class InvalidModule:
+        def __init__(self):
+            self.__file__ = "invalid_plugin.py"
+            self.__name__ = "app.plugins.invalid"
+            # No plugin class and invalid attribute access should raise AttributeError
+    
+    with patch("importlib.import_module", return_value=InvalidModule()):
+        await plugin_manager.initialize_plugins()
+        assert "invalid" not in plugin_manager.plugins
+
+
+async def test_plugin_shutdown_cleanup(plugin_manager, TestPluginClass):
+    """Test plugin shutdown with cleanup."""
+    class CleanupPlugin(TestPluginClass):
+        async def _shutdown(self):
+            await super()._shutdown()
+            # Simulate some cleanup work that might fail
+            raise RuntimeError("Cleanup failed")
+
+    class MockModule:
+        def __init__(self):
+            self.ConcreteTestPlugin = CleanupPlugin
+            self.__file__ = "cleanup_plugin.py"
+            self.__name__ = "app.plugins.cleanup"
+
+    config = PluginConfig(name="cleanup", version="1.0.0")
+    plugin_manager.configs["cleanup"] = config
+
+    with patch("importlib.import_module", return_value=MockModule()):
+        await plugin_manager.initialize_plugins()
+        assert "cleanup" in plugin_manager.plugins
+        
+        # Test shutdown with cleanup error
+        await plugin_manager.shutdown_plugins()
+        assert "cleanup" in plugin_manager.plugins  # Plugin remains in manager after failed shutdown
+
+
+async def test_discover_plugins_with_invalid_example(plugin_manager, tmp_plugin_dir):
+    """Test plugin discovery with invalid example file."""
+    plugin_dir = tmp_plugin_dir / "example_plugin"
+    plugin_dir.mkdir()
+    
+    # Create invalid example file
+    with open(plugin_dir / "plugin.yaml.example", "w") as f:
+        f.write("invalid: yaml: content")
+    
+    configs = await plugin_manager.discover_plugins()
+    assert len(configs) == 0
+
+
+async def test_plugin_initialization_with_module_error(plugin_manager):
+    """Test plugin initialization with module that raises error."""
+    config = PluginConfig(name="error_module", version="1.0.0")
+    plugin_manager.configs["error_module"] = config
+    
+    class ErrorModule:
+        def __init__(self):
+            raise ImportError("Module import failed")
+    
+    with patch("importlib.import_module", side_effect=ErrorModule):
+        await plugin_manager.initialize_plugins()
+        assert "error_module" not in plugin_manager.plugins
+
+
+async def test_plugin_shutdown_with_task_error(plugin_manager, TestPluginClass):
+    """Test plugin shutdown with task error."""
+    class TaskErrorPlugin(TestPluginClass):
+        async def _shutdown(self):
+            # Simulate a task error during shutdown
+            await asyncio.sleep(0)  # Allow other tasks to run
+            raise asyncio.CancelledError("Task cancelled")
+
+    class MockModule:
+        def __init__(self):
+            self.ConcreteTestPlugin = TaskErrorPlugin
+            self.__file__ = "task_error_plugin.py"
+            self.__name__ = "app.plugins.task_error"
+
+    config = PluginConfig(name="task_error", version="1.0.0")
+    plugin_manager.configs["task_error"] = config
+
+    with patch("importlib.import_module", return_value=MockModule()):
+        await plugin_manager.initialize_plugins()
+        assert "task_error" in plugin_manager.plugins
+        
+        # Test shutdown with task error
+        try:
+            await plugin_manager.shutdown_plugins()
+        except asyncio.CancelledError:
+            pass  # Expected error
+        assert "task_error" in plugin_manager.plugins
+
+
+def test_get_plugin_with_error():
+    """Test get_plugin with error."""
+    plugin_manager = PluginManager(plugin_dir="plugins")
+    assert plugin_manager.get_plugin(None) is None  # Test with invalid plugin name
