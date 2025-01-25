@@ -569,7 +569,7 @@ Keep each bullet point concise but informative]
 
                 elif self.provider == "anthropic":
                     response = await self.client.messages.create(  # type: ignore
-                        max_tokens=4000,
+                        max_tokens=8192,
                         messages=[{"role": "user", "content": user_prompt}],
                         model=self.model,
                         system=self.SYSTEM_PROMPT,

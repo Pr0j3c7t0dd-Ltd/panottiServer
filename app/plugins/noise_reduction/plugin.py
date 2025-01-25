@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, UTC
 from pathlib import Path
 from sqlite3 import Connection
-from typing import Any
+from typing import Any, Union
 
 import numpy as np
 import soundfile as sf
@@ -154,7 +154,10 @@ class NoiseReductionPlugin(PluginBase):
     #  Time alignment helpers
     # ------------------------------------------------------------------------
     def _align_signals_by_fft(
-        self, mic_data: np.ndarray, sys_data: np.ndarray, sample_rate: int
+        self, 
+        mic_data: Union[np.ndarray, tuple[np.ndarray, np.ndarray]], 
+        sys_data: Union[np.ndarray, tuple[np.ndarray, np.ndarray]], 
+        sample_rate: int
     ) -> tuple[np.ndarray, np.ndarray, float]:
         """
         Align signals using FFT cross-correlation and calculate the lag.
@@ -169,8 +172,15 @@ class NoiseReductionPlugin(PluginBase):
             chunk_limit = int(self._alignment_chunk_seconds * sample_rate)
             chunk_len = min(chunk_len, chunk_limit)
 
-        mic_chunk = mic_data[:chunk_len].astype(np.float32)
-        sys_chunk = sys_data[:chunk_len].astype(np.float32)
+        # Handle both mono and stereo audio
+        def convert_to_mono(audio_data):
+            if isinstance(audio_data, tuple):
+                # For stereo, average the channels
+                return np.mean([channel.astype(np.float32) for channel in audio_data], axis=0)
+            return audio_data.astype(np.float32)
+
+        mic_chunk = convert_to_mono(mic_data[:chunk_len])
+        sys_chunk = convert_to_mono(sys_data[:chunk_len])
 
         corr = signal.correlate(mic_chunk, sys_chunk, mode="full", method="fft")
         best_lag = int(np.argmax(corr) - (len(sys_chunk) - 1))  # Ensure integer type
@@ -253,6 +263,15 @@ class NoiseReductionPlugin(PluginBase):
     # ------------------------------------------------------------------------
     # 2) Advanced frequency-domain bleed removal
     # ------------------------------------------------------------------------
+    def _resample_if_needed(self, audio_data: np.ndarray, src_sr: int, target_sr: int) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        """Resample audio data if source and target sample rates differ."""
+        if src_sr == target_sr:
+            return audio_data
+        
+        # Calculate number of samples for target length
+        target_length = int(len(audio_data) * target_sr / src_sr)
+        return signal.resample(audio_data, target_length)
+
     def _remove_bleed_frequency_domain(
         self,
         mic_file: str,
@@ -269,14 +288,25 @@ class NoiseReductionPlugin(PluginBase):
         # Read original files and get initial length
         mic_data, mic_sr = sf.read(mic_file)
         sys_data, sys_sr = sf.read(sys_file)
+        
+        # Ensure we have numpy arrays
+        mic_data = np.asarray(mic_data)
+        sys_data = np.asarray(sys_data)
+        
         original_length = len(mic_data)  # Store original length for final check
-
+        
+        # If sample rates differ, resample system audio to match microphone
         if mic_sr != sys_sr:
-            raise ValueError("Mic and system sample rates differ.")
+            logger.info(
+                f"Sample rates differ: mic={mic_sr}Hz, sys={sys_sr}Hz. Resampling system audio."
+            )
+            sys_data = self._resample_if_needed(sys_data, sys_sr, mic_sr)
+            sys_sr = mic_sr  # Update system sample rate to match mic
 
-        if mic_data.ndim > 1:
+        # Convert stereo to mono if needed
+        if isinstance(mic_data, np.ndarray) and mic_data.ndim > 1:
             mic_data = mic_data.mean(axis=1)
-        if sys_data.ndim > 1:
+        if isinstance(sys_data, np.ndarray) and sys_data.ndim > 1:
             sys_data = sys_data.mean(axis=1)
 
         lag_seconds = 0
