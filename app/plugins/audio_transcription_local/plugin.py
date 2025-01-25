@@ -764,8 +764,14 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             f.write("# Merged Transcript\n\n")
             f.write("## Metadata\n\n")
 
-            # Use original metadata
-            metadata = original_event.get("metadata", {})
+            # Extract metadata from event data
+            metadata = {}
+            if isinstance(original_event, dict):
+                data = original_event.get("data", {})
+                metadata.update(data.get("metadata", {}))
+                context = data.get("context", {})
+                if context:
+                    metadata.update(context.get("metadata", {}))
 
             # Write metadata as JSON in markdown code block
             f.write("```json\n")
