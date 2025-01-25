@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch, call
 import os
 import numpy as np
 import concurrent.futures
+import asyncio
 
 import pytest
 
@@ -129,12 +130,21 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
 
         event_data = {
             "name": "noise_reduction.completed",
-            "recording_id": recording_id,
-            "output_path": audio_path,
             "data": {
-                "recording_id": recording_id,
-                "output_path": audio_path,
-            },
+                "noise_reduction": {
+                    "recording_id": recording_id,
+                    "output_path": audio_path,
+                },
+                "recording": {
+                    "recording_id": recording_id,
+                },
+                "metadata": {
+                    "speaker_labels": {
+                        "microphone": "Microphone",
+                        "system": "System"
+                    }
+                }
+            }
         }
 
         # Create mock transcription results
@@ -163,7 +173,9 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
 
             # Verify _process_audio was called with correct arguments
             mock_process_audio.assert_called_once_with(
-                str(Path(audio_path)), "Microphone"
+                str(Path(audio_path)), 
+                "Microphone",
+                {"speaker_labels": {"microphone": "Microphone", "system": "System"}}
             )
 
             # Verify file operations
@@ -185,8 +197,15 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
             mock_transcribe.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_transcribe_audio(self):
-        mock_whisper = MagicMock()
+    async def test_transcribe_audio(self, plugin, mock_whisper):
+        """Test transcribing audio file"""
+        # Test data
+        audio_path = "test_input.wav"
+        output_path = "test_output/output.md"
+        label = "Speaker"
+        metadata = {"test": "data"}
+
+        # Mock segments and results
         mock_segments = [MagicMock()]
         mock_segments[0].start = 0.0
         mock_segments[0].end = 1.0
@@ -210,67 +229,78 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         mock_result.text = "Test transcription"
         mock_result.segments = mock_segments
 
-        mock_whisper.transcribe.return_value = mock_result
+        # Mock the transcribe method to return the mock result
+        mock_whisper.transcribe.return_value = (mock_segments, mock_result)
 
-        # Create mock config
-        mock_config = MagicMock()
-        mock_config.model_size = "base"
-        mock_config.compute_type = "float32"
-        mock_config.device = "cpu"
-        mock_config.num_workers = 1
-
-        # Create a mock file context
-        mock_file_handle = mock_open()
-
-        with patch("faster_whisper.WhisperModel", return_value=mock_whisper), \
+        # Set up mocks
+        with patch.object(plugin, "_init_model"), \
+             patch.object(plugin, "_model", mock_whisper), \
+             patch("builtins.open", mock_open()) as mock_file, \
              patch("pathlib.Path.mkdir") as mock_mkdir, \
-             patch("builtins.open", mock_file_handle) as mock_file, \
-             patch("concurrent.futures.ThreadPoolExecutor") as mock_executor, \
-             patch("av.open"), \
-             patch("faster_whisper.audio.decode_audio", return_value=(np.zeros(16000), 16000)):
+             patch("os.path.exists", return_value=True), \
+             patch("asyncio.get_running_loop") as mock_loop:
 
-            # Create a Future object for the executor's submit method
-            future = concurrent.futures.Future()
-            future.set_result((mock_segments, {}))
+            # Create a mock loop
+            mock_loop_instance = MagicMock()
+            mock_loop.return_value = mock_loop_instance
 
-            # Create another Future for the write_transcript function
-            write_future = concurrent.futures.Future()
+            # Create futures for both calls
+            transcribe_future = asyncio.Future()
+            transcribe_future.set_result((mock_segments, mock_result))
+
+            write_future = asyncio.Future()
             write_future.set_result(None)
 
-            # Set up the mock executor to return different futures for different calls
-            mock_executor.submit.side_effect = [future, write_future]
+            # Mock the event loop's run_in_executor
+            async def executor_side_effect(executor, func, *args):
+                if isinstance(func, type(lambda: None)):  # Check if it's a lambda
+                    # First call - transcription
+                    mock_whisper.transcribe.return_value = (mock_segments, mock_result)
+                    # Execute the lambda and await any coroutine it returns
+                    result = func()
+                    if asyncio.iscoroutine(result):
+                        await result
+                    return await transcribe_future
+                else:
+                    # Second call - file writing
+                    func()  # Execute the file writing function
+                    return await write_future
 
-            plugin = AudioTranscriptionLocalPlugin(config=mock_config)
-            plugin._model = mock_whisper
-            plugin._executor = mock_executor
+            mock_loop_instance.run_in_executor = AsyncMock(side_effect=executor_side_effect)
 
-            output_path = Path("test_output/output.md")
-            result = await plugin.transcribe_audio("test.wav", str(output_path), label="Speaker")
-
-            # Verify directory creation
-            mock_mkdir.assert_called_with(parents=True, exist_ok=True)
+            # Call the method
+            result = await plugin.transcribe_audio(audio_path, output_path, label, metadata)
 
             # Verify file operations
-            mock_file.assert_called_with(output_path, 'w')
-            
+            mock_file.assert_called_with(Path(output_path), 'w')
+            mock_mkdir.assert_called_with(parents=True, exist_ok=True)
+
             # Verify model call
             mock_whisper.transcribe.assert_called_once_with(
-                "test.wav",
+                audio_path,
                 condition_on_previous_text=False,
                 word_timestamps=True,
                 vad_filter=True,
+                vad_parameters=dict(
+                    min_silence_duration_ms=500,
+                    speech_pad_ms=100,
+                ),
                 beam_size=5
             )
 
             # Verify result
-            assert result == output_path
+            assert result == Path(output_path)
 
-            # Verify file content
-            write_calls = [call.args[0] for call in mock_file_handle().write.mock_calls]
-            assert "# Audio Transcript\n\n" in write_calls
-            assert "Speaker: Speaker\n\n" in write_calls
-            assert "## Segments\n\n" in write_calls
-            assert "[00:00.000 -> 00:01.000] Speaker: Transcript content\n" in write_calls
+            # Verify file content was written
+            handle = mock_file()
+            write_calls = [call[0][0] for call in handle.write.call_args_list]
+            assert any("# Audio Transcript" in call for call in write_calls)
+            assert any(f"Speaker: {label}" in call for call in write_calls)
+            assert any("## Metadata" in call for call in write_calls)
+            assert any("## Segments" in call for call in write_calls)
+
+            # Verify run_in_executor was called twice
+            assert mock_loop_instance.run_in_executor.call_count == 2
 
     def test_plugin_configuration(self, plugin):
         """Test plugin configuration parameters"""

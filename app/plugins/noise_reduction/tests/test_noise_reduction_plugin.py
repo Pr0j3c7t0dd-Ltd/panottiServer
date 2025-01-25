@@ -159,7 +159,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
                 await initialized_plugin.handle_recording_ended(event_data)
 
                 mock_process.assert_called_once_with(
-                    "test_recording", "system.wav", "mic.wav", {}
+                    "test_recording", "system.wav", "mic.wav", {}, event_data
                 )
 
     async def test_handle_recording_ended_no_audio(self, initialized_plugin):
@@ -189,6 +189,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
                 None,  # system_audio_path
                 None,  # microphone_audio_path
                 {},  # metadata
+                event_data  # original event data
             )
 
     async def test_handle_recording_ended_dict_format(self, initialized_plugin):
@@ -209,7 +210,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
             await initialized_plugin.handle_recording_ended(event_data)
 
             mock_process.assert_called_once_with(
-                "test_recording", "sys.wav", "mic.wav", {"test": "data"}
+                "test_recording", "sys.wav", "mic.wav", {"test": "data"}, event_data
             )
 
     async def test_handle_recording_ended_skip_own_event(self, initialized_plugin):
@@ -266,7 +267,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
             await initialized_plugin.handle_recording_ended(event)
 
             mock_process.assert_called_once_with(
-                "test_recording", "sys.wav", "mic.wav", {"test": "data"}
+                "test_recording", "sys.wav", "mic.wav", {"test": "data"}, event
             )
 
     async def test_subtract_bleed_time_domain(self, initialized_plugin, tmp_path):
@@ -440,7 +441,7 @@ class TestNoiseReductionPlugin(BasePluginTest):
         with patch.object(initialized_plugin, "_process_audio_files", new_callable=AsyncMock) as mock_process:
             mock_process.return_value = None
             await initialized_plugin.handle_recording_ended(event_data)
-            mock_process.assert_called_once_with(recording_id, None, None, {})
+            mock_process.assert_called_once_with(recording_id, None, None, {}, event_data)
 
     @pytest.mark.asyncio
     async def test_process_audio_files_error_handling(self, initialized_plugin):

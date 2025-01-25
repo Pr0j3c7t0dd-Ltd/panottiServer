@@ -130,15 +130,29 @@ Speaker 2: I'll prepare the report by next week.
     async def test_handle_transcription_completed(self, plugin, sample_transcript):
         """Test handling transcription completed event"""
         transcript_path = Path("test_transcript.txt")
-        event_data = {
-            "event": "transcription_local.completed",
-            "recording_id": "test_recording",
-            "transcript_path": str(transcript_path),
-            "data": {
-                "recording_id": "test_recording",
-                "transcript_path": str(transcript_path),
+        event_data = Event(
+            name="transcription_local.completed",
+            data={
+                "recording": {"recording_id": "test_recording"},
+                "transcription": {
+                    "status": "completed",
+                    "recording_id": "test_recording",
+                    "output_file": str(transcript_path),
+                    "transcript_paths": {
+                        "merged": str(transcript_path)
+                    }
+                },
+                "metadata": {
+                    "title": "Test Meeting",
+                    "date": "2024-01-20T10:00:00Z"
+                },
+                "context": {
+                    "correlation_id": "test_id",
+                    "source_plugin": "transcription_local"
+                }
             },
-        }
+            context=EventContext(correlation_id="test_id")
+        )
 
         mock_read = AsyncMock(return_value=sample_transcript)
         mock_generate = AsyncMock(return_value=Path("output.md"))

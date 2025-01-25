@@ -129,12 +129,12 @@ async def test_handle_recording_ended_with_event(mock_recording_event):
 @pytest.mark.asyncio
 async def test_handle_recording_ended_error():
     """Test handling recording.ended event with error."""
-    mock_data = {"invalid": "data"}
+    mock_data = {"invalid": "data"}  # Missing required fields
 
     with patch("app.core.events.handlers.recording.logger") as mock_logger:
-        await handle_recording_ended(mock_data)
+        with pytest.raises(Exception) as exc_info:
+            await handle_recording_ended(mock_data)
 
+        assert "validation error" in str(exc_info.value).lower()
         mock_logger.error.assert_called_once()
-        assert (
-            "Error handling recording.ended event" in mock_logger.error.call_args[0][0]
-        )
+        assert "Error handling recording.ended event" in mock_logger.error.call_args[0][0]

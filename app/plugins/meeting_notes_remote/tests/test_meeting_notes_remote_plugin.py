@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from openai import AsyncOpenAI
 
-from app.core.events import ConcreteEventBus, Event, EventPriority
+from app.core.events import Event, EventPriority, ConcreteEventBus
 from app.core.plugins import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
@@ -97,10 +97,8 @@ Speaker 2: I'll prepare the report by next week.
         event = Event.create(
             name="transcription_local.completed",
             data={
-                "recording": {
-                    "recording_id": "test_recording",
-                },
                 "transcription": {
+                    "recording_id": "test_recording",
                     "transcript_path": str(transcript_path),
                 }
             },
@@ -126,14 +124,23 @@ Speaker 2: I'll prepare the report by next week.
             plugin_with_mock_bus.event_bus.publish.assert_called_once()
             call_args = plugin_with_mock_bus.event_bus.publish.call_args[0][0]
             assert call_args.name == "meeting_notes_remote.completed"
-            assert call_args.data["meeting_notes_remote"]["recording_id"] == "test_recording"
-            assert call_args.data["meeting_notes_remote"]["status"] == "completed"
-            assert call_args.data["meeting_notes_remote"]["output_path"] == "output.md"
-            assert call_args.data["meeting_notes_remote"]["notes_path"] == "output.md"
+            assert call_args.data["meeting_notes"]["status"] == "completed"
+            assert call_args.data["meeting_notes"]["recording_id"] == "test_recording"
+            assert call_args.data["meeting_notes"]["notes_path"] == "output.md"
+            assert call_args.data["meeting_notes"]["input_paths"]["transcript"] == str(transcript_path)
 
     async def test_handle_transcription_completed_no_path(self, plugin_with_mock_bus):
         """Test handling transcription completed event with no transcript path"""
-        event_data = {"recording_id": "test_recording"}
+        event_data = Event.create(
+            name="transcription_local.completed",
+            data={
+                "transcription": {
+                    "recording_id": "test_recording"
+                }
+            },
+            correlation_id="test-123",
+            source_plugin="test_plugin"
+        )
 
         with patch.object(Path, "mkdir"):
             await plugin_with_mock_bus.initialize()

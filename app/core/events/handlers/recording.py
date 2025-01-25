@@ -86,3 +86,4 @@ async def handle_recording_ended(event_data: Any) -> None:
             },
             exc_info=True,
         )
+        raise
