@@ -147,8 +147,23 @@ class MeetingNotesRemotePlugin(PluginBase):
     async def handle_transcription_completed(self, event_data: Event | RecordingEvent) -> None:
         """Handle transcription completed event"""
         event_id = event_data.event_id
-        recording_id = event_data.data.get("recording_id")
-        metadata = event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
+        
+        # Get data from transcription section
+        transcription_data = event_data.data.get("transcription", {})
+        recording_id = transcription_data.get("recording_id")
+        
+        # Get metadata from event data structure
+        metadata = {}
+        if hasattr(event_data, "data"):
+            # First try context metadata
+            context = event_data.data.get("context", {})
+            if isinstance(context, dict):
+                metadata.update(context.get("metadata", {}))
+            
+            # Then try direct metadata
+            direct_metadata = event_data.data.get("metadata", {})
+            if isinstance(direct_metadata, dict):
+                metadata.update(direct_metadata)
 
         # Log metadata presence and content
         if not metadata:
@@ -183,28 +198,6 @@ class MeetingNotesRemotePlugin(PluginBase):
                 )
                 return
 
-            # Get recording ID from event
-            recording_id = None
-            if isinstance(event_data, RecordingEvent):
-                recording_id = event_data.recording_id
-            elif hasattr(event_data, "data"):
-                recording_data = event_data.data.get("recording", {})
-                recording_id = recording_data.get("recording_id")
-
-            if not recording_id:
-                logger.error(
-                    "No recording ID found in event",
-                    extra={"plugin": self.name, "event_data": str(event_data)},
-                )
-                return
-
-            # Get metadata from event
-            metadata = {}
-            if isinstance(event_data, dict):
-                metadata = event_data.get("metadata", {})
-            else:
-                metadata = getattr(event_data.context, "metadata", {}) if hasattr(event_data, "context") else {}
-
             # Generate notes
             output_path = await self._generate_meeting_notes(
                 transcript_path, str(uuid.uuid4()), recording_id
@@ -212,9 +205,6 @@ class MeetingNotesRemotePlugin(PluginBase):
 
             if self.event_bus:
                 try:
-                    # Extract metadata
-                    metadata = event_data.data.get("metadata", {}) if hasattr(event_data, "data") else {}
-
                     completion_event = Event.create(
                         name="meeting_notes_remote.completed",
                         data={
@@ -247,7 +237,6 @@ class MeetingNotesRemotePlugin(PluginBase):
                         source_plugin=self.name,
                         priority=EventPriority.NORMAL
                     )
-
                     await self.event_bus.publish(completion_event)
                     logger.info(
                         "Published meeting notes completion event",

@@ -118,18 +118,25 @@ class DesktopNotifierPlugin(PluginBase):
                 )
                 return
 
-            # Extract recording ID from recording data
+            # Extract recording ID from transcription or recording data
+            transcription = data.get("transcription", {})
             recording = data.get("recording", {})
-            recording_id = recording.get("recording_id", "unknown")
+            recording_id = (
+                transcription.get("recording_id")  # New structure
+                or recording.get("recording_id")   # Legacy structure
+                or "unknown"
+            )
 
             # Extract output path from meeting notes data
+            meeting_notes = data.get("meeting_notes", {})
             meeting_notes_local = data.get("meeting_notes_local", {})
             meeting_notes_remote = data.get("meeting_notes_remote", {})
             output_path = (
-                meeting_notes_local.get("output_path")
-                or meeting_notes_remote.get("output_path")
-                or meeting_notes_local.get("notes_path")
-                or meeting_notes_remote.get("notes_path")
+                meeting_notes.get("notes_path")  # New event structure
+                or meeting_notes_local.get("output_path")  # Legacy structure
+                or meeting_notes_remote.get("output_path")  # Legacy structure
+                or meeting_notes_local.get("notes_path")    # Legacy structure
+                or meeting_notes_remote.get("notes_path")   # Legacy structure
                 or data.get("output_path")  # Fallback for old event structure
             )
 

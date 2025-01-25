@@ -303,49 +303,73 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                     }
                 )
 
-            # Create merged transcript
-            output_base = self._output_dir / f"{recording_id}_merged"
-            merged_transcript = output_base.with_suffix(".md")
-
-            logger.debug(
-                "Merging transcripts",
-                extra={
-                    "plugin": self.name,
-                    "mic_transcript": str(mic_transcript),
-                    "sys_transcript": str(sys_transcript),
-                },
-            )
-
-            # Get metadata and speaker labels
+            # Create transcript paths dictionary
+            transcript_paths = {}
             labels = []
 
             if mic_transcript:
+                transcript_paths["mic"] = str(mic_transcript)
                 labels.append(mic_label)
             if sys_transcript:
+                transcript_paths["system"] = str(sys_transcript)
                 labels.append(sys_label)
 
+            # Create merged transcript if we have any transcripts
             if len(labels) > 0:
-                # Filter out None values from transcript list
-                transcript_files = [f for f in [str(mic_transcript) if mic_transcript else None, str(sys_transcript) if sys_transcript else None] if f is not None]
-                await self.merge_transcripts(
-                    transcript_files,
-                    str(merged_transcript), 
-                    labels, 
-                    event_data if isinstance(event_data, dict) else event_data.dict()
-                )
+                try:
+                    # Create merged transcript
+                    output_base = self._output_dir / f"{recording_id}_merged"
+                    merged_transcript = output_base.with_suffix(".md")
 
-                # Emit completion event with all transcript paths
-                await self._emit_transcription_event(
-                    recording_id=recording_id,
-                    status="completed",
-                    output_file=str(merged_transcript),
-                    original_event=event_data if isinstance(event_data, dict) else event_data.dict(),
-                    transcript_paths={
-                        "mic": str(mic_transcript) if mic_transcript else None,
-                        "system": str(sys_transcript) if sys_transcript else None,
-                        "merged": str(merged_transcript)
-                    }
-                )
+                    logger.debug(
+                        "Merging transcripts",
+                        extra={
+                            "plugin": self.name,
+                            "mic_transcript": str(mic_transcript),
+                            "sys_transcript": str(sys_transcript),
+                        },
+                    )
+
+                    # Filter out None values from transcript list
+                    transcript_files = [f for f in [str(mic_transcript) if mic_transcript else None, str(sys_transcript) if sys_transcript else None] if f is not None]
+                    await self.merge_transcripts(
+                        transcript_files,
+                        str(merged_transcript), 
+                        labels, 
+                        event_data if isinstance(event_data, dict) else event_data.dict()
+                    )
+
+                    transcript_paths["merged"] = str(merged_transcript)
+
+                    # Emit transcription event
+                    await self._emit_transcription_event(
+                        recording_id=recording_id,
+                        status="completed",
+                        output_file=str(merged_transcript),
+                        transcript_paths=transcript_paths,
+                        original_event=event_data  # Pass the original event data here
+                    )
+
+                    logger.info(
+                        "Emitted transcription event",
+                        extra={
+                            "plugin": self.name,
+                            "recording_id": recording_id,
+                            "event": "transcription_local.completed",
+                            "status": "completed",
+                            "output_file": str(merged_transcript),
+                        },
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Error merging transcripts",
+                        extra={
+                            "plugin": self.name,
+                            "recording_id": recording_id,
+                            "error": str(e),
+                        },
+                    )
+
         except Exception as e:
             logger.error(
                 "Error handling noise reduction completed event",
@@ -359,7 +383,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         status: str,
         output_file: str | None = None,
         error: str | None = None,
-        original_event: dict | None = None,
+        original_event: dict[str, Any] | RecordingEvent | None = None,
         transcript_paths: dict[str, str | None] | None = None,
     ) -> None:
         """Emit transcription event."""
@@ -371,18 +395,32 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         combined_metadata = {}
         
         # Extract metadata from original event
-        if original_event and isinstance(original_event, dict):
-            # Direct metadata from event
-            event_metadata = original_event.get("metadata", {})
-            if isinstance(event_metadata, dict):
-                combined_metadata.update(event_metadata)
-            
-            # Context metadata
-            context = original_event.get("context", {})
-            if isinstance(context, dict):
-                context_metadata = context.get("metadata", {})
-                if isinstance(context_metadata, dict):
-                    combined_metadata.update(context_metadata)
+        if original_event:
+            if isinstance(original_event, dict):
+                # Direct metadata from event
+                event_metadata = original_event.get("metadata", {})
+                if isinstance(event_metadata, dict):
+                    combined_metadata.update(event_metadata)
+                
+                # Context metadata
+                context = original_event.get("context", {})
+                if context:
+                    metadata = context.get("metadata", {})
+                    if isinstance(metadata, dict):
+                        combined_metadata.update(metadata)
+            else:
+                # Handle Event object
+                if hasattr(original_event, "data"):
+                    event_metadata = original_event.data.get("metadata", {})
+                    if isinstance(event_metadata, dict):
+                        combined_metadata.update(event_metadata)
+                    
+                    # Context metadata from Event object
+                    context = original_event.data.get("context", {})
+                    if context:
+                        metadata = context.get("metadata", {})
+                        if isinstance(metadata, dict):
+                            combined_metadata.update(metadata)
 
         # Log metadata for debugging
         logger.debug(
@@ -390,24 +428,30 @@ class AudioTranscriptionLocalPlugin(PluginBase):
             extra={
                 "plugin": self.name,
                 "recording_id": recording_id,
-                "event_metadata": str(event_metadata),
-                "original_event_metadata": str(original_event),
-                "combined_metadata": str(combined_metadata)
+                "combined_metadata": str(combined_metadata),
+                "original_event": str(original_event)
             }
         )
 
         # Get speaker labels and correlation ID
         speaker_label = combined_metadata.get("microphoneLabel", "Microphone")
         system_label = combined_metadata.get("systemLabel", "System")
-        correlation_id = str(original_event.get("correlation_id", "")) if original_event else str(uuid.uuid4())
+        correlation_id = str(uuid.uuid4())
+        if original_event:
+            if isinstance(original_event, dict):
+                correlation_id = original_event.get("context", {}).get("correlation_id", correlation_id)
+            else:
+                context = getattr(original_event, "context", None)
+                if context:
+                    correlation_id = getattr(context, "correlation_id", correlation_id)
 
         try:
             if error:
                 event = Event.create(
                     name="transcription_local.error",
                     data={
-                        "recording": original_event.get("recording", {}) if original_event else {},
-                        "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
+                        "recording": original_event.get("recording", {}) if isinstance(original_event, dict) else getattr(original_event, "recording", {}),
+                        "noise_reduction": original_event.get("noise_reduction", {}) if isinstance(original_event, dict) else getattr(original_event, "noise_reduction", {}),
                         "transcription": {
                             "status": "error",
                             "timestamp": datetime.now(UTC).isoformat(),
@@ -437,8 +481,8 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 event = Event.create(
                     name="transcription_local.completed",
                     data={
-                        "recording": original_event.get("recording", {}) if original_event else {},
-                        "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
+                        "recording": original_event.get("recording", {}) if isinstance(original_event, dict) else getattr(original_event, "recording", {}),
+                        "noise_reduction": original_event.get("noise_reduction", {}) if isinstance(original_event, dict) else getattr(original_event, "noise_reduction", {}),
                         "transcription": {
                             "status": status,
                             "timestamp": datetime.now(UTC).isoformat(),

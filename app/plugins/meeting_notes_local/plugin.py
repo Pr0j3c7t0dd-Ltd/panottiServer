@@ -467,14 +467,23 @@ Keep each bullet point concise but informative]
     async def handle_transcription_completed(self, event_data: Event) -> None:
         """Handle transcription completed event."""
         event_id = getattr(event_data, "event_id", None) or str(uuid.uuid4())
-        recording_id = event_data.data.get("recording_id")
+        
+        # Get data from transcription section
+        transcription_data = event_data.data.get("transcription", {})
+        recording_id = transcription_data.get("recording_id")
         
         # Get metadata from event context if available, otherwise from data
         metadata = {}
-        if hasattr(event_data, "context") and hasattr(event_data.context, "metadata"):
-            metadata = event_data.context.metadata
-        else:
-            metadata = event_data.data.get("metadata", {})
+        if hasattr(event_data, "data"):
+            # First try context metadata
+            context = event_data.data.get("context", {})
+            if isinstance(context, dict):
+                metadata.update(context.get("metadata", {}))
+            
+            # Then try direct metadata
+            direct_metadata = event_data.data.get("metadata", {})
+            if isinstance(direct_metadata, dict):
+                metadata.update(direct_metadata)
 
         # Log metadata presence and content
         if not metadata:
