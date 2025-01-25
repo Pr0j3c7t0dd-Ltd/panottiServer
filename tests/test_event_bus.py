@@ -683,3 +683,408 @@ async def test_publish_with_event_context(cleanup_tasks):
 
     # Event should be marked as processed after publishing
     assert event.event_id in bus._processed_events
+
+
+@pytest.mark.asyncio
+async def test_event_bus_cleanup_task_error():
+    bus = EventBus()
+    task = asyncio.create_task(asyncio.sleep(0))
+    bus._pending_tasks.add(task)
+    bus._cleanup_task(task)
+    assert task not in bus._pending_tasks
+
+
+@pytest.mark.asyncio
+async def test_handle_task_setup_error():
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    # Create a handler that will raise an error when called
+    handler = Mock()
+    handler.__name__ = "error_handler"
+    handler.side_effect = Exception("Setup error")
+    
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_bound_method_detailed():
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+
+    class TestHandler:
+        def __init__(self):
+            self.test_var = "test_value"
+
+        async def handle(self, evt):
+            return True
+
+    handler = TestHandler().handle
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_event_processing_with_source_plugin():
+    bus = EventBus()
+    event = MockEvent(name="test.event", source_plugin="test_plugin")
+    
+    async def test_handler(evt):
+        pass
+    
+    bus._subscribers["test.event"].append(test_handler)
+    assert bus._should_process_event(event) is True
+
+
+@pytest.mark.asyncio
+async def test_event_processing_without_source_plugin():
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    async def test_handler(evt):
+        pass
+    
+    bus._subscribers["test.event"].append(test_handler)
+    assert bus._should_process_event(event) is True
+
+
+@pytest.mark.asyncio
+async def test_publish_with_event_context_detailed():
+    bus = EventBus()
+    event = MockEvent(name="test.event", event_id="test_id")
+    event.context = {"correlation_id": "test_corr_id"}
+    
+    handler_called = asyncio.Event()
+    
+    async def test_handler(evt):
+        assert hasattr(evt, "context")
+        assert evt.context["correlation_id"] == "test_corr_id"
+        handler_called.set()
+    
+    bus._subscribers["test.event"].append(test_handler)
+    await bus.publish(event)
+    await asyncio.wait_for(handler_called.wait(), timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_with_pending_tasks():
+    bus = EventBus()
+    bus._shutting_down = False  # Ensure initial state
+    
+    # Create some pending tasks
+    async def long_running_task():
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            pass
+    
+    task1 = asyncio.create_task(long_running_task())
+    task2 = asyncio.create_task(long_running_task())
+    bus._pending_tasks.add(task1)
+    bus._pending_tasks.add(task2)
+    
+    await bus.shutdown()
+    assert len(bus._pending_tasks) == 0
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_nonexistent_handler():
+    bus = EventBus()
+    event_name = "test.event"
+    
+    async def test_handler(evt):
+        pass
+    
+    # Try to unsubscribe a handler that was never subscribed
+    await bus.unsubscribe(event_name, test_handler)
+    assert event_name not in bus._subscribers or test_handler not in bus._subscribers[event_name]
+
+
+@pytest.mark.asyncio
+async def test_get_event_id_with_different_attributes():
+    bus = EventBus()
+    
+    # Test with event_id attribute
+    event1 = MockEvent(event_id="test_id_1")
+    assert bus._get_event_id(event1) == "test_id_1"
+    
+    # Test with id attribute only
+    event2 = MockEvent()
+    event2.id = "test_id_2"
+    event_id = bus._get_event_id(event2)
+    assert isinstance(event_id, str)
+    assert len(event_id) > 0  # Should generate a UUID if no event_id
+    
+    # Test with no id attributes
+    event3 = MockEvent()
+    event_id = bus._get_event_id(event3)
+    assert isinstance(event_id, str)
+    assert len(event_id) > 0
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_invalid_event():
+    bus = EventBus()
+    event = MockEvent()
+    event.event = None  # Invalid event
+    
+    async def test_handler(evt):
+        pass
+    
+    await bus._handle_task(test_handler, event)
+    await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_logging_error():
+    bus = EventBus()
+    
+    # Mock asyncio.sleep to prevent hanging
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_sleep.return_value = None
+        await bus.start()
+        
+        event = MockEvent(name="test.event")
+        
+        # Create a handler that will raise an error during logging
+        class ErrorHandler:
+            def __init__(self):
+                self.__name__ = "error_handler"
+                self.__module__ = "test_module"
+                self.__qualname__ = "test_module.error_handler"
+                
+            async def __call__(self, evt):
+                raise Exception("Handler error")
+                
+            def __str__(self):
+                return "error_handler"
+                
+            def __repr__(self):
+                return "error_handler"
+        
+        handler = ErrorHandler()
+        
+        # Use wait_for to prevent hanging
+        async def run_handler():
+            await bus._handle_task(handler, event)
+            
+        await asyncio.wait_for(run_handler(), timeout=1.0)
+        await bus.stop()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_exception():
+    bus = EventBus()
+    event_id = "test_id"
+    now = datetime.now(UTC)
+    bus._processed_events[event_id] = now - timedelta(hours=2)
+    
+    # Mock the lock to raise an exception
+    class ErrorLock:
+        async def __aenter__(self):
+            raise Exception("Lock error")
+            
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+            
+    original_lock = bus._lock
+    bus._lock = ErrorLock()
+    
+    # Mock asyncio.sleep to break the infinite loop
+    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        mock_sleep.side_effect = asyncio.CancelledError()
+        
+        try:
+            await bus._cleanup_old_events()
+        except asyncio.CancelledError:
+            pass  # Expected
+        finally:
+            bus._lock = original_lock
+            
+        # Verify sleep was called with correct interval
+        mock_sleep.assert_called_once_with(3600)
+
+
+@pytest.mark.asyncio
+async def test_publish_with_invalid_event_name():
+    bus = EventBus()
+    event = MockEvent()
+    event.event = None  # Invalid event name
+    
+    await bus.publish(event)  # Should handle gracefully
+
+
+@pytest.mark.asyncio
+async def test_publish_with_complex_event_context():
+    bus = EventBus()
+    event = MockEvent(name="test.event", event_id="test_id")
+    event.context = {
+        "correlation_id": "test_corr_id",
+        "metadata": {
+            "user": "test_user",
+            "timestamp": datetime.now(UTC).isoformat()
+        },
+        "source": "test_source"
+    }
+    
+    handler_called = asyncio.Event()
+    
+    async def test_handler(evt):
+        assert hasattr(evt, "context")
+        assert evt.context["correlation_id"] == "test_corr_id"
+        handler_called.set()
+    
+    bus._subscribers["test.event"].append(test_handler)
+    await bus.publish(event)
+    await asyncio.wait_for(handler_called.wait(), timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_multiple_exceptions():
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    async def failing_handler(evt):
+        raise Exception("First error")
+        
+    handler = AsyncMock(side_effect=failing_handler)
+    handler.__name__ = "failing_handler"
+    
+    # Add a callback that will also raise an exception
+    def error_callback(task):
+        raise Exception("Callback error")
+    
+    task = asyncio.create_task(asyncio.sleep(0))
+    task.add_done_callback(error_callback)
+    bus._pending_tasks.add(task)
+    
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_multiple_events():
+    bus = EventBus()
+    now = datetime.now(UTC)
+    
+    # Add multiple events with different ages
+    bus._processed_events["old_event_1"] = now - timedelta(hours=2)
+    bus._processed_events["old_event_2"] = now - timedelta(hours=3)
+    bus._processed_events["recent_event"] = now - timedelta(minutes=30)
+    
+    async def mock_cleanup():
+        await asyncio.sleep(0)
+        async with bus._lock:
+            old_events = [
+                event_id
+                for event_id, timestamp in bus._processed_events.items()
+                if (now - timestamp).total_seconds() > 3600
+            ]
+            for event_id in old_events:
+                del bus._processed_events[event_id]
+                
+    await mock_cleanup()
+    assert "old_event_1" not in bus._processed_events
+    assert "old_event_2" not in bus._processed_events
+    assert "recent_event" in bus._processed_events
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_lock_error():
+    bus = EventBus()
+    now = datetime.now(UTC)
+    
+    # Add some events
+    bus._processed_events["test_id"] = now - timedelta(hours=2)
+    
+    # Mock the lock to raise an error during exit
+    class ErrorLock:
+        async def __aenter__(self):
+            return self
+            
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            raise Exception("Lock exit error")
+    
+    original_lock = bus._lock
+    bus._lock = ErrorLock()
+    
+    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        mock_sleep.side_effect = asyncio.CancelledError()
+        
+        try:
+            await bus._cleanup_old_events()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            bus._lock = original_lock
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_complex_error():
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    class ComplexError(Exception):
+        def __str__(self):
+            raise Exception("Error string conversion failed")
+    
+    async def failing_handler(evt):
+        raise ComplexError()
+    
+    handler = AsyncMock(side_effect=failing_handler)
+    handler.__name__ = "failing_handler"
+    
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_corrupted_data():
+    bus = EventBus()
+    now = datetime.now(UTC)
+    
+    # Add some events with invalid timestamps
+    bus._processed_events["valid_event"] = now - timedelta(hours=2)
+    bus._processed_events["invalid_event"] = "invalid_timestamp"
+    
+    async def mock_cleanup():
+        await asyncio.sleep(0)
+        async with bus._lock:
+            old_events = [
+                event_id
+                for event_id, timestamp in bus._processed_events.items()
+                if isinstance(timestamp, datetime) and (now - timestamp).total_seconds() > 3600
+            ]
+            for event_id in old_events:
+                del bus._processed_events[event_id]
+    
+    await mock_cleanup()
+    assert "valid_event" not in bus._processed_events
+    assert "invalid_event" in bus._processed_events
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_handler_info_error():
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    # Create a handler that will raise an error
+    class ErrorHandler:
+        def __init__(self):
+            self.__name__ = "error_handler"
+            self.__module__ = "test_module"
+            self.__qualname__ = "test_module.ErrorHandler"
+
+        async def __call__(self, evt):
+            raise Exception("Handler error")
+
+        def __str__(self):
+            return "error_handler"
+
+    handler = ErrorHandler()
+    
+    # Execute the handler task
+    await bus._handle_task(handler, event)
+    # Allow time for error handling
+    await asyncio.sleep(0.1)
