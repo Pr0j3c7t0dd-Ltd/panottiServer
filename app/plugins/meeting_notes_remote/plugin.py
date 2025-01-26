@@ -532,6 +532,9 @@ class MeetingNotesRemotePlugin(PluginBase):
 
             system_prompt = """You are a professional meeting notes taker. Your task is to analyze the meeting transcript and create clear, concise, and well-structured meeting notes."""
 
+            # Get today's date in the specified format
+            today_date = dt.now(UTC).strftime("%B %-d, %Y at %-I:%M %p")
+
             user_prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format. The transcript includes METADATA in JSON format that you should use for the meeting title and information section.
 
 Please ensure the notes are clear, concise, and well-organized using markdown formatting.
@@ -562,7 +565,7 @@ Create meeting notes with the following sections:
 # [Meeting Title (Use the exact meeting title from the METADATA JSON eventTitle field, if not available, create a short, descriptive title based on the transcription content)]
 
 ## Meeting Information
-- Date: [Use the exact meeting title from the METADATA JSON recordingStarted field, Format EXACTLY as: "January 1, 2025 at 10:00 AM"]
+- Date: [Use the exact meeting title from the METADATA JSON recordingStarted field, Format EXACTLY as: "January 1, 2025 at 10:00 AM". If today's date is unavailable, use "{today_date}"]
 - Duration: [Use the last timesamp in the transcript to determine the duration, Format EXACTLY as: "X hours Y minutes"]
 - Attendees: [List ONLY the email addresses from eventAttendees in the METADATA JSON, one per line with a hyphen. If no eventAttendees are available, use "Unknown"]
 
