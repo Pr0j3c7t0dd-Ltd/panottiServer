@@ -109,6 +109,21 @@ yarl = ">=1.17.0,<2.0"
 speedups = ["Brotli", "aiodns (>=3.2.0)", "brotlicffi"]
 
 [[package]]
+name = "aioresponses"
+version = "0.7.7"
+description = "Mock out requests made by ClientSession from aiohttp package"
+optional = false
+python-versions = "*"
+files = [
+    {file = "aioresponses-0.7.7-py2.py3-none-any.whl", hash = "sha256:6975f31fe5e7f2113a41bd387221f31854f285ecbc05527272cd8ba4c50764a3"},
+    {file = "aioresponses-0.7.7.tar.gz", hash = "sha256:66292f1d5c94a3cb984f3336d806446042adb17347d3089f2d3962dd6e5ba55a"},
+]
+
+[package.dependencies]
+aiohttp = ">=3.3.0,<4.0.0"
+packaging = ">=22.0"
+
+[[package]]
 name = "aiosignal"
 version = "1.3.2"
 description = "aiosignal: a list of registered asynchronous callbacks"
@@ -2885,6 +2900,17 @@ files = [
 ]
 
 [[package]]
+name = "pytz"
+version = "2024.1"
+description = "World timezone definitions, modern and historical"
+optional = false
+python-versions = "*"
+files = [
+    {file = "pytz-2024.1-py2.py3-none-any.whl", hash = "sha256:328171f4e3623139da4983451950b28e95ac706e13f3f2630a879749e7a8b319"},
+    {file = "pytz-2024.1.tar.gz", hash = "sha256:2a29735ea9c18baf14b448846bde5a48030ed267578472d8955cd0e7443a9812"},
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.2"
 description = "YAML parser and emitter for Python"
@@ -3702,4 +3728,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "a12e6a0b802f2115a8ed20e781fc07d80a04fd7307aaa0f810627560a070f320"
+content-hash = "0f47a6e9194f9f0cac6c01cb357edabee28eed8aa599adf0a2ca3afb14bf54c0"

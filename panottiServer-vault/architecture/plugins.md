@@ -4,6 +4,28 @@
 
 The plugin system in PanottiServer is designed for extensibility and modularity. It uses a combination of YAML configuration and Python implementation files to define and manage plugins. The system supports dynamic loading, event-driven communication, and robust error handling.
 
+## Event System Migration Complete
+
+The event system has been fully migrated from `app/plugins/events/` to `app.core.events`. All event-related functionality is now centralized in the core package:
+
+```python
+# Use the core event system implementation
+from app.core.events import (
+    EventBus,
+    Event,
+    EventContext,
+    EventPriority,
+    EventHandler
+)
+```
+
+The new implementation in `app.core.events` provides:
+- Robust async event processing
+- Event persistence and replay capabilities
+- Type-safe event models
+- Dedicated event handlers
+- Improved error handling and logging
+
 ## Plugin Structure
 
 Each plugin follows this structure:
@@ -50,10 +72,35 @@ config:                   # Plugin-specific configuration
 - Implements robust error handling and logging
 
 ### Event System Integration
-- Event-driven architecture using EventBus
-- Supports asynchronous event handling
-- Provides structured event context
-- Enables plugin-to-plugin communication
+- Event-driven architecture using core EventBus (`app.core.events`)
+- Supports asynchronous event handling with robust error handling
+- Provides structured event context and priority levels
+- Enables plugin-to-plugin communication through centralized event bus
+- Implements event persistence and cleanup
+- Uses Pydantic models for type safety and validation
+- Supports event correlation and tracing
+- Provides comprehensive logging and monitoring
+
+The event system is implemented in `app.core.events` and provides:
+- `EventBus`: Central message broker with async support
+- `Event`: Base event model with validation
+- `EventContext`: Structured context for event metadata
+- `EventPriority`: Priority levels (LOW, NORMAL, HIGH, CRITICAL)
+
+Example usage:
+```python
+from app.core.events import Event, EventContext, EventPriority
+
+# Create and emit an event
+event = Event.create(
+    name="recording_started",
+    data={"recording_id": "rec_123"},
+    correlation_id="corr_id",
+    source_plugin="my_plugin",
+    priority=EventPriority.HIGH
+)
+await self.event_bus.publish(event)
+```
 
 ## Plugin Development Guide
 
@@ -73,21 +120,12 @@ config:                   # Plugin-specific configuration
 
 3. Implement the plugin class:
    ```python
-   from app.plugins.base import PluginBase, PluginConfig
+   from app.core.plugins import PluginBase, PluginConfig
    
-   class YourPlugin(PluginBase):
-       async def _initialize(self) -> None:
+   class MyPlugin(PluginBase):
+       def __init__(self, config: PluginConfig, event_bus=None):
+           super().__init__(config, event_bus)
            # Plugin-specific initialization
-           if self.event_bus:
-               await self.event_bus.subscribe("event.name", self._handle_event)
-   
-       async def _shutdown(self) -> None:
-           # Plugin-specific cleanup
-           pass
-   
-       async def _handle_event(self, event: dict) -> None:
-           # Event handling logic
-           pass
    ```
 
 ### Best Practices

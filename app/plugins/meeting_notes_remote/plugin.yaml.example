@@ -4,7 +4,7 @@ enabled: false
 dependencies: ["audio_transcription"]
 config:
   output_directory: "data/meeting_notes_remote"
-  provider: "openai"  # Supported values: openai, anthropic, google
+  provider: "anthropic"  # Supported values: openai, anthropic, google
   max_concurrent_tasks: 4
   timeout: 600
   openai:
@@ -12,7 +12,7 @@ config:
     model: "gpt-4o"
   anthropic:
     api_key: "your-anthropic-api-key"
-    model: "claude-3-5-sonnet-latest"
+    model: "claude-3-5-sonnet-20241022"
   google:
     api_key: "your-google-api-key"
     model: "gemini-1.5-flash"

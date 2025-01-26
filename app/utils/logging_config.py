@@ -2,15 +2,13 @@ import json
 import logging
 import logging.config
 import os
-import sys
 import uuid
-from datetime import datetime
-from logging.handlers import TimedRotatingFileHandler
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.models.recording.events import RecordingEvent, RecordingStartRequest, RecordingEndRequest
-from app.plugins.events.models import Event, EventContext
+# Remove core.events imports since they create circular dependencies
+# The _serialize_object method will handle any Pydantic model generically
 
 
 class JSONFormatter(logging.Formatter):
@@ -18,9 +16,7 @@ class JSONFormatter(logging.Formatter):
         super().__init__()
 
     def _serialize_object(self, obj: Any) -> Any:
-        if isinstance(obj, (RecordingEvent, RecordingStartRequest, RecordingEndRequest, Event)):
-            return obj.model_dump()
-        if isinstance(obj, EventContext):
+        if hasattr(obj, "model_dump"):  # Handle any Pydantic model
             return obj.model_dump()
         if isinstance(obj, datetime):
             return obj.isoformat()
@@ -32,7 +28,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_record = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
             "logger": record.name,
@@ -40,8 +36,33 @@ class JSONFormatter(logging.Formatter):
         }
 
         # Add all extra fields
-        if hasattr(record, "extra"):
-            for key, value in record.extra.items():
+        for key, value in record.__dict__.items():
+            if key not in [
+                "timestamp",
+                "level",
+                "msg",
+                "args",
+                "exc_info",
+                "exc_text",
+                "levelname",
+                "levelno",
+                "pathname",
+                "filename",
+                "module",
+                "stack_info",
+                "lineno",
+                "funcName",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "processName",
+                "process",
+                "message",
+                "name",
+                "req_id",
+            ]:
                 log_record[key] = self._serialize_object(value)
 
         # Add any exception info
@@ -50,17 +71,36 @@ class JSONFormatter(logging.Formatter):
 
         # Add any custom fields
         for key, value in record.__dict__.items():
-            if key not in ["timestamp", "level", "message", "logger", "request_id", "exc_info", "extra", 
-                         "args", "exc_text", "stack_info", "created", "msecs", "relativeCreated", 
-                         "levelno", "msg", "pathname", "filename", "module", "exc_info", 
-                         "lineno", "funcName", "processName", "process", "threadName", "thread"]:
+            if key not in [
+                "timestamp",
+                "level",
+                "message",
+                "logger",
+                "request_id",
+                "exc_info",
+                "extra",
+                "args",
+                "exc_text",
+                "stack_info",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "levelno",
+                "msg",
+                "pathname",
+                "filename",
+                "module",
+                "exc_info",
+                "lineno",
+                "funcName",
+                "processName",
+                "process",
+                "threadName",
+                "thread",
+            ]:
                 log_record[key] = self._serialize_object(value)
 
         return json.dumps(log_record, default=self._serialize_object)
-
-
-def generate_request_id() -> str:
-    return str(uuid.uuid4())
 
 
 def setup_logging() -> None:
@@ -81,32 +121,32 @@ def setup_logging() -> None:
             "console": {
                 "class": "logging.StreamHandler",
                 "formatter": "json",
-                "stream": "ext://sys.stdout"
+                "stream": "ext://sys.stdout",
             },
             "file": {
                 "class": "logging.FileHandler",
                 "formatter": "json",
                 "filename": "logs/app.log",
-                "mode": "a"
-            }
+                "mode": "a",
+            },
         },
         "root": {
             "level": os.getenv("LOG_LEVEL", "INFO"),
-            "handlers": ["console", "file"]
-        }
+            "handlers": ["console", "file"],
+        },
     }
 
     # Configure root logger first
     root = logging.getLogger()
     root.handlers = []  # Remove any existing handlers
-    
+
     # Apply configuration
     logging.config.dictConfig(logging_config)
 
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance.
-    
+
     This will return a logger that inherits settings from the root logger,
     including log level and handlers.
     """

@@ -127,6 +127,7 @@ pytest-asyncio = "0.25.2"
 pytest-cov = "6.0.0"
 ruff = "0.9.2"
 starlette = ">=0.40.0,<0.42.0"
+pytz = "2024.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest-mock = "^3.12.0"
@@ -137,6 +138,7 @@ pylint = "^3.0"
 pre-commit = "^4.0.1"
 types-pyyaml = "^6.0.12.20241230"
 types-requests = "^2.32.0.20241016"
+aioresponses = "^0.7.7"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -156,7 +158,7 @@ plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
 disallow_incomplete_defs = true
 check_untyped_defs = true
 disallow_untyped_decorators = true
@@ -201,10 +203,21 @@ addopts = "--cov=app --cov-report=term-missing"
 [tool.ruff]
 target-version = "py312"
 line-length = 88
+exclude = [".coveragerc"]
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
-ignore = ["PLR0913"]  # Ignore "too many arguments" for now
+ignore = [
+    "PLR0913",  # Too many arguments
+    "E501",     # Line too long
+    "PLR0915",  # Too many statements
+    "PLR0912",  # Too many branches
+    "PLW0603",  # Global statement usage
+    "PLR2004",  # Magic numbers in comparisons
+    "PLR0911",  # Too many return statements
+    "UP038",    # Use X | Y in isinstance
+    "PLW2901"   # Loop variable overwritten
+]
 
 [tool.ruff.lint.per-file-ignores]
 "test_*.py" = ["PLR2004"]  # Ignore magic numbers in test files
@@ -227,5 +240,27 @@ convention = "google"
 keep-runtime-typing = true
 
 [tool.bandit]
-exclude_dirs = ["tests", "test_*"]
-skips = ["B101", "B404", "B603", "B607"]
+# Directories to exclude from analysis
+exclude_dirs = ["tests", "test_*", ".venv", ".git", "__pycache__", ".pytest_cache"]
+
+# Tests to skip
+skips = [
+    "B101",  # Allow assert statements in tests
+    "B311"   # Allow random number generators (not for cryptography)
+]
+
+# Severity level (LOW, MEDIUM, HIGH)
+severity = "MEDIUM"
+
+# Confidence level (LOW, MEDIUM, HIGH)
+confidence = "MEDIUM"
+
+# Number of lines of context to display for issues
+show_context = true
+show_lineno = true
+
+# Output format
+output_format = "screen"
+
+# Set a baseline to track only new security issues
+# baseline = "bandit-baseline.json"

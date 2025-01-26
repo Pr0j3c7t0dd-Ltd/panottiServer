@@ -80,7 +80,7 @@ audio_transcription:
 - `noise_reduction.completed`: Triggered when noise reduction is complete
 
 ### Emits:
-- `transcription.completed`: When transcription is complete, includes:
+- `transcription_local.completed`: When transcription is complete, includes:
   - Original event data
   - Paths to individual transcripts
   - Path to merged transcript file

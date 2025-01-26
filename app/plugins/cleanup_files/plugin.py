@@ -1,17 +1,17 @@
 """Cleanup files plugin implementation."""
 
+import asyncio
 import os
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-import uuid
-import asyncio
 
-from app.plugins.base import PluginBase, PluginConfig
-from app.plugins.events.bus import EventBus
-from app.plugins.events.models import Event, EventContext
+from app.core.events import ConcreteEventBus as EventBus
+from app.core.events import Event, EventPriority
+from app.core.plugins import PluginBase, PluginConfig
 from app.models.recording.events import RecordingEvent
 from app.utils.logging_config import get_logger
 
@@ -25,7 +25,7 @@ class CleanupFilesPlugin(PluginBase):
 
     def __init__(self, config: PluginConfig, event_bus: EventBus | None = None) -> None:
         """Initialize the cleanup files plugin.
-        
+
         Args:
             config: Plugin configuration
             event_bus: Event bus for subscribing to events
@@ -33,13 +33,13 @@ class CleanupFilesPlugin(PluginBase):
         super().__init__(config, event_bus)
         self._executor: ThreadPoolExecutor | None = None
         self._processing_lock = threading.Lock()
-        
+
         # Get configured directories with defaults
         config_dict = config.config or {}
         self.include_dirs = config_dict.get("include_dirs", ["data"])
         self.exclude_dirs = config_dict.get("exclude_dirs", [])
         self.cleanup_delay = config_dict.get("cleanup_delay", 0)  # Default to no delay
-        
+
         # Convert to Path objects
         self.include_dirs = [Path(d) for d in self.include_dirs]
         self.exclude_dirs = [Path(d) for d in self.exclude_dirs]
@@ -51,8 +51,8 @@ class CleanupFilesPlugin(PluginBase):
                 "include_dirs": [str(d) for d in self.include_dirs],
                 "exclude_dirs": [str(d) for d in self.exclude_dirs],
                 "config": config_dict,
-                "event_bus_available": event_bus is not None
-            }
+                "event_bus_available": event_bus is not None,
+            },
         )
 
     async def _initialize(self) -> None:
@@ -60,30 +60,24 @@ class CleanupFilesPlugin(PluginBase):
         if not self.event_bus:
             logger.warning(
                 "No event bus available for plugin",
-                extra={
-                    "plugin": self.name,
-                    "config": self.config.config
-                }
+                extra={"plugin": self.name, "config": self.config.config},
             )
             return
 
         try:
             logger.debug(
                 "Starting cleanup files plugin initialization",
-                extra={
-                    "plugin": self.name,
-                    "thread_id": threading.get_ident()
-                }
+                extra={"plugin": self.name, "thread_id": threading.get_ident()},
             )
 
             # Initialize thread pool for processing
             max_workers = 4  # Reasonable default for file operations
             self._executor = ThreadPoolExecutor(max_workers=max_workers)
-            
+
             # Subscribe to desktop notification completed events
             await self.event_bus.subscribe(
                 "desktop_notification.completed",
-                self.handle_desktop_notification_completed
+                self.handle_desktop_notification_completed,
             )
 
             logger.info(
@@ -92,8 +86,8 @@ class CleanupFilesPlugin(PluginBase):
                     "plugin": self.name,
                     "subscribed_events": ["desktop_notification.completed"],
                     "handler": "handle_desktop_notification_completed",
-                    "thread_pool_ready": self._executor is not None
-                }
+                    "thread_pool_ready": self._executor is not None,
+                },
             )
 
         except Exception as e:
@@ -103,9 +97,9 @@ class CleanupFilesPlugin(PluginBase):
                     "plugin": self.name,
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "thread_id": threading.get_ident()
+                    "thread_id": threading.get_ident(),
                 },
-                exc_info=True
+                exc_info=True,
             )
             raise
 
@@ -118,14 +112,13 @@ class CleanupFilesPlugin(PluginBase):
             "Starting plugin shutdown",
             extra={
                 "plugin": self.name,
-                "thread_pool_active": self._executor is not None
-            }
+                "thread_pool_active": self._executor is not None,
+            },
         )
 
         # Unsubscribe from events
         await self.event_bus.unsubscribe(
-            "desktop_notification.completed",
-            self.handle_desktop_notification_completed
+            "desktop_notification.completed", self.handle_desktop_notification_completed
         )
 
         # Shutdown thread pool
@@ -133,20 +126,19 @@ class CleanupFilesPlugin(PluginBase):
             self._executor.shutdown(wait=True)
             logger.debug(
                 "Thread pool shutdown complete",
-                extra={
-                    "plugin": self.name,
-                    "thread_pool_id": id(self._executor)
-                }
+                extra={"plugin": self.name, "thread_pool_id": id(self._executor)},
             )
 
         logger.info(
-            "Cleanup files plugin shutdown complete",
-            extra={"plugin": self.name}
+            "Cleanup files plugin shutdown complete", extra={"plugin": self.name}
         )
 
-    async def handle_desktop_notification_completed(self, event_data: EventData) -> None:
+    async def handle_desktop_notification_completed(
+        self, event_data: EventData
+    ) -> None:
         """Handle desktop notification completed event."""
         event_id = str(uuid.uuid4())
+        recording_id = "unknown"  # Initialize recording_id at the start
         try:
             logger.debug(
                 "Raw desktop notification completed event received",
@@ -155,8 +147,8 @@ class CleanupFilesPlugin(PluginBase):
                     "event_id": event_id,
                     "event_type": type(event_data).__name__,
                     "event_data": str(event_data),
-                    "thread_id": threading.get_ident()
-                }
+                    "thread_id": threading.get_ident(),
+                },
             )
 
             # Extract data based on event type
@@ -167,19 +159,19 @@ class CleanupFilesPlugin(PluginBase):
                     extra={
                         "plugin": self.name,
                         "event_id": event_id,
-                        "data_keys": list(data.keys())
-                    }
+                        "data_keys": list(data.keys()),
+                    },
                 )
             elif isinstance(event_data, (Event, RecordingEvent)):
-                data = event_data.data if hasattr(event_data, 'data') else {}
+                data = event_data.data if hasattr(event_data, "data") else {}
                 logger.debug(
                     "Processing Event/RecordingEvent data",
                     extra={
                         "plugin": self.name,
                         "event_id": event_id,
                         "event_class": type(event_data).__name__,
-                        "has_data": hasattr(event_data, 'data')
-                    }
+                        "has_data": hasattr(event_data, "data"),
+                    },
                 )
             else:
                 logger.error(
@@ -188,8 +180,8 @@ class CleanupFilesPlugin(PluginBase):
                         "plugin": self.name,
                         "event_id": event_id,
                         "event_type": type(event_data).__name__,
-                        "supported_types": ["dict", "Event", "RecordingEvent"]
-                    }
+                        "supported_types": ["dict", "Event", "RecordingEvent"],
+                    },
                 )
                 return
 
@@ -197,6 +189,7 @@ class CleanupFilesPlugin(PluginBase):
             recording_id = (
                 data.get("recording_id")
                 or data.get("data", {}).get("recording_id")
+                or data.get("desktop_notification", {}).get("recording_id")
                 or "unknown"
             )
 
@@ -206,12 +199,18 @@ class CleanupFilesPlugin(PluginBase):
                     "plugin": self.name,
                     "event_id": event_id,
                     "recording_id": recording_id,
-                    "data_path": "Found in: " + (
-                        "root.recording_id" if "recording_id" in data
-                        else "root.data.recording_id" if "data" in data and "recording_id" in data["data"]
+                    "data_path": "Found in: "
+                    + (
+                        "root.recording_id"
+                        if "recording_id" in data
+                        else "root.data.recording_id"
+                        if "data" in data and "recording_id" in data["data"]
+                        else "root.desktop_notification.recording_id"
+                        if "desktop_notification" in data
+                        and "recording_id" in data["desktop_notification"]
                         else "unknown"
-                    )
-                }
+                    ),
+                },
             )
 
             if recording_id == "unknown":
@@ -220,35 +219,54 @@ class CleanupFilesPlugin(PluginBase):
                     extra={
                         "plugin": self.name,
                         "event_id": event_id,
-                        "event_data": str(data)
-                    }
+                        "event_data": str(data),
+                    },
                 )
                 return
+
+            # Extract metadata
+            metadata = data.get("metadata", {})
 
             # Clean up files
             cleaned_files = await self._cleanup_files(recording_id)
 
             # Emit completion event
             if self.event_bus:
-                completion_event = Event(
+                completion_event = Event.create(
                     name="cleanup_files.completed",
                     data={
-                        "recording_id": recording_id,
-                        "cleaned_files": cleaned_files,
-                        "status": "completed",
-                        "current_event": {
-                            "cleanup_files": {
-                                "status": "completed",
-                                "timestamp": datetime.utcnow().isoformat(),
-                                "cleaned_files": cleaned_files
-                            }
-                        }
+                        "recording": data.get("data", {}).get("recording", {}),
+                        "noise_reduction": data.get("data", {}).get(
+                            "noise_reduction", {}
+                        ),
+                        "transcription": data.get("data", {}).get("transcription", {}),
+                        "meeting_notes": data.get("data", {}).get("meeting_notes", {}),
+                        "desktop_notification": data.get("data", {}).get(
+                            "desktop_notification", {}
+                        ),
+                        "cleanup_files": {
+                            "status": "completed",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "recording_id": recording_id,
+                            "cleaned_files": cleaned_files,
+                            "config": {
+                                "include_dirs": [str(d) for d in self.include_dirs],
+                                "exclude_dirs": [str(d) for d in self.exclude_dirs],
+                                "cleanup_delay": self.cleanup_delay,
+                            },
+                        },
+                        "metadata": metadata,
+                        "context": {
+                            "correlation_id": data.get(
+                                "correlation_id", str(uuid.uuid4())
+                            ),
+                            "source_plugin": self.name,
+                            "metadata": metadata,
+                        },
                     },
-                    context=EventContext(
-                        correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.utcnow().isoformat(),
-                        source_plugin=self.name
-                    )
+                    correlation_id=data.get("correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL,
                 )
 
                 logger.debug(
@@ -259,61 +277,92 @@ class CleanupFilesPlugin(PluginBase):
                         "event_name": completion_event.name,
                         "recording_id": recording_id,
                         "num_cleaned_files": len(cleaned_files),
-                        "cleaned_files": cleaned_files
-                    }
+                        "cleaned_files": cleaned_files,
+                    },
                 )
                 await self.event_bus.publish(completion_event)
 
         except Exception as e:
-            error_msg = f"Failed to handle desktop notification completion: {str(e)}"
+            error_msg = f"Failed to handle desktop notification completion: {e!s}"
             logger.error(
                 error_msg,
                 extra={
                     "plugin": self.name,
                     "event_id": event_id,
-                    "recording_id": recording_id if "recording_id" in locals() else "unknown",
+                    "recording_id": recording_id
+                    if "recording_id" in locals()
+                    else "unknown",
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "stack_info": True
+                    "stack_info": True,
                 },
-                exc_info=True
+                exc_info=True,
             )
 
             if self.event_bus and "recording_id" in locals():
                 # Emit error event
-                error_event = Event(
+                error_event = Event.create(
                     name="cleanup_files.error",
                     data={
-                        "recording_id": recording_id,
-                        "error": str(e),
-                        "current_event": {
-                            "cleanup_files": {
-                                "status": "error",
-                                "timestamp": datetime.utcnow().isoformat(),
-                                "error": str(e)
-                            }
-                        }
+                        "recording": data.get("data", {}).get("recording", {})
+                        if data
+                        else {},
+                        "noise_reduction": data.get("data", {}).get(
+                            "noise_reduction", {}
+                        )
+                        if data
+                        else {},
+                        "transcription": data.get("data", {}).get("transcription", {})
+                        if data
+                        else {},
+                        "meeting_notes": data.get("data", {}).get("meeting_notes", {})
+                        if data
+                        else {},
+                        "desktop_notification": data.get("data", {}).get(
+                            "desktop_notification", {}
+                        )
+                        if data
+                        else {},
+                        "cleanup_files": {
+                            "status": "error",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "recording_id": recording_id
+                            if "recording_id" in locals()
+                            else "unknown",
+                            "error": str(e),
+                            "config": {
+                                "include_dirs": [str(d) for d in self.include_dirs],
+                                "exclude_dirs": [str(d) for d in self.exclude_dirs],
+                                "cleanup_delay": self.cleanup_delay,
+                            },
+                        },
+                        "metadata": metadata if "metadata" in locals() else {},
+                        "context": {
+                            "correlation_id": data.get(
+                                "correlation_id", str(uuid.uuid4())
+                            ),
+                            "source_plugin": self.name,
+                            "metadata": metadata if "metadata" in locals() else {},
+                        },
                     },
-                    context=EventContext(
-                        correlation_id=str(uuid.uuid4()),
-                        timestamp=datetime.utcnow().isoformat(),
-                        source_plugin=self.name
-                    )
+                    correlation_id=data.get("correlation_id", str(uuid.uuid4())),
+                    source_plugin=self.name,
+                    priority=EventPriority.NORMAL,
                 )
                 await self.event_bus.publish(error_event)
 
     async def _cleanup_files(self, recording_id: str) -> list[str]:
         """Clean up files for a recording ID.
-        
+
         Args:
             recording_id: The recording ID to clean up files for
-            
+
         Returns:
             List of cleaned up file paths
         """
         cleaned_files = []
-        scan_start_time = datetime.utcnow()
-        
+        scan_start_time = datetime.now(UTC)
+
         try:
             logger.debug(
                 "Starting file cleanup",
@@ -323,8 +372,8 @@ class CleanupFilesPlugin(PluginBase):
                     "include_dirs": [str(d) for d in self.include_dirs],
                     "exclude_dirs": [str(d) for d in self.exclude_dirs],
                     "cleanup_delay": self.cleanup_delay,
-                    "scan_start_time": scan_start_time.isoformat()
-                }
+                    "scan_start_time": scan_start_time,
+                },
             )
 
             if self.cleanup_delay > 0:
@@ -333,8 +382,8 @@ class CleanupFilesPlugin(PluginBase):
                     extra={
                         "plugin": self.name,
                         "recording_id": recording_id,
-                        "cleanup_delay": self.cleanup_delay
-                    }
+                        "cleanup_delay": self.cleanup_delay,
+                    },
                 )
                 await asyncio.sleep(self.cleanup_delay)
 
@@ -346,8 +395,8 @@ class CleanupFilesPlugin(PluginBase):
                         extra={
                             "plugin": self.name,
                             "recording_id": recording_id,
-                            "directory": str(include_dir)
-                        }
+                            "directory": str(include_dir),
+                        },
                     )
                     continue
 
@@ -356,37 +405,44 @@ class CleanupFilesPlugin(PluginBase):
                     extra={
                         "plugin": self.name,
                         "recording_id": recording_id,
-                        "directory": str(include_dir)
-                    }
+                        "directory": str(include_dir),
+                    },
                 )
 
                 # Walk through directory
                 for root, dirs, files in os.walk(str(include_dir)):
                     root_path = Path(root)
-                    
+
                     # Skip excluded directories
-                    if any(root_path == excl or excl in root_path.parents for excl in self.exclude_dirs):
+                    if any(
+                        root_path == excl or excl in root_path.parents
+                        for excl in self.exclude_dirs
+                    ):
                         logger.debug(
                             f"Skipping excluded directory: {root_path}",
                             extra={
                                 "plugin": self.name,
                                 "recording_id": recording_id,
                                 "directory": str(root_path),
-                                "excluded_by": [str(excl) for excl in self.exclude_dirs if excl == root_path or excl in root_path.parents]
-                            }
+                                "excluded_by": [
+                                    str(excl)
+                                    for excl in self.exclude_dirs
+                                    if excl == root_path or excl in root_path.parents
+                                ],
+                            },
                         )
                         continue
-                    
+
                     logger.debug(
                         f"Scanning files in: {root_path}",
                         extra={
                             "plugin": self.name,
                             "recording_id": recording_id,
                             "directory": str(root_path),
-                            "num_files": len(files)
-                        }
+                            "num_files": len(files),
+                        },
                     )
-                    
+
                     # Find and remove files matching recording ID
                     for file in files:
                         if recording_id in file:
@@ -400,8 +456,10 @@ class CleanupFilesPlugin(PluginBase):
                                         "plugin": self.name,
                                         "recording_id": recording_id,
                                         "file": str(file_path),
-                                        "file_size": file_path.stat().st_size if file_path.exists() else None
-                                    }
+                                        "file_size": file_path.stat().st_size
+                                        if file_path.exists()
+                                        else None,
+                                    },
                                 )
                             except Exception as e:
                                 logger.error(
@@ -411,12 +469,12 @@ class CleanupFilesPlugin(PluginBase):
                                         "recording_id": recording_id,
                                         "file": str(file_path),
                                         "error": str(e),
-                                        "error_type": type(e).__name__
+                                        "error_type": type(e).__name__,
                                     },
-                                    exc_info=True
+                                    exc_info=True,
                                 )
 
-            scan_end_time = datetime.utcnow()
+            scan_end_time = datetime.now(UTC)
             scan_duration = (scan_end_time - scan_start_time).total_seconds()
 
             logger.info(
@@ -427,11 +485,11 @@ class CleanupFilesPlugin(PluginBase):
                     "num_cleaned_files": len(cleaned_files),
                     "cleaned_files": cleaned_files,
                     "scan_duration_seconds": scan_duration,
-                    "scan_start_time": scan_start_time.isoformat(),
-                    "scan_end_time": scan_end_time.isoformat()
-                }
+                    "scan_start_time": scan_start_time,
+                    "scan_end_time": scan_end_time,
+                },
             )
-            
+
             return cleaned_files
 
         except Exception as e:
@@ -442,8 +500,10 @@ class CleanupFilesPlugin(PluginBase):
                     "recording_id": recording_id,
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "scan_duration": (datetime.utcnow() - scan_start_time).total_seconds()
+                    "scan_duration": (
+                        datetime.now(UTC) - scan_start_time
+                    ).total_seconds(),
                 },
-                exc_info=True
+                exc_info=True,
             )
-            return cleaned_files 
+            return cleaned_files

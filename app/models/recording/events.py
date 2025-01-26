@@ -1,18 +1,18 @@
 """Recording event models."""
 
+import asyncio
 import json
 import logging
-import uuid
-from datetime import datetime, UTC
-from typing import Any, Literal, TypeVar
-import asyncio
-import traceback
 import sqlite3
+import traceback
+import uuid
+from datetime import UTC, datetime
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
+from app.core.events.types import EventContext
 from app.models.database import DatabaseManager
-from app.plugins.events.models import EventContext
 
 logger = logging.getLogger(__name__)
 
@@ -57,18 +57,15 @@ def parse_timestamp(timestamp_str: str | None) -> datetime:
 class EventMetadata(BaseModel):
     """Event metadata model."""
 
-    event_provider_id: str | None = None
-    event_title: str | None = None
-    event_provider: str | None = None
-    event_attendees: list[str] | None = None
-    system_label: str | None = None
-    microphone_label: str | None = None
-    recording_started: str | None = None
-    recording_ended: str | None = None
-
-    def to_db_format(self) -> dict[str, Any]:
-        """Convert event to database format."""
-        return dict(json.loads(self.model_dump_json()))
+    event_provider_id: str | None = Field(None, alias="eventProviderId")
+    event_title: str | None = Field(None, alias="eventTitle")
+    event_provider: str | None = Field(None, alias="eventProvider")
+    event_attendees: list[str] | None = Field(None, alias="eventAttendees")
+    system_label: str | None = Field(None, alias="systemLabel")
+    microphone_label: str | None = Field(None, alias="microphoneLabel")
+    recording_started: str | None = Field(None, alias="recordingStarted")
+    recording_ended: str | None = Field(None, alias="recordingEnded")
+    recording_date_time: str | None = Field(None, alias="recordingDateTime")
 
 
 T = TypeVar("T")
@@ -79,17 +76,25 @@ class RecordingEvent(BaseModel):
 
     recording_timestamp: str
     recording_id: str
-    system_audio_path: str | None = Field(None, description="Path to system audio recording")
-    microphone_audio_path: str | None = Field(None, description="Path to microphone audio recording")
+    system_audio_path: str | None = Field(
+        None, description="Path to system audio recording"
+    )
+    microphone_audio_path: str | None = Field(
+        None, description="Path to microphone audio recording"
+    )
     event: Literal[
         "recording.started",
         "recording.ended",
         "noise_reduction.completed",
-        "transcription.completed",
-        "transcription.error",
-        "meeting_notes.completed",
-        "meeting_notes.error",
+        "noise_reduction.error",
+        "transcription_local.completed",
+        "transcription_local.error",
+        "meeting_notes_local.completed",
+        "meeting_notes_local.error",
+        "meeting_notes_remote.completed",
+        "meeting_notes_remote.error",
         "desktop_notification.completed",
+        "desktop_notification.error",
     ]
     metadata: dict[str, Any] | EventMetadata | None = None
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -115,32 +120,36 @@ class RecordingEvent(BaseModel):
     def set_data(cls, v: dict[str, Any] | None, info: ValidationInfo) -> dict[str, Any]:
         """Set the data field with relevant event information."""
         data = v or {}
-        
+
         # Get values from the model
         recording_id = info.data.get("recording_id")
         event = info.data.get("event")
         event_id = info.data.get("event_id")
         system_audio = info.data.get("system_audio_path")
         microphone_audio = info.data.get("microphone_audio_path")
-        
+
         # Update data dict
-        data.update({
-            "recording_id": recording_id,
-            "event": event,
-            "event_id": event_id,
-            "current_event": {
-                "recording": {
-                    "status": info.data.get("status", "completed"),
-                    "timestamp": info.data.get("recording_timestamp"),
-                    "audio_paths": {
-                        "system": system_audio,
-                        "microphone": microphone_audio
-                    } if system_audio or microphone_audio else None,
-                    "metadata": info.data.get("metadata")
-                }
+        data.update(
+            {
+                "recording_id": recording_id,
+                "event": event,
+                "event_id": event_id,
+                "current_event": {
+                    "recording": {
+                        "status": info.data.get("status", "completed"),
+                        "timestamp": info.data.get("recording_timestamp"),
+                        "audio_paths": {
+                            "system": system_audio,
+                            "microphone": microphone_audio,
+                        }
+                        if system_audio or microphone_audio
+                        else None,
+                        "metadata": info.data.get("metadata"),
+                    }
+                },
             }
-        })
-        
+        )
+
         return data
 
     @field_validator("recording_timestamp")
@@ -156,17 +165,9 @@ class RecordingEvent(BaseModel):
             return str(timestamp)
         return v
 
-    def _get_metadata_field(self, field: str) -> Any:
-        """Safely get a field from metadata whether it's a dict or EventMetadata."""
-        if isinstance(self.metadata, EventMetadata):
-            return getattr(self.metadata, field, None)
-        elif isinstance(self.metadata, dict):
-            return self.metadata.get(field)
-        return None
-
     async def save(self) -> None:
         """Save the event to the database."""
-        db = await DatabaseManager.get_instance()
+        db = await DatabaseManager.get_instance_async()
 
         # Create tasks for database operations
         tasks = []
@@ -232,7 +233,7 @@ class RecordingEvent(BaseModel):
         # Wait for all tasks with retry on database lock
         max_retries = 3
         retry_delay = 1.0  # seconds
-        
+
         for attempt in range(max_retries):
             try:
                 # Wait for all tasks to complete
@@ -242,8 +243,8 @@ class RecordingEvent(BaseModel):
                     extra={
                         "recording_id": self.recording_id,
                         "event_id": self.event_id,
-                        "attempt": attempt + 1
-                    }
+                        "attempt": attempt + 1,
+                    },
                 )
                 return
             except sqlite3.OperationalError as e:
@@ -254,8 +255,8 @@ class RecordingEvent(BaseModel):
                             "recording_id": self.recording_id,
                             "event_id": self.event_id,
                             "attempt": attempt + 1,
-                            "retry_delay": retry_delay
-                        }
+                            "retry_delay": retry_delay,
+                        },
                     )
                     await asyncio.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
@@ -268,15 +269,17 @@ class RecordingEvent(BaseModel):
                         "recording_id": self.recording_id,
                         "event_id": self.event_id,
                         "error": str(e),
-                        "traceback": "".join(traceback.format_exception(type(e), e, e.__traceback__))
-                    }
+                        "traceback": "".join(
+                            traceback.format_exception(type(e), e, e.__traceback__)
+                        ),
+                    },
                 )
                 raise
 
     @classmethod
     async def get_by_recording_id(cls, recording_id: str) -> list["RecordingEvent"]:
         """Retrieve all events for a specific recording."""
-        db = DatabaseManager.get_instance()
+        db = await DatabaseManager.get_instance()
         rows = await db.fetch_all(
             """
             SELECT * FROM recording_events
@@ -299,10 +302,10 @@ class RecordingEvent(BaseModel):
 
     async def is_duplicate(self) -> bool:
         """Check if this event is a duplicate.
-        
+
         For now, we allow multiple recording.ended events for the same recording ID
         since they might be legitimate retries or different processing stages.
-        
+
         Returns:
             bool: Always returns False to allow all events
         """
@@ -315,18 +318,31 @@ class RecordingStartRequest(BaseModel):
     timestamp: str | None = None
     recording_timestamp: str | None = None
     recording_id: str = Field(..., alias="recordingId")
-    event: str = Field(default="recording.started")
+    event: Literal[
+        "recording.started",
+        "recording.ended",
+        "noise_reduction.completed",
+        "noise_reduction.error",
+        "transcription_local.completed",
+        "transcription_local.error",
+        "meeting_notes_local.completed",
+        "meeting_notes_local.error",
+        "meeting_notes_remote.completed",
+        "meeting_notes_remote.error",
+        "desktop_notification.completed",
+        "desktop_notification.error",
+    ] = Field(default="recording.started")
     metadata: dict[str, Any] | None = None
     system_audio_path: str | None = None
     microphone_audio_path: str | None = None
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def normalize_event(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Normalize event name before validation."""
-        if 'event' in data:
-            if data['event'].lower() in ["recording started", "recording.started"]:
-                data['event'] = "recording.started"
+        if "event" in data:
+            if data["event"].lower() in ["recording started", "recording.started"]:
+                data["event"] = "recording.started"
         return data
 
     @field_validator("recording_timestamp")
@@ -370,16 +386,29 @@ class RecordingEndRequest(BaseModel):
     recording_id: str = Field(..., alias="recordingId")
     system_audio_path: str = Field(..., alias="systemAudioPath")
     microphone_audio_path: str = Field(..., alias="microphoneAudioPath")
-    event: str = Field(default="recording.ended")
+    event: Literal[
+        "recording.started",
+        "recording.ended",
+        "noise_reduction.completed",
+        "noise_reduction.error",
+        "transcription_local.completed",
+        "transcription_local.error",
+        "meeting_notes_local.completed",
+        "meeting_notes_local.error",
+        "meeting_notes_remote.completed",
+        "meeting_notes_remote.error",
+        "desktop_notification.completed",
+        "desktop_notification.error",
+    ] = Field(default="recording.ended")
     metadata: dict[str, Any]
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def normalize_event(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Normalize event name before validation."""
-        if 'event' in data:
-            if data['event'].lower() in ["recording ended", "recording.ended"]:
-                data['event'] = "recording.ended"
+        if "event" in data:
+            if data["event"].lower() in ["recording ended", "recording.ended"]:
+                data["event"] = "recording.ended"
         return data
 
     @field_validator("recording_timestamp")
@@ -419,6 +448,6 @@ class RecordingEndRequest(BaseModel):
                 "metadata": self.metadata,
                 "event": self.event,
                 "event_id": event_id,
-                "status": "completed"
+                "status": "completed",
             },
         )

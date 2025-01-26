@@ -26,9 +26,15 @@ While this server is open source and compatible with any client that implements 
 
 ## Plugin Architecture
 
-panottiServer features an extensible plugin architecture that allows you to create custom plugins to support your specific workflows. Whether you need to integrate with your team's tools, add custom processing steps, or implement unique features, you can easily extend the server's functionality through plugins.
+panottiServer features an extensible plugin architecture that allows you to create custom plugins to support your specific workflows. The server includes several built-in plugins:
 
-Check out the [Plugin Development](#plugin-development) section below for a guide on creating your own plugins. In the future, we'll launch a community plugin repository where users can share and discover plugins built by the Panotti community.
+- `audio_transcription_local`: Handles audio transcription using OpenAI Whisper
+- `cleanup_files`: Manages file cleanup with safe deletion and notifications
+- `desktop_notifier`: Provides desktop notifications for important events
+- `events`: Core event system for plugin communication
+- `meeting_notes_local`: Generates meeting notes using local Ollama LLM
+- `meeting_notes_remote`: Generates meeting notes using remote LLM services
+- `noise_reduction`: Audio preprocessing and noise reduction
 
 ## Requirements
 
@@ -36,13 +42,18 @@ Check out the [Plugin Development](#plugin-development) section below for a guid
 - Rust (for FastAPI's Pydantic V2)
 - Poetry (dependency management)
 - Ollama (for meeting notes generation)
+  - Default model: `llama3.1:8b` (other Ollama models are also supported)
+  - Alternative: `deepseek-r1:8b` (reasoning LLM)
 - OpenAI Whisper (for audio transcription)
-- Minimum 8GB RAM available for Docker operations (model downloads and runtime)
+- Minimum 8GB RAM available for Docker operations
 - Docker with memory allocation:
-  - Minimum: 12GB reserved, 24GB limit for running llama3.1:latest
-  - Recommended: 16GB reserved, 32GB limit for better performance
+  - Minimum: 12GB reserved, 24GB limit
+  - Recommended: 16GB reserved, 32GB limit
 
-Note: The memory requirements are primarily driven by the LLM model size and operations. The application uses Docker resource limits to manage memory allocation and prevent system instability.
+System Dependencies (installed via setup script):
+- `openai-whisper`: Audio transcription
+- `terminal-notifier`: Desktop notifications (macOS)
+- `ollama`: Local LLM processing
 
 ## Installation
 
@@ -64,6 +75,8 @@ python --version  # Should show Python 3.12.x
 ```
 
 ### Quick Setup (Recommended)
+
+> ⚠️ **IMPORTANT**: Before running the setup script, please carefully review its contents at `scripts/setup.py`. This script will make changes to your system including installing dependencies and configuring your environment. Understanding these changes beforehand will help avoid any potential issues during installation.
 
 The easiest way to set up the application is to use the provided setup script. 
 
@@ -268,7 +281,7 @@ docker run -p 8001:8001 \
   panotti-server
 ```
 
-The server will be accessible at `http://localhost:8001`
+The server will be accessible at `http://localhost:54789`
 
 ## Usage
 
@@ -327,9 +340,9 @@ python run_server.py
 ./start_server.sh
 ```
 
-Both methods will read the port configuration from your `.env` file. The default port is 8001 if not specified.
+Both methods will read the port configuration from your `.env` file. The default port is 54789 if not specified.
 
-Note: Using `uvicorn app.main:app --reload` directly will use port 8000 by default and won't read from the `.env` file.
+Note: Using `uvicorn app.main:app --reload` directly will use port 54789 by default and won't read from the `.env` file.
 
 #### Development
 Run the server using uvicorn:
@@ -365,8 +378,8 @@ pkill -f uvicorn
 ### API Documentation
 
 Once the server is running, you can access:
-- Swagger UI documentation at `http://localhost:8000/docs`
-- ReDoc documentation at `http://localhost:8000/redoc`
+- Swagger UI documentation at `http://localhost:54789/docs`
+- ReDoc documentation at `http://localhost:54789/redoc`
 
 ### API Endpoints
 
@@ -394,58 +407,82 @@ Content-Type: application/json
 }
 ```
 
-
 ## Plugin Development
+
+To create a custom plugin:
+
+1. Create a new directory in `app/plugins/`
+2. Implement the plugin interface
+3. Subscribe to relevant events using the EventBus
+4. Add configuration in `plugin.yaml`
+
+Example plugin structure:
+```
+your_plugin/
+├── __init__.py
+├── plugin.yaml    # Plugin configuration
+├── models.py      # Data models
+└── handlers.py    # Event handlers
+```
 
 ### System Architecture
 
-The application follows a modular, plugin-based architecture:
+The application follows a modular, event-driven architecture:
 
 ```
 app/
-├── core/                     # Core system interfaces
-├── models/                   # Domain models
-├── plugins/                  # Plugin system
-│   ├── base.py              # Base plugin classes
-│   ├── manager.py           # Plugin lifecycle
-│   ├── audio_transcription_local/ # Local audio transcription plugin
-│   ├── cleanup_files/       # File cleanup plugin
-│   ├── desktop_notifier/    # Desktop notifications plugin
-│   ├── events/              # Event handling plugin
-│   ├── meeting_notes_local/ # Local meeting notes plugin
-│   ├── meeting_notes_remote/# Remote meeting notes plugin
-│   └── noise_reduction/     # Noise reduction plugin
-├── utils/                   # Utilities
-└── tests/                   # Test suite
+├── core/                     # Core system interfaces and protocols
+│   ├── __init__.py
+│   └── events/              # Event system implementation
+│       ├── __init__.py      # Event system exports
+│       ├── bus.py          # EventBus implementation
+│       ├── models.py       # Event models
+│       ├── persistence.py  # Event persistence
+│       ├── types.py       # Type definitions
+│       └── handlers/      # Event handlers
+├── models/                  # Domain models
+│   ├── __init__.py
+│   ├── database.py         # Database functionality
+│   └── recording/          # Recording-related models
+│       ├── __init__.py
+│       └── events.py       # Recording event models
+├── plugins/                # Plugin implementations
+│   ├── base.py            # Plugin base classes
+│   ├── manager.py         # Plugin management
+│   └── [plugin_name]/     # Individual plugins
+└── utils/                 # Utility functions
+    ├── logging_config.py  # Logging configuration
+    └── directory_sync.py # Directory synchronization
 ```
+
+### Event System
+
+The event system is now part of the core package and uses a publish-subscribe pattern with the following components:
+
+- **EventBus**: Robust asynchronous message broker for event distribution
+- **Event**: Base class for all system events
+- **EventContext**: Provides metadata and priority for each event
+- **EventPriority**: Defines priority levels (LOW, NORMAL, HIGH)
+- **EventHandler**: Base class for event handlers
+- **EventPersistence**: Event storage and replay capabilities
+
+Events are handled asynchronously with comprehensive error handling and logging.
 
 ### Creating a New Plugin
 
 1. Create a new directory under `app/plugins/`
-2. Add `plugin.yaml` configuration:
-```yaml
-name: your_plugin_name
-version: 1.0.0
-description: Plugin description
-enabled: true
-dependencies: []
-```
+2. Create the plugin implementation:
 
-3. Implement `plugin.py`:
 ```python
-from app.plugins.base import PluginBase
+from app.core.plugins import PluginBase, PluginConfig
+from app.core.events import EventBus, Event, EventHandler
 
-class YourPlugin(PluginBase):
-    async def initialize(self):
-        # Setup code
-        pass
-
-    async def start(self):
-        # Start plugin
-        pass
-
-    async def stop(self):
-        # Cleanup code
+class MyPlugin(PluginBase):
+    def __init__(self, config: PluginConfig, event_bus: EventBus = None):
+        super().__init__(config, event_bus)
+        
+    def handle_event(self, event: Event) -> None:
+        # Event handling logic here
         pass
 ```
 
@@ -520,7 +557,7 @@ The server comes with several built-in plugins. Here's a summary of each plugin 
 - **Dependencies**: audio_transcription
 - **Description**: Generates meeting notes using local Ollama LLM
 - **Features**:
-  - Uses llama3.1:latest model by default
+  - Uses llama3.1:8b model by default
   - Configurable Ollama URL for Docker/local setup
   - Large context window (131K tokens)
 
@@ -614,9 +651,9 @@ python run_server.py
 ./start_server.sh
 ```
 
-Both methods will read the port configuration from your `.env` file. The default port is 8001 if not specified.
+Both methods will read the port configuration from your `.env` file. The default port is 54789 if not specified.
 
-Note: Using `uvicorn app.main:app --reload` directly will use port 8000 by default and won't read from the `.env` file.
+Note: Using `uvicorn app.main:app --reload` directly will use port 54789 by default and won't read from the `.env` file.
 
 #### Development
 Run the server using uvicorn:
@@ -627,10 +664,10 @@ uvicorn app.main:app --reload
 #### Production
 For production deployment, use Gunicorn with Uvicorn workers:
 ```bash
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:54789
 ```
 
-The server will start at `http://localhost:8000`
+The server will start at `http://localhost:547890`
 
 ### Stopping the Server
 
@@ -645,8 +682,8 @@ pkill -f uvicorn
 ### API Documentation
 
 Once the server is running, you can access:
-- Swagger UI documentation at `http://localhost:8000/docs`
-- ReDoc documentation at `http://localhost:8000/redoc`
+- Swagger UI documentation at `http://localhost:547890/docs`
+- ReDoc documentation at `http://localhost:54789/redoc`
 
 ### API Endpoints
 
@@ -707,7 +744,7 @@ This implementation uses FastAPI with Pydantic V2, which requires Rust for its h
 
 For optimal meeting notes generation, this application requires a large language model. We recommend:
 
-- **Default**: `llama3.1:latest` - Good balance of quality and resource usage (minimum 24GB RAM)
+- **Default**: `llama3.1:8b` - Good balance of quality and resource usage (minimum 24GB RAM)
 - **Optional**: `llama3.3:70b` - Better quality notes but requires significant resources (minimum 80GB RAM)
 
 Note: The model choice impacts the quality of:
@@ -717,7 +754,7 @@ Note: The model choice impacts the quality of:
 
 Configure your preferred model in the meeting notes `plugin.yaml` file:
 ```yaml
-model_name: "llama3.1:latest"  # or llama3.3:70b
+model_name: "llama3.1:8b"  # or llama3.3:70b
 ```
 
 Important memory considerations:
@@ -743,3 +780,15 @@ pip freeze > requirements.txt
 ```
 
 Note: Be sure to test your application thoroughly after upgrading packages as new versions may introduce breaking changes.
+
+## Warranty Disclaimer
+
+THIS SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU. SHOULD THE SOFTWARE PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR, OR CORRECTION.
+
+IN NO EVENT SHALL PR0J3CTTODD LTD BE LIABLE FOR ANY SPECIAL, INCIDENTAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER (INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF BUSINESS PROFITS, BUSINESS INTERRUPTION, LOSS OF BUSINESS INFORMATION, OR ANY OTHER PECUNIARY LOSS) ARISING OUT OF THE USE OF OR INABILITY TO USE THE SOFTWARE.
+
+For complete terms of use and privacy policy, please visit:
+- Terms and Conditions: https://www.panotti.io/terms-and-conditions
+- Privacy Policy: https://www.panotti.io/privacy-policy
+
+ Copyright 2025 Pr0j3ctTodd Ltd. All rights reserved.

@@ -66,6 +66,41 @@ app/
 - Each plugin is a self-contained module
 - Follows dependency injection principles
 
+## Example of an event creation format
+Use the following format to create or validate events:
+
+```
+Event.create(
+    name="transcription_local.completed",
+    data={
+        "recording": original_event.get("recording", {}) if original_event else {},
+        "noise_reduction": original_event.get("noise_reduction", {}) if original_event else {},
+        "transcription": {
+            "status": status,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "recording_id": recording_id,
+            "output_file": output_file,
+            "transcript_paths": transcript_paths,
+            "model": self.get_config("model", "base"),
+            "language": self.get_config("language", "en"),
+            "speaker_labels": {
+                "microphone": speaker_label,
+                "system": system_label
+            }
+        },
+        "metadata": combined_metadata,  # Include metadata in completion event
+        "context": {
+            "correlation_id": correlation_id,
+            "source_plugin": self.name,
+            "metadata": combined_metadata
+        }
+    },
+    correlation_id=correlation_id,
+    source_plugin=self.name,
+    priority=EventPriority.NORMAL
+)
+```
+
 ## Architecture Guidelines
 
 ### Overview
@@ -90,6 +125,7 @@ app/
 ### Best Practices
 - Use a **Plugin Manager** to dynamically load and manage plugins.
 - Ensure plugins are well-documented and tested.
+- Use the reStructuredText (reST) format for documentation
 - Facilitate communication through an **Event Bus** and persist events with an **Event Store**.
 
 ## Testing
