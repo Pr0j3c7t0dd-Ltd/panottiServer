@@ -1088,3 +1088,236 @@ async def test_handle_task_with_handler_info_error():
     await bus._handle_task(handler, event)
     # Allow time for error handling
     await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_sleep_error():
+    """Test cleanup with sleep error."""
+    bus = EventBus()
+    
+    # Mock sleep to raise an error and break the loop
+    with patch('asyncio.sleep', AsyncMock()) as mock_sleep:
+        # First call raises error, second call breaks the loop
+        mock_sleep.side_effect = [Exception("Sleep error"), asyncio.CancelledError()]
+        
+        try:
+            await bus._cleanup_old_events()
+        except asyncio.CancelledError:
+            pass  # Expected to exit loop
+        
+        # Verify sleep was called
+        assert mock_sleep.call_count > 0
+        assert mock_sleep.call_args[0][0] == 3600  # Check sleep duration
+
+
+@pytest.mark.asyncio
+async def test_event_bus_stop_with_no_task():
+    """Test stopping event bus when cleanup task is None."""
+    bus = EventBus()
+    bus._cleanup_events_task = None
+    await bus.stop()
+    assert bus._cleanup_events_task is None
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_none_handler():
+    """Test handling task with None handler."""
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    await bus._handle_task(None, event)
+
+
+@pytest.mark.asyncio
+async def test_publish_with_source_plugin_filter():
+    """Test publishing event with source plugin filtering."""
+    bus = EventBus()
+    event = MockEvent(name="test.event", source_plugin="plugin1")
+    handler_called = asyncio.Event()
+
+    async def test_handler(evt):
+        handler_called.set()
+
+    handler = AsyncMock(side_effect=test_handler)
+    bus._subscribers["test.event"].append(handler)
+    
+    # Set up processed events to simulate filtering
+    event.event_id = "test_id"
+    async with bus._lock:
+        bus._processed_events[event.event_id] = datetime.now(UTC)
+
+    await bus.publish(event)
+    assert not handler_called.is_set()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_lock_acquisition():
+    """Test cleanup with lock acquisition."""
+    bus = EventBus()
+    event_id = "test_id"
+    now = datetime.now(UTC)
+    
+    # Add an old event
+    async with bus._lock:
+        bus._processed_events[event_id] = now - timedelta(hours=2)
+    
+    # Mock sleep to avoid waiting
+    with patch('asyncio.sleep', AsyncMock()) as mock_sleep:
+        mock_sleep.side_effect = asyncio.CancelledError()
+        
+        try:
+            await bus._cleanup_old_events()
+        except asyncio.CancelledError:
+            pass
+        
+        mock_sleep.assert_called_once_with(3600)
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_detailed_logging():
+    """Test handle task with detailed logging."""
+    bus = EventBus()
+    
+    class TestHandler:
+        async def handle(self, event):
+            await asyncio.sleep(0)
+            raise ValueError("Test error")
+            
+        def __str__(self):
+            return "TestHandler"
+    
+    handler = TestHandler().handle
+    event = MockEvent(name="test.event", event_id="test_id")
+    
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)  # Allow time for handler to complete
+
+
+@pytest.mark.asyncio
+async def test_handle_task_callback_with_exception():
+    """Test handle task callback with exception in the callback itself."""
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    async def failing_handler(evt):
+        raise ValueError("Handler error")
+    
+    handler = AsyncMock(side_effect=failing_handler)
+    handler.__name__ = "failing_handler"
+    
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)  # Allow time for callback to execute
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_empty_events():
+    """Test cleanup with no events to clean."""
+    bus = EventBus()
+    
+    with patch('asyncio.sleep', AsyncMock()) as mock_sleep:
+        mock_sleep.side_effect = asyncio.CancelledError()
+        
+        try:
+            await bus._cleanup_old_events()
+        except asyncio.CancelledError:
+            pass
+        
+        assert len(bus._processed_events) == 0
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_complex_handler_info():
+    """Test handle task with complex handler info gathering."""
+    bus = EventBus()
+    
+    class ComplexHandler:
+        def __init__(self):
+            self.state = "initialized"
+            
+        async def handle(self, event):
+            await asyncio.sleep(0)
+            
+        def __str__(self):
+            return "ComplexHandler"
+    
+    handler = ComplexHandler().handle
+    event = MockEvent(name="test.event", event_id="test_id")
+    
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_handler_callback_error():
+    """Test handle task with error in handler callback."""
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    async def test_handler(evt):
+        await asyncio.sleep(0)
+    
+    handler = AsyncMock(side_effect=test_handler)
+    handler.__name__ = "test_handler"
+    
+    # Create a task that will raise an exception in the callback
+    task = asyncio.create_task(asyncio.sleep(0))
+    task.add_done_callback(lambda _: 1/0)  # Will raise ZeroDivisionError
+    bus._pending_tasks.add(task)
+    
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_exception_handling():
+    """Test cleanup with exception in the cleanup process."""
+    bus = EventBus()
+    event_id = "test_id"
+    now = datetime.now(UTC)
+    
+    # Add an event that will cause problems during cleanup
+    bus._processed_events[event_id] = "invalid_timestamp"
+    
+    with patch('asyncio.sleep', AsyncMock()) as mock_sleep:
+        mock_sleep.side_effect = asyncio.CancelledError()
+        
+        try:
+            await bus._cleanup_old_events()
+        except asyncio.CancelledError:
+            pass
+        
+        assert event_id in bus._processed_events
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_invalid_handler_state():
+    """Test handle task with invalid handler state."""
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    class BrokenHandler:
+        def __init__(self):
+            self._state = {"broken": lambda: 1/0}
+            
+        async def handle(self, evt):
+            await asyncio.sleep(0)
+            
+        def __str__(self):
+            return "BrokenHandler"
+    
+    handler = BrokenHandler().handle
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_task_error_handling():
+    """Test cleanup task with error handling."""
+    bus = EventBus()
+    
+    # Create a task that will raise an exception
+    task = asyncio.create_task(asyncio.sleep(0))
+    bus._pending_tasks.add(task)
+    
+    # Force cleanup with exception
+    bus._cleanup_task(task)
+    assert task not in bus._pending_tasks
