@@ -795,4 +795,6 @@ For complete terms of use and privacy policy, please visit:
 - Terms and Conditions: https://www.panotti.io/terms-and-conditions
 - Privacy Policy: https://www.panotti.io/privacy-policy
 
+Commercial licenses are available upon request.  Please visit [https://www.panotti.io/](https://www.panotti.io/) for more information.
+
  Copyright 2025 Pr0j3ctTodd Ltd. All rights reserved.
