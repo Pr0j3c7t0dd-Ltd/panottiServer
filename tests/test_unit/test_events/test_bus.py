@@ -9,16 +9,8 @@ from unittest.mock import patch, AsyncMock
 from app.core.events.bus import EventBus
 
 
-@pytest.fixture(scope="module")
-def event_loop():
-    """Create an event loop for each test module."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture
-async def event_bus(event_loop):
+async def event_bus():
     """Create and start an event bus instance."""
     # Mock sleep to return immediately
     with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
