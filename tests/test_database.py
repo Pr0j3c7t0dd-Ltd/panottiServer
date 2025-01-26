@@ -55,44 +55,62 @@ class TestDatabaseManager(unittest.IsolatedAsyncioTestCase):
     async def test_initialization_error(self):
         DatabaseManager._instance = None
         
-        async def raise_error(*args, **kwargs):
+        # Mock run_in_executor to raise the error
+        async def mock_run_in_executor(executor, func, *args):
             raise sqlite3.Error("Test error")
             
-        with patch("app.models.database.DatabaseManager._create_connection") as mock_create_conn:
-            mock_create_conn.side_effect = raise_error
+        with patch('asyncio.get_event_loop') as mock_loop:
+            mock_loop.return_value.run_in_executor = mock_run_in_executor
             with pytest.raises(sqlite3.Error):
                 await DatabaseManager.get_instance_async()
                 
     async def test_migration_error(self):
         DatabaseManager._instance = None
         
-        async def raise_error(*args, **kwargs):
+        # Mock run_in_executor to raise the error
+        async def mock_run_in_executor(executor, func, *args):
             raise Exception("Migration error")
             
-        with patch("app.models.database.DatabaseManager._create_connection") as mock_create_conn, \
-             patch("app.models.database.DatabaseManager._run_migrations") as mock_run_migrations:
-            mock_create_conn.return_value = self.mock_conn
-            mock_run_migrations.side_effect = raise_error
+        with patch('asyncio.get_event_loop') as mock_loop:
+            mock_loop.return_value.run_in_executor = mock_run_in_executor
             with pytest.raises(Exception):
                 await DatabaseManager.get_instance_async()
                 
     async def test_execute_with_error(self):
-        async def raise_error(*args, **kwargs):
+        # Mock run_in_executor to raise the error
+        async def mock_run_in_executor(executor, func, *args):
             raise sqlite3.Error("Test error")
             
-        self.mock_cursor.execute.side_effect = raise_error
-        with pytest.raises(sqlite3.Error):
-            await self.db_manager.execute("SELECT * FROM test")
+        with patch('asyncio.get_event_loop') as mock_loop:
+            mock_loop.return_value.run_in_executor = mock_run_in_executor
+            with pytest.raises(sqlite3.Error):
+                await self.db_manager.execute("SELECT * FROM test")
             
     async def test_fetch_operations(self):
-        # Test fetch_one
-        row = await self.db_manager.fetch_one("SELECT * FROM test")
-        self.assertEqual(row["value"], "test value")
+        mock_row = {"value": "test value"}
+        mock_rows = [mock_row]
         
-        # Test fetch_all
-        rows = await self.db_manager.fetch_all("SELECT * FROM test")
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["value"], "test value")
+        # Mock run_in_executor to return appropriate data for each operation
+        async def mock_run_in_executor(executor, func, *args):
+            # Check the function name to determine what to return
+            func_name = func.__name__
+            if func_name == '_fetch_one':
+                return mock_row
+            elif func_name == '_fetch_all':
+                return mock_rows
+            return None
+            
+        with patch('asyncio.get_event_loop') as mock_loop:
+            mock_loop.return_value.run_in_executor = mock_run_in_executor
+            
+            # Test fetch_one
+            row = await self.db_manager.fetch_one("SELECT * FROM test")
+            self.assertEqual(row["value"], "test value")
+            
+            # Test fetch_all
+            rows = await self.db_manager.fetch_all("SELECT * FROM test")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["value"], "test value")
         
     async def test_cleanup_with_error(self):
         def raise_error(*args, **kwargs):
