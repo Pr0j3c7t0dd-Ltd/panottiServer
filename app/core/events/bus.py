@@ -459,6 +459,8 @@ class EventBus:
             raise ValueError("Event name cannot be empty")
         if not handler:
             raise ValueError("Handler cannot be None")
+        if not callable(handler):
+            raise ValueError("Handler must be callable")
 
         async with self._lock:
             logger.debug(

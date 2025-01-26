@@ -1,6 +1,8 @@
+![Discord Shield](https://discord.com/api/guilds/1316533461577891882/widget.png?style=shield)
+
 # panottiServer
 
-A FastAPI-based server for handling recording events with a plugin-based architecture and secure API endpoints.
+A FastAPI-based server for handling recording events with a plugin-based architecture and secure API endpoints.  More information, including the download link for the Panotti MacOS desktop app, can be found at [https://www.panotti.io/](https://www.panotti.io/).
 
 ## Features
 
