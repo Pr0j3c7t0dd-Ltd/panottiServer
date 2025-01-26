@@ -1321,3 +1321,203 @@ async def test_cleanup_task_error_handling():
     # Force cleanup with exception
     bus._cleanup_task(task)
     assert task not in bus._pending_tasks
+
+
+@pytest.mark.asyncio
+async def test_event_bus_exit_handler():
+    """Test event bus exit handler behavior."""
+    bus = EventBus()
+    
+    # Create a mock event that will trigger the exit handler
+    event = MockEvent(name="system.exit", event_id="test_exit")
+    
+    # Subscribe a handler that will be called
+    handler_called = asyncio.Event()
+    async def test_handler(evt):
+        handler_called.set()
+        
+    bus._subscribers["system.exit"].append(test_handler)
+    
+    # Publish the exit event
+    await bus.publish(event)
+    
+    # Verify the handler was called
+    assert await handler_called.wait()
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_missing_handler_attributes():
+    """Test handling a task with a handler missing standard attributes."""
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    # Create a handler without standard attributes
+    async def minimal_handler(evt):
+        pass
+    
+    # Create a wrapper to avoid modifying built-in attributes
+    class HandlerWrapper:
+        async def __call__(self, evt):
+            await minimal_handler(evt)
+    
+    handler = HandlerWrapper()
+    await bus._handle_task(handler, event)
+    await asyncio.sleep(0.1)  # Allow task to complete
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_none_event_attributes():
+    """Test handling a task with an event missing standard attributes."""
+    bus = EventBus()
+    
+    # Create an event without standard attributes
+    event = MockEvent()
+    event.event = None
+    event.event_id = None
+    event.name = None
+    event.id = None
+    
+    handler_called = asyncio.Event()
+    async def test_handler(evt):
+        handler_called.set()
+    
+    await bus._handle_task(test_handler, event)
+    assert await handler_called.wait()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_events_with_lock_timeout_and_retry():
+    """Test cleanup with lock timeout and retry behavior."""
+    bus = EventBus()
+    
+    # Add some test events
+    now = datetime.now(UTC)
+    bus._processed_events = {
+        "old_event": now - timedelta(hours=2),
+        "recent_event": now - timedelta(minutes=30)
+    }
+    
+    # Mock sleep to avoid waiting
+    with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
+        # Make sleep raise CancelledError after first call
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        
+        try:
+            await bus._cleanup_old_events()
+        except asyncio.CancelledError:
+            pass
+        
+        # Verify sleep was called with correct interval
+        mock_sleep.assert_called_with(3600)
+        assert "old_event" not in bus._processed_events
+        assert "recent_event" in bus._processed_events
+
+
+@pytest.mark.asyncio
+async def test_event_processing_with_complex_source_plugin():
+    """Test event processing with complex source plugin scenarios."""
+    bus = EventBus()
+    
+    # Test with various source plugin configurations
+    events = [
+        MockEvent(name="test.event", source_plugin="plugin1"),
+        MockEvent(name="test.event", source_plugin=None),
+        MockEvent(name="test.event", source_plugin=""),
+    ]
+    
+    # Use an event to track handler completion
+    handler_done = asyncio.Event()
+    handler_calls = []
+    
+    async def test_handler(evt):
+        handler_calls.append(evt.source_plugin)
+        if len(handler_calls) == len(events):
+            handler_done.set()
+    
+    # Subscribe handler to event
+    await bus.subscribe("test.event", test_handler)
+    
+    # Publish events
+    for event in events:
+        await bus.publish(event)
+    
+    # Wait for all handlers to complete
+    try:
+        await asyncio.wait_for(handler_done.wait(), timeout=1.0)
+    except asyncio.TimeoutError:
+        pytest.fail("Handler was not called for all events")
+    
+    assert len(handler_calls) == 3
+    assert handler_calls[0] == "plugin1"
+    assert handler_calls[1] is None
+    assert handler_calls[2] == ""
+
+
+@pytest.mark.asyncio
+async def test_handle_task_with_complex_error_handling():
+    """Test complex error handling scenarios in handle_task."""
+    bus = EventBus()
+    event = MockEvent(name="test.event")
+    
+    class ComplexError(Exception):
+        def __str__(self):
+            raise ValueError("Error in error string")
+    
+    async def failing_handler(evt):
+        raise ComplexError()
+    
+    await bus._handle_task(failing_handler, event)
+    await asyncio.sleep(0.1)  # Allow error handling to complete
+
+
+@pytest.mark.asyncio
+async def test_cleanup_task_error_scenarios():
+    """Test cleanup task with various error scenarios."""
+    bus = EventBus()
+    
+    # Create a task that will raise an error
+    async def error_task():
+        raise Exception("Task error")
+    
+    task = asyncio.create_task(error_task())
+    bus._pending_tasks.add(task)
+    
+    try:
+        await task
+    except Exception:
+        pass
+    
+    # Test cleanup of failed task
+    bus._cleanup_task(task)
+    assert task not in bus._pending_tasks
+
+
+@pytest.mark.asyncio
+async def test_event_bus_shutdown_scenarios():
+    """Test various shutdown scenarios."""
+    bus = EventBus()
+    
+    # Create some pending tasks
+    async def long_task():
+        try:
+            await asyncio.sleep(1000)
+        except asyncio.CancelledError:
+            pass
+    
+    task1 = asyncio.create_task(long_task())
+    task2 = asyncio.create_task(long_task())
+    bus._pending_tasks.add(task1)
+    bus._pending_tasks.add(task2)
+    
+    # Start cleanup task
+    await bus.start()
+    
+    # Shutdown should cancel all tasks
+    await bus.shutdown()
+    
+    # Wait for tasks to be cancelled
+    await asyncio.sleep(0.1)
+    
+    assert len(bus._pending_tasks) == 0
+    assert bus._cleanup_events_task is None
+    assert not bus._shutting_down  # Flag is reset after shutdown completes
