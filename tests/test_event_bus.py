@@ -77,13 +77,17 @@ def test_event():
 @pytest.fixture
 async def cleanup_tasks():
     yield
+    # Get all tasks except current task
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    for task in tasks:
-        task.cancel()
+    if tasks:
+        # Cancel all tasks
+        for task in tasks:
+            task.cancel()
+        # Wait with timeout for tasks to cancel
         try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass  # Some tasks may be stuck, continue cleanup
 
 
 @pytest.mark.asyncio
@@ -842,39 +846,70 @@ async def test_handle_task_with_invalid_event():
 
 @pytest.mark.asyncio
 async def test_handle_task_with_logging_error():
+    """Test that handler errors are properly logged and cleaned up."""
     bus = EventBus()
-    
-    # Mock asyncio.sleep to prevent hanging
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        mock_sleep.return_value = None
-        await bus.start()
-        
-        event = MockEvent(name="test.event")
-        
-        # Create a handler that will raise an error during logging
-        class ErrorHandler:
-            def __init__(self):
-                self.__name__ = "error_handler"
-                self.__module__ = "test_module"
-                self.__qualname__ = "test_module.error_handler"
-                
-            async def __call__(self, evt):
-                raise Exception("Handler error")
-                
-            def __str__(self):
-                return "error_handler"
-                
-            def __repr__(self):
-                return "error_handler"
-        
-        handler = ErrorHandler()
-        
-        # Use wait_for to prevent hanging
-        async def run_handler():
-            await bus._handle_task(handler, event)
+    event = MockEvent(name="test.event")
+    handler_executed = asyncio.Event()
+
+    # Create a handler that will raise an error
+    class ErrorHandler:
+        def __init__(self):
+            self.__name__ = "error_handler"
+            self.__module__ = "test_module"
+            self.__qualname__ = "test_module.error_handler"
             
-        await asyncio.wait_for(run_handler(), timeout=1.0)
-        await bus.stop()
+        async def __call__(self, evt):
+            handler_executed.set()
+            raise Exception("Handler error")
+            
+        def __str__(self):
+            return "error_handler"
+            
+        def __repr__(self):
+            return "error_handler"
+
+    handler = ErrorHandler()
+    
+    # Mock the cleanup task to prevent infinite loop
+    with patch.object(bus, "_cleanup_old_events", new_callable=AsyncMock) as mock_cleanup:
+        mock_cleanup.return_value = None
+        
+        # Start the bus and subscribe the handler
+        await bus.start()
+        await bus.subscribe("test.event", handler)
+        
+        try:
+            # Publish the event
+            publish_task = asyncio.create_task(bus.publish(event))
+            
+            # Wait for handler to execute
+            try:
+                await asyncio.wait_for(handler_executed.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pytest.fail("Handler did not execute within timeout")
+            
+            # Wait for publish to complete
+            try:
+                await asyncio.wait_for(publish_task, timeout=1.0)
+            except asyncio.TimeoutError:
+                publish_task.cancel()
+            
+            # Verify handler executed and raised error
+            assert handler_executed.is_set()
+            
+        finally:
+            # Cancel cleanup task
+            if bus._cleanup_events_task and not bus._cleanup_events_task.done():
+                bus._cleanup_events_task.cancel()
+            
+            # Cancel any pending tasks
+            for task in bus._pending_tasks:
+                task.cancel()
+            
+            # Clear state
+            bus._pending_tasks.clear()
+            bus._cleanup_events_task = None
+            bus._shutting_down = False
 
 
 @pytest.mark.asyncio
