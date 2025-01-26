@@ -176,6 +176,49 @@ async def test_long_running_task():
         mock_cleanup.assert_called_once()
 ```
 
+#### Handling Infinite Loops in Error Cases
+When testing error conditions in long-running tasks, ensure the task can exit even in error cases:
+
+```python
+# In the implementation:
+async def _cleanup_old_events(self, run_once: bool = False) -> None:
+    while True:
+        try:
+            if not run_once:
+                await asyncio.sleep(3600)
+            # ... cleanup logic ...
+            if run_once:
+                break
+        except Exception as e:
+            logger.error("Error in cleanup")
+            if run_once:  # Important: Also break in error case when run_once=True
+                break
+
+# In the test:
+@pytest.mark.asyncio
+async def test_cleanup_error_handling():
+    # Create a mock that raises an exception
+    mock_lock = AsyncMock()
+    mock_lock.__aenter__.side_effect = [Exception("Lock error")]
+    service._lock = mock_lock
+
+    # The task should complete even with error when run_once=True
+    cleanup_task = asyncio.create_task(
+        service._cleanup_old_events(run_once=True)
+    )
+    
+    try:
+        await asyncio.wait_for(cleanup_task, timeout=1.0)
+    except (asyncio.TimeoutError, Exception):
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except (asyncio.CancelledError, Exception):
+            pass
+```
+
+This pattern prevents infinite error logging loops in tests while still allowing proper error handling in production code.
+
 ### 8. Testing Long Delays and Cleanup Tasks
 ```python
 class TestEventBus(IsolatedAsyncioTestCase):

@@ -116,6 +116,8 @@ class EventBus:
                         "error": str(e),
                     },
                 )
+                if run_once:
+                    break
 
     def _cleanup_task(self, task: asyncio.Task) -> None:
         """Remove task from pending tasks set.
