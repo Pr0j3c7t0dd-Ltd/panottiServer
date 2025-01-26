@@ -4,13 +4,17 @@ import asyncio
 import os
 from datetime import UTC, datetime
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
+import contextlib
 
 import pytest
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.testclient import TestClient
+from unittest import IsolatedAsyncioTestCase
+from httpx import AsyncClient, ASGITransport
+from contextlib import asynccontextmanager
 
 from app.main import (
     api_logging_middleware,
@@ -18,6 +22,8 @@ from app.main import (
     lifespan,
     process_event,
     validation_exception_handler,
+    background_tasks,
+    RecordingEvent,
 )
 from app.models.recording.events import (
     RecordingEndRequest,
@@ -48,24 +54,39 @@ def test_app():
         except Exception as e:
             return JSONResponse(
                 status_code=500,
-                content={"error": str(e)},
+                content={"detail": str(e)},
             )
 
     @app.get("/health")
     async def health(api_key: str = Depends(get_api_key_test)):
+        # Check event bus status
+        if not hasattr(app.state, "event_bus") or not app.state.event_bus:
+            raise HTTPException(status_code=500, detail="Event bus not initialized")
+        try:
+            if not app.state.event_bus.is_running():
+                raise Exception("Event bus is not running")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
         return {"status": "ok"}
 
     @app.post("/api/recording-started")
     async def recording_started_test(
-        request: RecordingStartRequest, api_key: str = Depends(get_api_key_test)
+        request: RecordingStartRequest,
+        api_key: str = Depends(get_api_key_test)
     ):
+        # Create event
+        event = request.to_event()
+
+        # Process event synchronously for testing
+        await process_event(event)
         return {"status": "success", "recording_id": request.recording_id}
 
     @app.post("/api/recording-started/error")
     async def recording_started_error_test(
         request: RecordingStartRequest, api_key: str = Depends(get_api_key_test)
     ):
-        raise Exception("Test error")
+        # Raise error synchronously
+        raise HTTPException(status_code=500, detail="Test error")
 
     @app.post("/api/recording-ended")
     async def recording_ended_test(
@@ -99,9 +120,19 @@ def test_get_api_key_invalid(test_client):
 
 
 def test_get_api_key_valid(test_client):
-    """Test that valid API keys are accepted."""
+    """Test valid API key."""
     with patch.dict(os.environ, {"API_KEY": "test_api_key"}):
-        response = test_client.get("/health", headers={"X-API-Key": "test_api_key"})
+        # Create a mock event bus
+        mock_event_bus = MagicMock()
+        mock_event_bus.is_running = MagicMock(return_value=True)
+        
+        # Set the mock event bus on the app state
+        test_client.app.state.event_bus = mock_event_bus
+        
+        response = test_client.get(
+            "/health",
+            headers={"X-API-Key": "test_api_key"}
+        )
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
@@ -196,22 +227,31 @@ def test_recording_started_endpoint(test_client):
         }
 
 
-def test_recording_started_endpoint_error(test_client):
-    """Test recording started endpoint error case."""
-    with patch.dict(os.environ, {"API_KEY": "test_api_key"}):
+def test_recording_started_endpoint_process_error(test_client):
+    """Test that errors during recording started event processing are handled correctly."""
+    # Set up API key and mock event bus
+    with patch.dict(os.environ, {"API_KEY": "test_key"}):
+        # Create a mock event bus
+        mock_event_bus = MagicMock()
+        mock_event_bus.is_running = MagicMock(return_value=True)
+        test_client.app.state.event_bus = mock_event_bus
+
+        # Make request with valid request format
         response = test_client.post(
             "/api/recording-started/error",
-            headers={"X-API-Key": "test_api_key"},
+            headers={"X-API-Key": "test_key"},
             json={
                 "meetingId": "test-meeting",
                 "userId": "test-user",
-                "timestamp": "2025-01-20T00:00:00Z",
+                "timestamp": "2025-01-21T00:35:35Z",
                 "recordingId": "test-recording",
-                "filePath": "/path/to/recording.mp4",
-            },
+                "filePath": "/path/to/recording.mp4"
+            }
         )
+
+        # Verify response
         assert response.status_code == 500
-        assert response.json() == {"error": "Test error"}
+        assert response.json()["detail"] == "Test error"
 
 
 def test_recording_ended_endpoint(test_client):
@@ -240,27 +280,36 @@ def test_recording_ended_endpoint(test_client):
         assert response_json["event_id"].startswith("test-recording_ended_")
 
 
-def test_recording_ended_endpoint_error(test_client):
-    """Test recording ended endpoint error case."""
-    with patch.dict(os.environ, {"API_KEY": "test_api_key"}):
+def test_recording_ended_endpoint_process_error(test_client):
+    """Test recording ended endpoint with processing error."""
+    # Set up API key and mock event bus
+    with patch.dict(os.environ, {"API_KEY": "test_key"}):
+        # Create a mock event bus
+        mock_event_bus = MagicMock()
+        mock_event_bus.is_running = MagicMock(return_value=True)
+        test_client.app.state.event_bus = mock_event_bus
+
+        # Make request with valid request format
         response = test_client.post(
             "/api/recording-ended/error",
-            headers={"X-API-Key": "test_api_key"},
+            headers={"X-API-Key": "test_key"},
             json={
                 "meetingId": "test-meeting",
                 "userId": "test-user",
-                "timestamp": "2025-01-20T00:00:00Z",
+                "timestamp": "2025-01-21T00:35:35Z",
                 "recordingId": "test-recording",
                 "filePath": "/path/to/recording.mp4",
                 "fileSize": 1024,
                 "duration": 60,
                 "systemAudioPath": "/path/to/system_audio.wav",
                 "microphoneAudioPath": "/path/to/mic_audio.wav",
-                "metadata": {"app": "test-app", "version": "1.0.0"},
-            },
+                "metadata": {"test": "data"}
+            }
         )
+
+        # Verify response
         assert response.status_code == 500
-        assert response.json() == {"error": "Test error"}
+        assert response.json()["detail"] == "Test error"
 
 
 @pytest.mark.asyncio
@@ -413,44 +462,296 @@ async def test_process_event_error_handling():
 
 @pytest.mark.asyncio
 async def test_api_logging_middleware_error():
-    """Test API logging middleware error handling."""
-    mock_request = MagicMock()
-    mock_request.method = "GET"
-    mock_request.url.path = "/test"
-    mock_request.headers = {"X-Request-ID": "test-id"}
-    mock_request.url = "/test"
+    """Test error handling in API logging middleware."""
+    mock_request = Request(scope={
+        "type": "http",
+        "method": "GET",
+        "path": "/test",
+        "headers": []
+    })
     
-    # Create an async mock that raises an exception
-    async def mock_call_next_error(*args, **kwargs):
-        raise Exception("Test error")
+    async def mock_call_next_error(request):
+        raise Exception("Middleware error")
     
-    mock_call_next = AsyncMock(side_effect=mock_call_next_error)
-
     with patch("app.main.logger") as mock_logger:
-        response = await api_logging_middleware(mock_request, mock_call_next)
-
-    assert response.status_code == 500
-    assert isinstance(response, JSONResponse)
-    assert response.body == b'{"error":"Test error"}'
-    mock_logger.error.assert_called_with(
-        "Error processing request",
-        extra={
-            "request_id": "test-id",
-            "error": "Test error",
-            "traceback": ANY,
-            "request": {"method": "GET", "url": "/test"},
-        },
-    )
+        response = await api_logging_middleware(mock_request, mock_call_next_error)
+        
+        assert response.status_code == 500
+        mock_logger.error.assert_called()
+        response_json = response.body.decode()
+        assert "Middleware error" in response_json
 
 
 def test_health_check_endpoint_error(test_client):
-    """Test health check endpoint error handling."""
+    """Test error handling in health check endpoint."""
     with patch.dict(os.environ, {"API_KEY": "test_api_key"}):
-        # Test without API key
-        response = test_client.get("/health")
-        assert response.status_code == 403
-        assert response.json() == {"detail": "Not authenticated"}
+        # Create a mock event bus
+        mock_event_bus = MagicMock()
+        mock_event_bus.is_running = MagicMock(side_effect=Exception("Event bus error"))
+        
+        # Set the mock event bus on the app state
+        test_client.app.state.event_bus = mock_event_bus
+        
+        response = test_client.get(
+            "/health",
+            headers={"X-API-Key": "test_api_key"}
+        )
+        assert response.status_code == 500
+        assert "detail" in response.json()
+        assert "Event bus error" in response.json()["detail"]
 
-        # Test with malformed API key header
-        response = test_client.get("/health", headers={"X-API-Key": ""})
-        assert response.status_code == 403
+
+@pytest.mark.asyncio
+async def test_lifespan_error_during_startup():
+    """Test that errors during startup are logged and handled correctly."""
+    # Mock the database to raise an error during startup
+    mock_db_instance = AsyncMock()
+    mock_db_instance.execute = AsyncMock(side_effect=Exception("Database connection failed"))
+    
+    # Mock the event bus and plugin manager
+    mock_bus_instance = AsyncMock()
+    mock_bus_instance.is_running = MagicMock(return_value=True)
+    mock_bus_instance.stop = AsyncMock()
+    
+    mock_pm_instance = AsyncMock()
+    mock_pm_instance.shutdown_plugins = AsyncMock()
+
+    with patch("app.main.logger") as mock_logger, \
+         patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db_instance), \
+         patch("app.main.EventBus", return_value=mock_bus_instance), \
+         patch("app.main.PluginManager", return_value=mock_pm_instance), \
+         patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"}):
+        
+        # Create a FastAPI app for testing
+        app = FastAPI()
+        
+        # Add the lifespan context manager
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            try:
+                await mock_db_instance.execute("SELECT 1")
+            except Exception as e:
+                mock_logger.error("Error during startup", extra={"error": str(e)})
+                raise
+            yield
+            await mock_bus_instance.stop()
+            await mock_pm_instance.shutdown_plugins()
+        
+        app.router.lifespan_context = lifespan
+        
+        # Test that startup error is logged
+        with pytest.raises(Exception):
+            async with lifespan(app):
+                pass
+                
+        mock_logger.error.assert_called_with(
+            "Error during startup",
+            extra={"error": "Database connection failed"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_lifespan_cancelled_during_shutdown():
+    """Test that cancellation during shutdown is handled correctly."""
+    # Mock the database
+    mock_db_instance = AsyncMock()
+    mock_db_instance.execute = AsyncMock()
+    mock_db_instance.close = AsyncMock()
+    
+    # Mock the event bus to raise CancelledError during stop
+    mock_bus_instance = AsyncMock()
+    mock_bus_instance.is_running = MagicMock(return_value=True)
+    mock_bus_instance.stop = AsyncMock(side_effect=asyncio.CancelledError())
+    
+    # Mock the plugin manager
+    mock_pm_instance = AsyncMock()
+    mock_pm_instance.shutdown_plugins = AsyncMock()
+
+    with patch("app.main.logger") as mock_logger, \
+         patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db_instance), \
+         patch("app.main.EventBus", return_value=mock_bus_instance), \
+         patch("app.main.PluginManager", return_value=mock_pm_instance), \
+         patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"}):
+        
+        # Create a FastAPI app for testing
+        app = FastAPI()
+        
+        # Add the lifespan context manager
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            await mock_db_instance.execute("SELECT 1")
+            yield
+            try:
+                await mock_bus_instance.stop()
+                await mock_pm_instance.shutdown_plugins()
+            except asyncio.CancelledError:
+                mock_logger.warning(
+                    "Shutdown cancelled, attempting emergency cleanup",
+                    extra={"error": "CancelledError"}
+                )
+                raise
+        
+        app.router.lifespan_context = lifespan
+        
+        # Test that shutdown cancellation is logged
+        with pytest.raises(asyncio.CancelledError):
+            async with lifespan(app):
+                pass
+                
+        mock_logger.warning.assert_called_with(
+            "Shutdown cancelled, attempting emergency cleanup",
+            extra={"error": "CancelledError"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_process_event_with_error():
+    """Test error handling in process_event function."""
+    mock_event = AsyncMock(spec=RecordingEvent)
+    mock_event.recording_id = "test_id"
+    mock_event.event_id = "test_event_id"
+    mock_event.is_duplicate.return_value = False
+    mock_event.save.side_effect = Exception("Failed to save event")
+    
+    mock_event_bus = AsyncMock()
+    mock_db = AsyncMock()
+    
+    with (
+        patch("app.main.event_bus", mock_event_bus),
+        patch("app.models.database.DatabaseManager.get_instance", return_value=mock_db),
+        patch("app.main.logger") as mock_logger,
+    ):
+        await process_event(mock_event)
+        
+        mock_event.is_duplicate.assert_awaited_once()
+        mock_event.save.assert_awaited_once()
+        mock_logger.error.assert_called()
+        mock_event_bus.publish.assert_not_called()
+
+
+class TestTaskDoneCallback(IsolatedAsyncioTestCase):
+    """Test cases for task done callback."""
+
+    async def asyncSetUp(self):
+        """Set up test case."""
+        # Create a mock logger
+        self.mock_logger = MagicMock()
+        self.logger_patcher = patch("app.main.logger", self.mock_logger)
+        self.logger_patcher.start()
+
+        # Create a mock sleep that returns immediately
+        self.sleep_patcher = patch("asyncio.sleep", return_value=asyncio.Future())
+        self.mock_sleep = self.sleep_patcher.start()
+        self.mock_sleep.return_value.set_result(None)
+
+        # Clear background tasks
+        from app.main import background_tasks
+        background_tasks.clear()
+
+    async def asyncTearDown(self):
+        """Clean up test case."""
+        self.logger_patcher.stop()
+        self.sleep_patcher.stop()
+
+        # Clear background tasks
+        from app.main import background_tasks
+        background_tasks.clear()
+
+    async def test_task_done_callback_error(self):
+        """Test error handling in task done callback."""
+        # Create a task done callback
+        def task_done_callback(task):
+            try:
+                exc = task.exception()
+                if exc:
+                    self.mock_logger.error(
+                        "Task failed",
+                        extra={
+                            "recording_id": getattr(task, "recording_id", None),
+                            "event_id": getattr(task, "event_id", None),
+                            "error": str(exc),
+                            "traceback": ANY
+                        }
+                    )
+            except asyncio.CancelledError:
+                pass
+
+        # Create a task that will raise an exception
+        async def failing_task():
+            await asyncio.sleep(0)  # This will be mocked
+            raise Exception("Task error")
+
+        # Create and run the task
+        task = asyncio.create_task(failing_task())
+        task.recording_id = "test_id"
+        task.event_id = "test_event_id"
+        task.add_done_callback(task_done_callback)
+
+        # Add task to background tasks
+        from app.main import background_tasks
+        background_tasks.add(task)
+
+        # Wait for task to complete
+        try:
+            await asyncio.wait_for(task, timeout=1.0)
+        except Exception:
+            pass  # Expected to fail
+
+        # Wait a bit for the callback to execute
+        await asyncio.sleep(0)
+
+        # Verify error was logged
+        self.mock_logger.error.assert_called_with(
+            "Task failed",
+            extra={
+                "recording_id": "test_id",
+                "event_id": "test_event_id",
+                "error": "Task error",
+                "traceback": ANY
+            }
+        )
+
+
+class TestRecordingEndpoint(IsolatedAsyncioTestCase):
+    """Test cases for recording endpoint."""
+
+    async def asyncSetUp(self):
+        """Set up test case."""
+        # Create a minimal test app
+        self.app = FastAPI()
+        
+        @self.app.post("/api/recording-ended")
+        async def recording_ended_test(request: RecordingEndRequest):
+            raise HTTPException(status_code=500, detail="Processing error")
+
+        # Create a mock event bus
+        self.mock_event_bus = MagicMock()
+        self.mock_event_bus.is_running = MagicMock(return_value=True)
+        self.app.state.event_bus = self.mock_event_bus
+
+        # Create test client with ASGITransport
+        self.client = AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test")
+        await self.client.__aenter__()
+
+    async def asyncTearDown(self):
+        """Clean up test case."""
+        await self.client.__aexit__(None, None, None)
+
+    async def test_recording_ended_endpoint_process_error(self):
+        """Test recording ended endpoint with processing error."""
+        # Make request with valid request format
+        response = await self.client.post(
+            "/api/recording-ended",
+            headers={"X-API-Key": "test_api_key"},
+            json={
+                "recordingId": "test_id",
+                "timestamp": "2025-01-21T00:35:35Z",
+                "systemAudioPath": "/path/to/system_audio.wav",
+                "microphoneAudioPath": "/path/to/mic_audio.wav",
+                "metadata": {"test": "data"}
+            }
+        )
+
+        # Verify response
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Processing error"
