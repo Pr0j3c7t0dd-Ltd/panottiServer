@@ -1,4 +1,5 @@
 ![Discord Shield](https://discord.com/api/guilds/1316533461577891882/widget.png?style=shield)
+[![Donate with PayPal](https://www.paypalobjects.com/en_US/GB/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/donate?hosted_button_id=NJTZJX5EN3F7N)
 
 # panottiServer
 
