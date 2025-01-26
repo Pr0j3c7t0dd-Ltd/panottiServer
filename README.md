@@ -1,6 +1,10 @@
+[![Discord Shield](https://discord.com/api/guilds/1316533461577891882/widget.png?style=shield)](https://discord.gg/fgVQWfPCmn)
+
 # panottiServer
 
-A FastAPI-based server for handling recording events with a plugin-based architecture and secure API endpoints.
+A FastAPI-based server for handling recording events with a plugin-based architecture and secure API endpoints.  More information, including the download link for the Panotti MacOS desktop app, can be found at [https://www.panotti.io/](https://www.panotti.io/).
+
+[![Donate with PayPal](https://www.paypalobjects.com/en_US/GB/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/donate?hosted_button_id=NJTZJX5EN3F7N)
 
 ## Features
 
@@ -790,5 +794,7 @@ IN NO EVENT SHALL PR0J3CTTODD LTD BE LIABLE FOR ANY SPECIAL, INCIDENTAL, INDIREC
 For complete terms of use and privacy policy, please visit:
 - Terms and Conditions: https://www.panotti.io/terms-and-conditions
 - Privacy Policy: https://www.panotti.io/privacy-policy
+
+Commercial licenses are available upon request.  Please visit [https://www.panotti.io/](https://www.panotti.io/) for more information.
 
  Copyright 2025 Pr0j3ctTodd Ltd. All rights reserved.

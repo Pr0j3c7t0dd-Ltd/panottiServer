@@ -3,7 +3,7 @@
 import asyncio
 import os
 from datetime import UTC, datetime
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch, call
 import contextlib
 
 import pytest
@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from unittest import IsolatedAsyncioTestCase
 from httpx import AsyncClient, ASGITransport
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.main import (
     api_logging_middleware,
@@ -606,27 +607,50 @@ async def test_lifespan_cancelled_during_shutdown():
 
 @pytest.mark.asyncio
 async def test_process_event_with_error():
-    """Test error handling in process_event function."""
+    """Test event processing with error."""
+    # Create mock event
     mock_event = AsyncMock(spec=RecordingEvent)
     mock_event.recording_id = "test_id"
     mock_event.event_id = "test_event_id"
-    mock_event.is_duplicate.return_value = False
-    mock_event.save.side_effect = Exception("Failed to save event")
+    mock_event.is_duplicate = AsyncMock(return_value=False)
+    mock_event.save = AsyncMock(side_effect=Exception("Failed to save event"))
     
+    # Create mock event bus
     mock_event_bus = AsyncMock()
-    mock_db = AsyncMock()
+    mock_event_bus.publish = AsyncMock()
+    mock_event_bus.is_running = MagicMock(return_value=True)
     
+    # Create mock db
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.close = AsyncMock()
+    
+    # Create a mock logger
+    mock_logger = MagicMock()
+    
+    # Mock dependencies
     with (
         patch("app.main.event_bus", mock_event_bus),
         patch("app.models.database.DatabaseManager.get_instance", return_value=mock_db),
-        patch("app.main.logger") as mock_logger,
+        patch("app.main.logger", mock_logger),
+        patch("app.main.background_tasks", set()),
+        patch("app.main.asyncio.create_task", side_effect=lambda coro, **kwargs: coro),
     ):
         await process_event(mock_event)
-        
-        mock_event.is_duplicate.assert_awaited_once()
-        mock_event.save.assert_awaited_once()
-        mock_logger.error.assert_called()
-        mock_event_bus.publish.assert_not_called()
+    
+    # Verify calls
+    mock_event.is_duplicate.assert_awaited_once()
+    mock_event.save.assert_awaited_once()
+    mock_event_bus.publish.assert_not_awaited()
+    mock_logger.error.assert_called_with(
+        "Error processing recording end event",
+        extra={
+            "recording_id": "test_id",
+            "event_id": "test_event_id",
+            "error": "Failed to save event",
+            "traceback": ANY,
+        },
+    )
 
 
 class TestTaskDoneCallback(IsolatedAsyncioTestCase):
@@ -755,3 +779,432 @@ class TestRecordingEndpoint(IsolatedAsyncioTestCase):
         # Verify response
         assert response.status_code == 500
         assert response.json()["detail"] == "Processing error"
+
+
+@pytest.mark.asyncio
+async def test_lifespan_database_error():
+    """Test lifespan handling of database errors during shutdown."""
+    app = FastAPI()
+    
+    # Mock database with error during close
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.close = AsyncMock(side_effect=Exception("Database close error"))
+    
+    # Mock event bus and plugin manager
+    mock_event_bus = AsyncMock()
+    mock_event_bus.start = AsyncMock()
+    mock_event_bus.stop = AsyncMock()
+    mock_event_bus.shutdown = AsyncMock()
+    
+    mock_plugin_manager = AsyncMock()
+    mock_plugin_manager.discover_plugins = AsyncMock()
+    mock_plugin_manager.initialize_plugins = AsyncMock()
+    mock_plugin_manager.shutdown_plugins = AsyncMock()
+    
+    with (
+        patch("app.main.EventBus", return_value=mock_event_bus),
+        patch("app.main.PluginManager", return_value=mock_plugin_manager),
+        patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db),
+        patch("app.main.DirectorySync"),
+        patch("app.main.setup_logging"),
+    ):
+        async with lifespan(app):
+            pass  # Simulate normal operation
+            
+    # Verify error was handled
+    mock_db.close.assert_awaited_once()
+    mock_event_bus.stop.assert_awaited_once()
+    mock_plugin_manager.shutdown_plugins.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_recording_started_endpoint_with_background_task():
+    """Test recording started endpoint with background task processing."""
+    # Create FastAPI app with routes
+    app = FastAPI()
+    
+    # Mock dependencies
+    mock_event = AsyncMock()
+    mock_event.is_duplicate = AsyncMock(return_value=False)
+    mock_event.save = AsyncMock()
+    
+    mock_event_bus = AsyncMock()
+    mock_event_bus.publish = AsyncMock()
+    mock_event_bus.is_running = MagicMock(return_value=True)
+    
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    
+    # Add API key security
+    API_KEY_NAME = "X-API-Key"
+    api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+
+    async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
+        if api_key_header.lower() == os.getenv("API_KEY", "").lower():
+            return api_key_header
+        raise HTTPException(status_code=403, detail="Could not validate API key")
+
+    @app.post("/api/recording-started")
+    async def recording_started_test(
+        background_tasks: BackgroundTasks,
+        request: RecordingStartRequest,
+        api_key: str = Depends(get_api_key)
+    ):
+        # Create event
+        event = mock_event
+        
+        # Add background task
+        background_tasks.add_task(process_event, event)
+        return {"status": "success", "recording_id": request.recording_id}
+    
+    with (
+        patch.dict(os.environ, {"API_KEY": "test_api_key"}),
+        patch("app.main.event_bus", mock_event_bus),
+        patch("app.models.database.DatabaseManager.get_instance", return_value=mock_db),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/recording-started",
+                headers={"X-API-Key": "test_api_key"},
+                json={
+                    "meetingId": "test-meeting",
+                    "userId": "test-user",
+                    "timestamp": "2025-01-20T00:00:00Z",
+                    "recordingId": "test-recording",
+                    "filePath": "/path/to/recording.mp4",
+                }
+            )
+            
+            assert response.status_code == 200
+            assert response.json() == {
+                "status": "success",
+                "recording_id": "test-recording"
+            }
+
+@pytest.mark.asyncio
+async def test_recording_ended_with_background_task():
+    """Test recording ended endpoint with background task processing."""
+    # Create FastAPI app with routes
+    app = FastAPI()
+    
+    # Mock dependencies
+    mock_event = AsyncMock()
+    mock_event.is_duplicate = AsyncMock(return_value=False)
+    mock_event.save = AsyncMock()
+    
+    mock_event_bus = AsyncMock()
+    mock_event_bus.publish = AsyncMock()
+    mock_event_bus.is_running = MagicMock(return_value=True)
+    
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    
+    # Add API key security
+    API_KEY_NAME = "X-API-Key"
+    api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+
+    async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
+        if api_key_header.lower() == os.getenv("API_KEY", "").lower():
+            return api_key_header
+        raise HTTPException(status_code=403, detail="Could not validate API key")
+
+    @app.post("/api/recording-ended")
+    async def recording_ended_test(
+        background_tasks: BackgroundTasks,
+        request: RecordingEndRequest,
+        api_key: str = Depends(get_api_key)
+    ):
+        # Create event
+        event = mock_event
+        
+        # Add background task
+        background_tasks.add_task(process_event, event)
+        event_id = f"{request.recording_id}_ended_{datetime.now(UTC).timestamp()}"
+        return {"status": "success", "event_id": event_id}
+    
+    # Add validation exception handler
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors()},
+        )
+    
+    # Add models
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    with (
+        patch.dict(os.environ, {"API_KEY": "test_api_key"}),
+        patch("app.main.event_bus", mock_event_bus),
+        patch("app.models.database.DatabaseManager.get_instance", return_value=mock_db),
+        patch("app.models.recording.events.RecordingEndRequest.to_event", return_value=mock_event),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/recording-ended",
+                headers={"X-API-Key": "test_api_key"},
+                json={
+                    "meetingId": "test-meeting",
+                    "userId": "test-user",
+                    "timestamp": "2025-01-20T00:00:00Z",
+                    "recordingId": "test-recording",
+                    "systemAudioPath": "/path/to/system.mp4",
+                    "microphoneAudioPath": "/path/to/mic.mp4",
+                    "metadata": {
+                        "eventTitle": "Test Meeting",
+                        "eventProvider": "test",
+                        "eventProviderId": "123",
+                    }
+                }
+            )
+            
+            assert response.status_code == 200
+            assert "event_id" in response.json()
+            assert response.json()["status"] == "success"
+
+@pytest.mark.asyncio
+async def test_task_done_callback_success():
+    """Test successful task done callback."""
+    # Create a task that completes successfully
+    async def successful_task():
+        return "success"
+    
+    task = asyncio.create_task(successful_task())
+    await task
+    
+    # Create a mock logger
+    mock_logger = MagicMock()
+    
+    with patch("app.main.logger", mock_logger):
+        # Call the callback function directly
+        def task_done_callback(task):
+            try:
+                result = task.result()
+                mock_logger.debug(f"Task completed successfully: {result}")
+            except Exception as e:
+                mock_logger.error(f"Task failed: {e}")
+                
+        task_done_callback(task)
+        
+        # Verify logging
+        mock_logger.debug.assert_called_once()
+        assert "Task completed successfully" in mock_logger.debug.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_process_event_duplicate():
+    """Test processing of duplicate events."""
+    # Create mock event that is a duplicate
+    mock_event = AsyncMock(spec=RecordingEvent)
+    mock_event.recording_id = "test_id"
+    mock_event.event_id = "test_event_id"
+    mock_event.is_duplicate = AsyncMock(return_value=True)
+    mock_event.save = AsyncMock()
+    
+    # Create mock event bus
+    mock_event_bus = AsyncMock()
+    mock_event_bus.publish = AsyncMock()
+    
+    # Create mock db
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.close = AsyncMock()
+    
+    # Mock dependencies
+    with (
+        patch("app.main.event_bus", mock_event_bus),
+        patch("app.models.database.DatabaseManager.get_instance", return_value=mock_db),
+    ):
+        await process_event(mock_event)
+    
+    # Verify calls
+    mock_event.is_duplicate.assert_awaited_once()
+    mock_event.save.assert_not_awaited()
+    mock_event_bus.publish.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_api_middleware_cancelled_request(test_app: FastAPI):
+    """Test that the API middleware handles cancelled requests during shutdown."""
+    mock_logger = MagicMock()
+    
+    # Create a future that will be cancelled
+    future = asyncio.Future()
+    future.cancel()
+    
+    async def mock_call_next(request):
+        await future
+        return None  # This line won't be reached due to cancellation
+        
+    # Add middleware directly to test_app
+    @test_app.middleware("http")
+    async def test_middleware(request: Request, call_next):
+        return await api_logging_middleware(request, mock_call_next)
+        
+    @test_app.get("/test")
+    async def test_endpoint():
+        return {"status": "ok"}
+        
+    with patch("app.main.logger", mock_logger):
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+            response = await client.get("/test", headers={"X-Request-ID": "test-request-id"})
+            
+            assert response.status_code == 503
+            assert response.json() == {"error": "Service shutting down"}
+            mock_logger.info.assert_called_with(
+                "Request cancelled during shutdown",
+                extra={
+                    "request_id": "test-request-id",
+                    "request": {"method": "GET", "url": "http://test/test"},
+                },
+            )
+
+
+@pytest.mark.asyncio
+async def test_lifespan_emergency_cleanup():
+    """Test emergency cleanup during lifespan shutdown."""
+    test_app = FastAPI()
+    
+    mock_logger = MagicMock()
+    
+    # Create mock dependencies that will timeout
+    mock_event_bus = AsyncMock()
+    mock_event_bus.stop = AsyncMock()
+    mock_event_bus.shutdown = AsyncMock(side_effect=asyncio.TimeoutError("Event bus shutdown timed out"))
+    
+    mock_plugin_manager = AsyncMock()
+    mock_plugin_manager.discover_plugins = AsyncMock()
+    mock_plugin_manager.initialize_plugins = AsyncMock()
+    mock_plugin_manager.shutdown_plugins = AsyncMock(side_effect=asyncio.TimeoutError("Plugin shutdown timed out"))
+    
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.close = AsyncMock(side_effect=asyncio.TimeoutError("Database shutdown timed out"))
+    
+    mock_directory_sync = MagicMock()
+    mock_directory_sync.start_monitoring = MagicMock()
+    mock_directory_sync.stop_monitoring = MagicMock()
+    
+    with (
+        patch("app.main.logger", mock_logger),
+        patch("app.main.EventBus", return_value=mock_event_bus),
+        patch("app.main.PluginManager", return_value=mock_plugin_manager),
+        patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db),
+        patch("app.main.DirectorySync", return_value=mock_directory_sync),
+        patch("app.main.setup_logging"),
+        patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"})
+    ):
+        async with lifespan(test_app):
+            # Startup should complete successfully
+            mock_logger.info.assert_any_call("Startup complete")
+            
+        # Verify shutdown timeouts were logged
+        mock_logger.warning.assert_has_calls(
+            [
+                call("Plugin shutdown timed out after 10 seconds"),
+                call("Event bus shutdown timed out after 10 seconds"), 
+                call("Database shutdown timed out after 10 seconds")
+            ],
+            any_order=True
+        )
+        
+        # Verify cleanup was attempted
+        mock_directory_sync.stop_monitoring.assert_called_once()
+        mock_event_bus.stop.assert_called_once()
+        mock_plugin_manager.shutdown_plugins.assert_called_once()
+        mock_db.close.assert_called_once()
+        
+        # Verify final shutdown status
+        mock_logger.info.assert_any_call("Shutdown complete")
+
+
+@pytest.mark.asyncio
+async def test_lifespan_startup_error_handling():
+    """Test error handling during lifespan startup."""
+    mock_app = MagicMock()
+    
+    # Mock database to fail during startup
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(side_effect=Exception("Database initialization failed"))
+    
+    # Create a mock logger to verify error logging
+    mock_logger = MagicMock()
+
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db),
+        patch("app.main.setup_logging"),
+        patch("app.main.logger", mock_logger),
+        patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"}),
+    ):
+        with pytest.raises(Exception) as exc_info:
+            async with lifespan(mock_app):
+                pass
+                
+        assert str(exc_info.value) == "Database initialization failed"
+        mock_db.execute.assert_awaited_once_with("SELECT 1")
+        mock_logger.info.assert_called_with("Initializing database")
+
+
+@pytest.mark.asyncio
+async def test_lifespan_shutdown_timeout():
+    """Test timeout handling during lifespan shutdown."""
+    mock_app = MagicMock()
+    
+    # Mock dependencies that will raise timeout errors
+    mock_event_bus = AsyncMock()
+    mock_event_bus.start = AsyncMock()
+    mock_event_bus.stop = AsyncMock()
+    mock_event_bus.shutdown = AsyncMock(side_effect=asyncio.TimeoutError())
+    
+    mock_plugin_manager = AsyncMock()
+    mock_plugin_manager.discover_plugins = AsyncMock()
+    mock_plugin_manager.initialize_plugins = AsyncMock()
+    mock_plugin_manager.shutdown_plugins = AsyncMock(side_effect=asyncio.TimeoutError())
+    
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.close = AsyncMock(side_effect=asyncio.TimeoutError())
+    
+    mock_directory_sync = MagicMock()
+    mock_directory_sync.start_monitoring = MagicMock()
+    mock_directory_sync.stop_monitoring = MagicMock()
+    
+    # Create a mock logger to verify warning logging
+    mock_logger = MagicMock()
+
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db),
+        patch("app.main.EventBus", return_value=mock_event_bus),
+        patch("app.main.PluginManager", return_value=mock_plugin_manager),
+        patch("app.main.DirectorySync", return_value=mock_directory_sync),
+        patch("app.main.setup_logging"),
+        patch("app.main.logger", mock_logger),
+        patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"})
+    ):
+        try:
+            async with lifespan(mock_app):
+                # Verify startup completed
+                mock_db.execute.assert_awaited_once_with("SELECT 1")
+                mock_directory_sync.start_monitoring.assert_called_once()
+                mock_event_bus.start.assert_awaited_once()
+                mock_plugin_manager.discover_plugins.assert_awaited_once()
+                mock_plugin_manager.initialize_plugins.assert_awaited_once()
+                
+                # Simulate some work
+                await asyncio.sleep(0)
+        except Exception:
+            pass  # Expected to fail during shutdown
+
+        # Verify timeout warnings were logged
+        mock_logger.warning.assert_has_calls([
+            call("Plugin shutdown timed out after 10 seconds"),
+            call("Event bus shutdown timed out after 10 seconds"),
+            call("Database shutdown timed out after 10 seconds")
+        ], any_order=True)

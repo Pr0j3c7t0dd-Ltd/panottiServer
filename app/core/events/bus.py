@@ -53,6 +53,13 @@ class EventBus:
 
     async def stop(self) -> None:
         """Stop the event bus background tasks."""
+        self._shutting_down = True
+        
+        # Wait for pending tasks to complete
+        if self._pending_tasks:
+            await asyncio.gather(*self._pending_tasks, return_exceptions=True)
+            self._pending_tasks.clear()
+            
         if self._cleanup_events_task is not None:
             self._cleanup_events_task.cancel()
             try:
@@ -65,11 +72,17 @@ class EventBus:
                 extra={"req_id": self._req_id, "component": "event_bus"},
             )
 
-    async def _cleanup_old_events(self) -> None:
-        """Periodically clean up old processed events."""
+    async def _cleanup_old_events(self, run_once: bool = False) -> None:
+        """Periodically clean up old processed events.
+        
+        Args:
+            run_once: If True, run cleanup once and return (for testing)
+        """
         while True:
             try:
-                await asyncio.sleep(3600)  # Clean up every hour
+                if not run_once:
+                    await asyncio.sleep(3600)  # Clean up every hour
+                
                 now = datetime.now(UTC)
                 async with self._lock:
                     # Remove events older than 1 hour
@@ -91,6 +104,9 @@ class EventBus:
                                 "remaining_count": len(self._processed_events),
                             },
                         )
+                
+                if run_once:
+                    break
             except Exception as e:
                 logger.error(
                     "Error cleaning up old events",
@@ -100,6 +116,8 @@ class EventBus:
                         "error": str(e),
                     },
                 )
+                if run_once:
+                    break
 
     def _cleanup_task(self, task: asyncio.Task) -> None:
         """Remove task from pending tasks set.
@@ -443,6 +461,8 @@ class EventBus:
             raise ValueError("Event name cannot be empty")
         if not handler:
             raise ValueError("Handler cannot be None")
+        if not callable(handler):
+            raise ValueError("Handler must be callable")
 
         async with self._lock:
             logger.debug(
