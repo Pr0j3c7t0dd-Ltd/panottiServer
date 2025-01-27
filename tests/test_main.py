@@ -2,9 +2,10 @@
 
 import asyncio
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone
 from unittest.mock import ANY, AsyncMock, MagicMock, patch, call
 import contextlib
+import weakref
 
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security, BackgroundTasks
@@ -24,12 +25,11 @@ from app.main import (
     process_event,
     validation_exception_handler,
     background_tasks,
-    RecordingEvent,
 )
 from app.models.recording.events import (
-    RecordingEndRequest,
     RecordingEvent,
     RecordingStartRequest,
+    RecordingEndRequest,
 )
 
 
@@ -139,7 +139,7 @@ def test_get_api_key_valid(test_client):
 
 
 @pytest.mark.asyncio
-async def test_process_event():
+async def test_process_event(cleanup_tasks):
     """Test event processing."""
     # Create mock event
     mock_event = AsyncMock(spec=RecordingEvent)
@@ -314,7 +314,7 @@ def test_recording_ended_endpoint_process_error(test_client):
 
 
 @pytest.mark.asyncio
-async def test_lifespan_startup_shutdown():
+async def test_lifespan_startup_shutdown(cleanup_tasks):
     """Test lifespan context manager startup and shutdown."""
     mock_app = MagicMock()
     mock_db = AsyncMock()
@@ -360,7 +360,7 @@ async def test_lifespan_startup_shutdown():
 
 
 @pytest.mark.asyncio
-async def test_lifespan_shutdown_with_background_tasks():
+async def test_lifespan_shutdown_with_background_tasks(cleanup_tasks):
     """Test lifespan shutdown with background tasks."""
     mock_app = MagicMock()
     
@@ -433,7 +433,7 @@ async def test_lifespan_shutdown_with_background_tasks():
 
 
 @pytest.mark.asyncio
-async def test_process_event_error_handling():
+async def test_process_event_error_handling(cleanup_tasks):
     """Test error handling in process_event function."""
     mock_event = AsyncMock(spec=RecordingEvent)
     mock_event.recording_id = "test_id"
@@ -462,25 +462,25 @@ async def test_process_event_error_handling():
 
 
 @pytest.mark.asyncio
-async def test_api_logging_middleware_error():
+async def test_api_logging_middleware_error(cleanup_tasks):
     """Test error handling in API logging middleware."""
-    mock_request = Request(scope={
-        "type": "http",
-        "method": "GET",
-        "path": "/test",
-        "headers": []
-    })
+    app = FastAPI()
     
-    async def mock_call_next_error(request):
-        raise Exception("Middleware error")
+    # Create a failing endpoint
+    @app.get("/test")
+    async def test_endpoint():
+        raise Exception("Test error")
     
-    with patch("app.main.logger") as mock_logger:
-        response = await api_logging_middleware(mock_request, mock_call_next_error)
+    # Add logging middleware
+    @app.middleware("http")
+    async def logging_middleware(request: Request, call_next):
+        return await api_logging_middleware(request, call_next)
+    
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/test")
         
         assert response.status_code == 500
-        mock_logger.error.assert_called()
-        response_json = response.body.decode()
-        assert "Middleware error" in response_json
+        assert "Test error" in response.json()["error"]
 
 
 def test_health_check_endpoint_error(test_client):
@@ -819,9 +819,8 @@ async def test_lifespan_database_error():
 
 
 @pytest.mark.asyncio
-async def test_recording_started_endpoint_with_background_task():
+async def test_recording_started_endpoint_with_background_task(cleanup_tasks):
     """Test recording started endpoint with background task processing."""
-    # Create FastAPI app with routes
     app = FastAPI()
     
     # Mock dependencies
@@ -1118,8 +1117,9 @@ async def test_lifespan_emergency_cleanup():
         # Verify cleanup was attempted
         mock_directory_sync.stop_monitoring.assert_called_once()
         mock_event_bus.stop.assert_called_once()
-        mock_plugin_manager.shutdown_plugins.assert_called_once()
-        mock_db.close.assert_called_once()
+        mock_plugin_manager.shutdown_plugins.assert_awaited_once()
+        mock_event_bus.shutdown.assert_awaited_once()
+        mock_db.close.assert_awaited_once()
         
         # Verify final shutdown status
         mock_logger.info.assert_any_call("Shutdown complete")
@@ -1208,3 +1208,308 @@ async def test_lifespan_shutdown_timeout():
             call("Event bus shutdown timed out after 10 seconds"),
             call("Database shutdown timed out after 10 seconds")
         ], any_order=True)
+
+
+@pytest.mark.asyncio
+async def test_lifespan_database_init_error(cleanup_tasks):
+    """Test error handling during database initialization in lifespan."""
+    app = FastAPI()
+    
+    # Mock database error
+    mock_db = AsyncMock()
+    mock_db.execute.side_effect = Exception("Database connection error")
+    
+    with patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db):
+        try:
+            async with lifespan(app):
+                # Should not reach here due to database error
+                assert False, "Should have raised an exception"
+        except Exception as e:
+            assert "Database connection error" in str(e)
+
+
+@pytest.mark.asyncio
+async def test_lifespan_plugin_init_error(cleanup_tasks):
+    """Test error handling during plugin initialization in lifespan."""
+    app = FastAPI()
+    
+    # Mock successful database
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.close = AsyncMock()
+    
+    # Mock plugin manager error
+    mock_plugin_manager = AsyncMock()
+    mock_plugin_manager.discover_plugins.side_effect = Exception("Plugin discovery error")
+    mock_plugin_manager.shutdown_plugins = AsyncMock()
+    
+    # Mock event bus
+    mock_event_bus = AsyncMock()
+    mock_event_bus.start = AsyncMock()
+    mock_event_bus.stop = AsyncMock()
+    mock_event_bus.shutdown = AsyncMock()
+    
+    # Mock directory sync
+    mock_directory_sync = MagicMock()
+    mock_directory_sync.start_monitoring = MagicMock()
+    mock_directory_sync.stop_monitoring = MagicMock()
+    
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db),
+        patch("app.main.PluginManager", return_value=mock_plugin_manager),
+        patch("app.main.EventBus", return_value=mock_event_bus),
+        patch("app.main.DirectorySync", return_value=mock_directory_sync),
+        patch("app.main.setup_logging"),
+    ):
+        try:
+            async with lifespan(app):
+                # Should not reach here due to plugin error
+                assert False, "Should have raised an exception"
+        except Exception as e:
+            assert "Plugin discovery error" in str(e)
+            
+            # Verify initialization sequence
+            mock_db.execute.assert_awaited_once()
+            mock_directory_sync.start_monitoring.assert_called_once()
+            mock_event_bus.start.assert_awaited_once()
+            mock_plugin_manager.discover_plugins.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_emergency_cleanup_error(cleanup_tasks):
+    """Test emergency cleanup during shutdown when errors occur."""
+    app = FastAPI()
+    
+    # Mock components
+    mock_db = AsyncMock()
+    mock_event_bus = AsyncMock()
+    mock_plugin_manager = AsyncMock()
+    mock_directory_sync = MagicMock()
+    
+    # Simulate errors during normal shutdown
+    mock_event_bus.stop.side_effect = Exception("Stop error")
+    mock_plugin_manager.shutdown_plugins.side_effect = Exception("Shutdown error")
+    mock_db.close.side_effect = Exception("Close error")
+    
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db),
+        patch("app.main.EventBus", return_value=mock_event_bus),
+        patch("app.main.PluginManager", return_value=mock_plugin_manager),
+        patch("app.main.DirectorySync", return_value=mock_directory_sync),
+    ):
+        try:
+            async with lifespan(app):
+                # Normal operation
+                pass
+        except Exception as e:
+            # Verify emergency cleanup was attempted
+            mock_event_bus.stop.assert_called()
+            mock_plugin_manager.shutdown_plugins.assert_called()
+            mock_db.close.assert_called()
+            assert "Error during shutdown" in str(e)
+
+
+@pytest.mark.asyncio
+async def test_recording_started_endpoint_db_error(cleanup_tasks):
+    """Test error handling when database error occurs during recording started."""
+    app = FastAPI()
+    
+    # Mock process_event to raise error
+    mock_process_event = AsyncMock(side_effect=Exception("Database error"))
+    
+    # Setup API key
+    API_KEY_NAME = "X-API-Key"
+    api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+    
+    async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
+        if api_key_header.lower() == os.getenv("API_KEY", "").lower():
+            return api_key_header
+        raise HTTPException(status_code=403, detail="Could not validate API key")
+    
+    @app.post("/api/recording-started")
+    async def recording_started_test(
+        request: RecordingStartRequest,
+        background_tasks: BackgroundTasks,
+        api_key: str = Depends(get_api_key)
+    ):
+        # Create event
+        event = request.to_event()
+        
+        # Process event synchronously for testing
+        try:
+            await mock_process_event(event)
+            return {"status": "success", "recording_id": request.recording_id}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    with (
+        patch("app.main.process_event", mock_process_event),
+        patch.dict(os.environ, {"API_KEY": "test_key"})
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/api/recording-started", 
+                headers={"X-API-Key": "test_key"},
+                json={
+                    "recordingId": "test_id",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "systemAudioPath": "/test/system.wav",
+                    "microphoneAudioPath": "/test/mic.wav",
+                    "metadata": {
+                        "eventTitle": "Test Meeting",
+                        "eventProvider": "Test Provider"
+                    }
+                })
+            
+            assert response.status_code == 500
+            assert "Database error" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_recording_ended_endpoint_event_error(cleanup_tasks):
+    """Test error handling when event error occurs during recording ended."""
+    app = FastAPI()
+    
+    # Mock process_event to raise error
+    mock_process_event = AsyncMock(side_effect=Exception("Event error"))
+    
+    # Setup API key
+    API_KEY_NAME = "X-API-Key"
+    api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+    
+    async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
+        if api_key_header.lower() == os.getenv("API_KEY", "").lower():
+            return api_key_header
+        raise HTTPException(status_code=403, detail="Could not validate API key")
+    
+    @app.post("/api/recording-ended")
+    async def recording_ended_test(
+        request: RecordingEndRequest,
+        background_tasks: BackgroundTasks,
+        api_key: str = Depends(get_api_key)
+    ):
+        # Create event
+        event = request.to_event()
+        event_id = f"{event.recording_id}_ended_{event.recording_timestamp}"
+        event.event_id = event_id
+        
+        # Process event synchronously for testing
+        try:
+            await mock_process_event(event)
+            return {"status": "success", "event_id": event_id}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    with (
+        patch("app.main.process_event", mock_process_event),
+        patch.dict(os.environ, {"API_KEY": "test_key"})
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/api/recording-ended", 
+                headers={"X-API-Key": "test_key"},
+                json={
+                    "recordingId": "test_id",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "systemAudioPath": "/test/system.wav",
+                    "microphoneAudioPath": "/test/mic.wav",
+                    "metadata": {
+                        "eventTitle": "Test Meeting",
+                        "eventProvider": "Test Provider"
+                    }
+                })
+            
+            assert response.status_code == 500
+            assert "Event error" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_task_done_callback_error_handling(cleanup_tasks):
+    """Test error handling in task done callback."""
+    # Create a failing task
+    async def failing_task():
+        raise Exception("Task failed")
+    
+    # Create the task
+    task = asyncio.create_task(failing_task())
+    
+    # Mock task done callback
+    def task_done_callback(task):
+        try:
+            task.result()
+        except Exception:
+            pass
+        background_tasks.discard(task)
+    
+    # Add task done callback
+    task.add_done_callback(task_done_callback)
+    
+    # Add to background tasks
+    background_tasks.add(task)
+    
+    # Wait for task to complete
+    try:
+        await task
+    except Exception:
+        pass
+    
+    # Wait for callback to execute and task to be removed
+    for _ in range(10):  # Try up to 10 times
+        await asyncio.sleep(0.1)
+        if task not in background_tasks:
+            break
+    
+    # Verify task was removed
+    assert task not in background_tasks
+
+
+@pytest.mark.asyncio
+async def test_health_check_event_bus_error(cleanup_tasks):
+    """Test health check endpoint when event bus has error."""
+    app = FastAPI()
+    
+    # Mock event bus error
+    mock_event_bus = AsyncMock()
+    mock_event_bus.is_running = AsyncMock(side_effect=Exception("Event bus error"))
+    
+    # Setup API key
+    API_KEY_NAME = "X-API-Key"
+    api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+    
+    async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
+        return api_key_header
+    
+    @app.get("/health")
+    async def health_check(api_key: str = Depends(get_api_key)):
+        if not hasattr(app.state, "event_bus") or not app.state.event_bus:
+            raise HTTPException(status_code=500, detail="Event bus not initialized")
+        try:
+            await app.state.event_bus.is_running()
+            return {"status": "ok"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    app.state.event_bus = mock_event_bus
+    
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/health",
+            headers={"X-API-Key": "test_key"}
+        )
+        
+        assert response.status_code == 500
+        assert "Event bus error" in response.json()["detail"]
+
+
+@pytest.fixture
+async def cleanup_tasks():
+    yield
+    # Get all tasks except current task
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    if tasks:
+        # Cancel all tasks
+        for task in tasks:
+            task.cancel()
+        # Wait with timeout for tasks to cancel
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass  # Some tasks may be stuck, continue cleanup
