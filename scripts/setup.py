@@ -192,7 +192,7 @@ def copy_env_file():
             
             # Get API_KEY
             print("\nThe API_KEY should match the one set in your Panotti desktop app.")
-            api_key = get_user_input("Enter your API_KEY")
+            api_key = get_user_input("Enter your API_KEY", "your_api_key_here")
             update_env_value(".env", "API_KEY", api_key)
             
             # Get RECORDINGS_DIR
