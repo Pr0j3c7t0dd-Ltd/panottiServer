@@ -23,9 +23,9 @@ from app.core.events.bus import EventBus
 from app.core.plugins import PluginManager
 from app.models.database import DatabaseManager
 from app.models.recording.events import (
-    RecordingEndRequest,
     RecordingEvent,
     RecordingStartRequest,
+    RecordingEndRequest,
 )
 from app.utils.directory_sync import DirectorySync
 from app.utils.logging_config import setup_logging

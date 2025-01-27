@@ -13,6 +13,22 @@ warnings.filterwarnings("ignore", message="coroutine 'EventBus._cleanup_old_even
 from app.core.events.bus import EventBus
 
 
+@pytest.fixture
+async def cleanup_tasks():
+    yield
+    # Get all tasks except current task
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    if tasks:
+        # Cancel all tasks
+        for task in tasks:
+            task.cancel()
+        # Wait with timeout for tasks to cancel
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass  # Some tasks may be stuck, continue cleanup
+
+
 @pytest_asyncio.fixture
 async def event_bus():
     """Create and start an event bus instance."""
@@ -145,21 +161,26 @@ async def test_event_id_extraction_edge_cases(event_bus):
 
 
 @pytest.mark.asyncio
-async def test_event_processing_decision_edge_cases(event_bus):
+async def test_event_processing_decision_edge_cases(event_bus, cleanup_tasks):
     """Test edge cases for event processing decisions."""
-    # Test with None event
-    assert event_bus._should_process_event(None) is True
+    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        mock_sleep.return_value = None
+        
+        # Test with None event
+        assert event_bus._should_process_event(None) is True
 
-    # Test with event object with error in context access
-    class ErrorContextEvent:
-        @property
-        def context(self):
-            raise Exception("Test error")
-    assert event_bus._should_process_event(ErrorContextEvent()) is True
+        # Test with event object with error in context access
+        class ErrorContextEvent:
+            @property
+            def context(self):
+                raise Exception("Test error")
+        assert event_bus._should_process_event(ErrorContextEvent()) is True
 
-    # Test with dict with error in source_plugin access
-    event_dict = {"source_plugin": MagicMock(side_effect=Exception("Test error"))}
-    assert event_bus._should_process_event(event_dict) is True
+        # Test with dict with error in source_plugin access
+        mock_source_plugin = MagicMock()
+        mock_source_plugin.side_effect = Exception("Test error")
+        event_dict = {"context": {"source_plugin": mock_source_plugin}}
+        assert event_bus._should_process_event(event_dict) is True
 
 
 @pytest.mark.asyncio
