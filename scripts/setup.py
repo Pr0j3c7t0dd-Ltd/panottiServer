@@ -374,7 +374,7 @@ def main():
         print("   - Add your API keys in the remote_meeting_notes plugin configuration")
         print("\n2. Start the server using one of the following commands:")
         print("   a. Using the shell script (recommended):")
-        print("      ./start_server.sh")
+        print("      ./start_servers.sh")
         print("   b. Using Docker Compose:")
         print("      docker-compose up")
         print("\nMake sure all configuration files are properly set up before starting the server.")

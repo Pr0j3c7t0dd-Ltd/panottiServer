@@ -1,0 +1,62 @@
+{
+  "name": "panotti-admin-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p $PORT",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest",
+    "test:watch": "vitest watch",
+    "format": "prettier --write .",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@headlessui/react": "2.0.0",
+    "@heroicons/react": "2.1.1",
+    "@tanstack/react-query": "5.14.2",
+    "class-variance-authority": "0.7.0",
+    "clsx": "2.0.0",
+    "framer-motion": "10.16.16",
+    "next": "15.1.0",
+    "pino": "8.16.2",
+    "pino-pretty": "10.2.3",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "tailwind-merge": "2.1.0",
+    "tailwindcss-animate": "1.0.7",
+    "zod": "3.22.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.15",
+    "@testing-library/jest-dom": "6.1.5",
+    "@testing-library/react": "14.1.2",
+    "@types/node": "20.10.5",
+    "@types/react": "18.2.45",
+    "@types/react-dom": "18.2.18",
+    "@vitejs/plugin-react": "4.2.1",
+    "@vitest/coverage-v8": "^1.2.0",
+    "@vitest/ui": "^1.2.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.19.0",
+    "eslint-config-next": "15.1.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-tailwindcss": "^3.17.5",
+    "jsdom": "23.0.1",
+    "postcss": "^8.4.35",
+    "prettier": "3.1.1",
+    "prettier-plugin-tailwindcss": "0.5.9",
+    "tailwindcss": "^3.4.1",
+    "typescript": "5.3.3",
+    "vitest": "^1.2.0",
+    "cross-env": "^7.0.3",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
+    "glob": "^10.3.10"
+  },
+  "overrides": {
+    "glob": "^10.3.10",
+    "inflight": "^2.0.1"
+  }
+}

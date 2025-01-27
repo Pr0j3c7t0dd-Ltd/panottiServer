@@ -345,7 +345,7 @@ python run_server.py
 
 2. Using the shell script:
 ```bash
-./start_server.sh
+./start_servers.sh
 ```
 
 Both methods will read the port configuration from your `.env` file. The default port is 54789 if not specified.
@@ -656,7 +656,7 @@ python run_server.py
 
 2. Using the shell script:
 ```bash
-./start_server.sh
+./start_servers.sh
 ```
 
 Both methods will read the port configuration from your `.env` file. The default port is 54789 if not specified.

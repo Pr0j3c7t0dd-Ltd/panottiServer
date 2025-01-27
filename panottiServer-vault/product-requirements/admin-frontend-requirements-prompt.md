@@ -11,5 +11,11 @@ I would like to add the following features to the next.js app to manage the app:
 - The user should be prompted to change the default password when they first login, so you might want to make the password changing functionality a component that can run inside a model.
 - The user should not be able to access any page on the website unless they supply the correct password, which will then be hashed and compared against the one saved in the file.
 
-## 
+## Settings Page
+
+I'd like you to add a component to the home page called 'Settings'.  This will be an accordion component that will allow the user to read and write settings in the app.
+
+To populate the accordion, I want you to look at the root repository directory one level up from the next.js root '../' where the FastAPI server code lives.  The plugins directory can be found under app/plugins
+
+
 
