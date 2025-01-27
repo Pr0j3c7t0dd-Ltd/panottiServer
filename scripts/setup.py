@@ -71,8 +71,9 @@ def check_python_version():
             # Install Python 3.12 using pyenv
             print("Installing Python 3.12 via pyenv...")
             subprocess.run(["pyenv", "install", "3.12"], check=True)
-            subprocess.run(["pyenv", "global", "3.12"], check=True)
-            print("Python 3.12 installed successfully. Please restart your terminal and run this script again.")
+            print("Setting local Python version to 3.12...")
+            subprocess.run(["pyenv", "local", "3.12"], check=True)
+            print("Python 3.12 installed and configured successfully. Please restart your terminal and run this script again.")
             sys.exit(0)
         else:
             print("Please install Python 3.12.x manually and run this script again.")
@@ -111,6 +112,7 @@ def install_system_dependencies():
         ("terminal-notifier", "Required for desktop notifications"),
         ("ffmpeg", "Required for audio processing"),
         ("pyenv", "Recommended for Python version management"),
+        ("poetry", "Recommended for Python dependency management"),
     ]
 
     for package, description in brew_packages:
@@ -160,22 +162,20 @@ def check_poetry_installation():
     try:
         subprocess.run(["poetry", "--version"], check=True, capture_output=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
-        if get_user_confirmation("Poetry is not installed. Would you like to install it?"):
-            subprocess.run(
-                "curl -sSL https://install.python-poetry.org | python3 -",
-                shell=True,
-                check=True,
-            )
+        if get_user_confirmation("Poetry is not installed. Would you like to install it using Homebrew?"):
+            subprocess.run(["brew", "install", "poetry"], check=True)
         else:
             print("Poetry is required for dependency management. Please install it manually.")
             sys.exit(1)
 
 
 def setup_virtual_environment():
-    """Setup virtual environment using Poetry"""
+    """Setup virtual environment using venv"""
     if get_user_confirmation("Would you like to set up the virtual environment and install dependencies?"):
-        print("Setting up virtual environment and installing dependencies...")
-        subprocess.run(["poetry", "install"], check=True)
+        print("Setting up virtual environment using venv...")
+        subprocess.run([sys.executable, "-m", "venv", ".venv"], check=True)
+        activate_script = ".venv/bin/activate" if platform.system() != "Windows" else ".venv\\Scripts\\activate"
+        subprocess.run([f"source {activate_script} && poetry install"], shell=True, check=True)
     else:
         print("Virtual environment setup skipped. Note that this is required for the application to run.")
         sys.exit(1)
@@ -210,7 +210,7 @@ def copy_env_file():
 
 def copy_plugin_yaml_files():
     """Copy plugin.yaml.example files to plugin.yaml for each plugin"""
-    if get_user_confirmation("Would you like to set up plugin configuration files?"):
+    if get_user_confirmation("Would you like to set up plugin configuration files (say 'yes' to all for default setup)?"):
         plugins_dir = Path("app/plugins")
         for plugin_dir in plugins_dir.iterdir():
             if plugin_dir.is_dir() and not plugin_dir.name.startswith("__"):
@@ -304,12 +304,12 @@ def check_ollama_setup():
                 subprocess.run(["ollama", "--version"], check=True, capture_output=True)
                 
                 # Ask about default model
-                print("\nThe default model for local processing is 'llama2:8b'")
+                print("\nThe default model for local processing is 'llama3.1:8b'")
                 print("Note: You can use any other Ollama model, but you'll need to update")
                 print("      the model name in the plugin configuration files.")
                 if get_user_confirmation("Would you like to pull the default model now?"):
-                    print("\nPulling llama2:8b model (this may take a while)...")
-                    subprocess.run(["ollama", "pull", "llama2:8b"], check=True)
+                    print("\nPulling llama3.1:8b model (this may take a while)...")
+                    subprocess.run(["ollama", "pull", "llama3.1:8b"], check=True)
                     print("Model downloaded successfully!")
                 else:
                     print("\nSkipping model download.")
@@ -361,7 +361,7 @@ def main():
         setup_virtual_environment()
         copy_env_file()
         copy_plugin_yaml_files()
-        check_docker_installation()
+        # check_docker_installation()
         download_whisper_model()
         create_ssl_directory()
 
