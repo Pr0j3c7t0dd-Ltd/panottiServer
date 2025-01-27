@@ -305,6 +305,110 @@ class TestEventBus(IsolatedAsyncioTestCase):
    assert task.cancelled()
    ```
 
+### 9. Testing Shutdown Task Cancellation
+
+When testing application shutdown with background tasks, follow these best practices:
+
+1. Store background tasks in `app.state` instead of global variables:
+```python
+@pytest.mark.asyncio
+async def test_shutdown_task_cancellation():
+    app = FastAPI()
+    background_tasks = set()
+    
+    # Create a long-running task that will be cancelled
+    async def long_running_task():
+        try:
+            while True:
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            # Clean shutdown
+            return
+    
+    # Store task in app.state
+    task = asyncio.create_task(long_running_task())
+    background_tasks.add(task)
+    app.state.background_tasks = background_tasks
+```
+
+2. Ensure proper shutdown sequence:
+```python
+async def shutdown():
+    # 1. Cancel background tasks first
+    tasks = list(getattr(app.state, "background_tasks", set()))
+    if tasks:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.wait(tasks, timeout=10.0)
+
+    # 2. Stop accepting new events/requests
+    await event_bus.stop()
+
+    # 3. Shutdown plugins and event bus
+    await plugin_manager.shutdown_plugins()
+    await event_bus.shutdown()
+
+    # 4. Shield final cleanup operations
+    await asyncio.shield(
+        asyncio.gather(
+            asyncio.wait_for(db.close(), timeout=10.0)
+        )
+    )
+```
+
+3. Test task cancellation:
+```python
+@pytest.mark.asyncio
+async def test_shutdown_task_cancellation():
+    async with asyncio.timeout(5.0):
+        async with lifespan(app) as cm:
+            # Create and start task
+            task = asyncio.create_task(long_running_task())
+            background_tasks.add(task)
+            app.state.background_tasks = background_tasks
+            
+            # Let task run briefly
+            await asyncio.sleep(0)
+            
+            # Verify task is running
+            assert not task.done()
+            
+            # Store task for verification
+            running_task = task
+        
+        # After context exit, verify task was cancelled
+        assert running_task.cancelled(), "Background task was not cancelled during shutdown"
+```
+
+4. Common Pitfalls:
+   - Don't use `asyncio.shield()` too early in the shutdown sequence
+   - Only shield final cleanup operations that MUST complete
+   - Ensure proper error propagation during shutdown
+   - Use timeouts to prevent hanging tests
+   - Clean up any remaining tasks in finally blocks
+
+5. Emergency Cleanup:
+```python
+try:
+    await shutdown()
+except asyncio.CancelledError:
+    # Shield emergency cleanup
+    await asyncio.shield(
+        asyncio.gather(
+            event_bus.stop() if event_bus else None,
+            db.close() if db else None
+        )
+    )
+    raise
+```
+
+This approach ensures:
+- Background tasks are properly cancelled
+- Critical cleanup operations complete
+- Tests don't hang indefinitely
+- Resources are cleaned up even during cancellation
+
 ## Common Mistakes to Avoid
 
 ### 1. Deprecated Client Initialization
