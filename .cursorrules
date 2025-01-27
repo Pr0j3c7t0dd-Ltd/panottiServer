@@ -2,21 +2,8 @@
 
 This document outlines best practices, coding standards, and recommendations for professional Python applications, including tools for testing, monitoring, logging, observability, and file structure.
 
-## General Guidelines
 
-Every time you choose to apply a rule(s), explicitly state the rule(s) in the output. You can abbreviate the rule description to a single word or phrase.
 
-ALWAYS consult the files in @panottiServer-vault/architecture folder for the best practices.  Update the files in @panottiServer-vault/architecture folder or add new files as necessary to capture the latest architecture.
-
-### Description
-Ensure adherence to clean code principles, maintainability, and scalability.
-
-### Best Practices
-- Follow **PEP 8** standards for code style and formatting
-- Use **type hints** for function signatures and variables (e.g., `typing` or `pydantic`)
-- Enforce strict linting with tools like **flake8**, **pylint**, or **ruff**
-- Adopt auto-formatting tools like **black** for consistent formatting
-- Use **isort** to organize imports alphabetically and separate standard, third-party, and local imports
 
 ## File Structure
 
@@ -103,90 +90,99 @@ Event.create(
 
 ## Architecture Guidelines
 
-### Overview
-- The application uses **FastAPI** as the framework.
-- Organized into modules: `models`, `plugins`, `utils`, and `tests`.
-
 ### Key Components
 - **Models**: Data structures and database interactions.
 - **Plugins**: Additional functionalities and event handling.
 - **Utils**: Utility functions like logging configuration.
 
-### Best Practices
-- Maintain a modular structure for scalability and maintainability.
-- Use environment variables for configuration.
-- Implement API Key security for endpoints.
+# [PROJECT TITLE] - [SHORT PROJECT DESCRIPTION]
 
-## Plugin Management
+Every time you choose to apply a rule(s), explicitly state the rule(s) in the output. You can abbreviate the rule description to a single word or phrase.
 
-### Overview
-- Plugins are used to extend application functionality and handle events.
+Regardless of the request, think step by step and create a plan before implementing.  Create a plan before each code change iteration within the chat flow.
 
-### Best Practices
-- Use a **Plugin Manager** to dynamically load and manage plugins.
-- Ensure plugins are well-documented and tested.
-- Use the reStructuredText (reST) format for documentation
-- Facilitate communication through an **Event Bus** and persist events with an **Event Store**.
+## Project Stack
+- Python
+- FastAPI
+- Anthropic
+- MongoDB
+
+## Style Guide
+### Base Standards
+- PEP 8
+- Pyright
+- Pylint
+
+### Formatting
+- Indent: 4 spaces
+- Line Length: 79 chars
+- Docstring: Google style
+
+## Code Organization
+### Structure
+- Descriptive names
+- Module headers
+- Logical chunks
+- Error comments
+- Test refs
+
+### Conventions
+#### Naming
+- snake_case (default)
+- PascalCase (classes)
+
+#### Imports
+1. stdlib
+2. third_party
+3. local
+
+#### Limits
+- Function lines: 50
+- Nested blocks: 3
 
 ## Testing
+### Tools
+- pytest
+- pytest-cov
 
-### Description
-Ensure thorough testing with a preference for automation.
+### Focus
+- Functionality over implementation
 
-### Best Practices
-- Use **pytest** for testing, and integrate plugins like:
-  - `pytest-cov` for coverage reporting
-  - `pytest-mock` for mocking
-- Follow the **Test Pyramid** approach: prioritize unit tests, followed by integration and end-to-end (E2E) tests
-- Use `conftest.py` for shared test configurations
-- Generate test data with **factory_boy** or **pytest-factoryboy**
-- Write fixtures for reusable setup logic
-- Integrate tests with CI pipelines using **GitHub Actions**, **CircleCI**, or **GitLab CI/CD**
+### Patterns
+#### Structure
+- Unit tests mirror src
+- Integration per endpoint
+- Conftest for fixtures
 
-## Logging
+#### Coverage
+- Happy path
+- Error handling
+- Edge cases
+- Database errors
 
-### Description
-Establish centralized, structured, and easily configurable logging.
+#### Fixtures
+- mock_mongodb
+- test_app
+- test_client
 
-### Best Practices
-- Use **structlog** for structured and JSON-based logging
-- Configure logging settings in a `logging_config.py` file and manage log levels with environment variables
-- Aggregate logs using:
-  - ELK stack (Elasticsearch, Logstash, Kibana)
-  - SaaS providers like **Datadog** or **Sentry**
-- Use **correlation IDs** to trace requests across services
-
-## Observability
-
-### Description
-Integrate monitoring, tracing, and metrics collection.
-
-### Best Practices
-- Use **OpenTelemetry** for distributed tracing and instrumentation
-- Export telemetry data to:
-  - **Prometheus/Grafana**
-  - SaaS platforms like **Datadog**, **New Relic**, or **Honeycomb**
-- Monitor application performance with APM tools like **Elastic APM** or **Datadog**
-- Collect and visualize metrics for business and system indicators
+#### Async
+- mark_asyncio
+- async_mock_responses
 
 ## Dependency Management
-
-### Description
-Ensure dependency stability and consistency.
-
-### Best Practices
-- Use **poetry** or **pip-tools** for dependency management
+- Use **poetry** for dependency management
 - Pin dependencies in `pyproject.toml` or `requirements.txt`
 - Regularly audit dependencies for vulnerabilities using:
   - **safety**
   - **dependabot**
 
+
+## Git Commits
+- Use conventional commit prefixes (feat:, fix:, etc.)
+- Keep messages concise and reference issues
+
 ## Security
-
-### Description
-Adopt secure coding practices and tools.
-
-### Best Practices
-- Use **Bandit** for static analysis of security vulnerabilities
-- Scan dependencies for known vulnerabilities using tools like **Snyk** or **pip-audit**
+- No secrets in code
+- Validate inputs
+- Encrypt sensitive data
 - Follow OWASP best practices for input validation and authentication
