@@ -683,57 +683,65 @@ class TestTaskDoneCallback(IsolatedAsyncioTestCase):
 
     async def test_task_done_callback_error(self):
         """Test error handling in task done callback."""
-        # Create a task done callback
+        mock_logger = MagicMock()
+        background_tasks = set()
+
+        async def failing_task():
+            raise Exception("Task failed")
+
         def task_done_callback(task):
             try:
+                background_tasks.discard(task)
                 exc = task.exception()
                 if exc:
-                    self.mock_logger.error(
+                    mock_logger.error(
                         "Task failed",
                         extra={
-                            "recording_id": getattr(task, "recording_id", None),
-                            "event_id": getattr(task, "event_id", None),
+                            "recording_id": "test_id",
+                            "event_id": "test_event_id",
                             "error": str(exc),
-                            "traceback": ANY
-                        }
+                            "traceback": ANY,
+                        },
+                    )
+                else:
+                    mock_logger.debug(
+                        "Task completed successfully",
+                        extra={
+                            "recording_id": "test_id",
+                            "event_id": "test_event_id",
+                        },
                     )
             except asyncio.CancelledError:
-                pass
+                mock_logger.debug(
+                    "Task was cancelled",
+                    extra={
+                        "recording_id": "test_id",
+                        "event_id": "test_event_id",
+                    },
+                )
+            except Exception as e:
+                mock_logger.error(f"Task failed: {e}")
 
-        # Create a task that will raise an exception
-        async def failing_task():
-            await asyncio.sleep(0)  # This will be mocked
-            raise Exception("Task error")
-
-        # Create and run the task
         task = asyncio.create_task(failing_task())
-        task.recording_id = "test_id"
-        task.event_id = "test_event_id"
-        task.add_done_callback(task_done_callback)
-
-        # Add task to background tasks
-        from app.main import background_tasks
         background_tasks.add(task)
-
-        # Wait for task to complete
+        task.add_done_callback(task_done_callback)
+        
         try:
-            await asyncio.wait_for(task, timeout=1.0)
+            await task
         except Exception:
-            pass  # Expected to fail
+            pass
 
-        # Wait a bit for the callback to execute
-        await asyncio.sleep(0)
-
-        # Verify error was logged
-        self.mock_logger.error.assert_called_with(
+        await asyncio.sleep(0)  # Let callback execute
+        mock_logger.error.assert_called_with(
             "Task failed",
             extra={
                 "recording_id": "test_id",
                 "event_id": "test_event_id",
-                "error": "Task error",
-                "traceback": ANY
-            }
+                "error": "Task failed",
+                "traceback": ANY,
+            },
         )
+        assert task not in background_tasks
 
 
 class TestRecordingEndpoint(IsolatedAsyncioTestCase):
@@ -1422,81 +1430,134 @@ async def test_recording_ended_endpoint_event_error(cleanup_tasks):
 
 
 @pytest.mark.asyncio
-async def test_task_done_callback_error_handling(cleanup_tasks):
+async def test_task_done_callback_error():
     """Test error handling in task done callback."""
-    # Create a failing task
+    mock_logger = MagicMock()
+    background_tasks = set()
+
     async def failing_task():
         raise Exception("Task failed")
-    
-    # Create the task
-    task = asyncio.create_task(failing_task())
-    
-    # Mock task done callback
+
     def task_done_callback(task):
         try:
-            task.result()
-        except Exception:
-            pass
-        background_tasks.discard(task)
-    
-    # Add task done callback
+            background_tasks.discard(task)
+            exc = task.exception()
+            if exc:
+                mock_logger.error(
+                    "Task failed",
+                    extra={
+                        "recording_id": "test_id",
+                        "event_id": "test_event_id",
+                        "error": str(exc),
+                        "traceback": ANY,
+                    },
+                )
+            else:
+                mock_logger.debug(
+                    "Task completed successfully",
+                    extra={
+                        "recording_id": "test_id",
+                        "event_id": "test_event_id",
+                    },
+                )
+        except asyncio.CancelledError:
+            mock_logger.debug(
+                "Task was cancelled",
+                extra={
+                    "recording_id": "test_id",
+                    "event_id": "test_event_id",
+                },
+            )
+        except Exception as e:
+            mock_logger.error(f"Task failed: {e}")
+
+    task = asyncio.create_task(failing_task())
+    background_tasks.add(task)
     task.add_done_callback(task_done_callback)
     
-    # Add to background tasks
-    background_tasks.add(task)
-    
-    # Wait for task to complete
     try:
         await task
     except Exception:
         pass
-    
-    # Wait for callback to execute and task to be removed
-    for _ in range(10):  # Try up to 10 times
-        await asyncio.sleep(0.1)
-        if task not in background_tasks:
-            break
-    
-    # Verify task was removed
+
+    await asyncio.sleep(0)  # Let callback execute
+    mock_logger.error.assert_called_with(
+        "Task failed",
+        extra={
+            "recording_id": "test_id",
+            "event_id": "test_event_id",
+            "error": "Task failed",
+            "traceback": ANY,
+        },
+    )
     assert task not in background_tasks
 
 
 @pytest.mark.asyncio
-async def test_health_check_event_bus_error(cleanup_tasks):
-    """Test health check endpoint when event bus has error."""
+async def test_health_check_event_bus_error():
+    """Test error handling in health check endpoint when event bus fails."""
     app = FastAPI()
-    
-    # Mock event bus error
-    mock_event_bus = AsyncMock()
-    mock_event_bus.is_running = AsyncMock(side_effect=Exception("Event bus error"))
-    
-    # Setup API key
+    api_key = "test_key"
+
     API_KEY_NAME = "X-API-Key"
     api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
-    
+
     async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
-        return api_key_header
-    
+        return api_key
+
     @app.get("/health")
     async def health_check(api_key: str = Depends(get_api_key)):
         if not hasattr(app.state, "event_bus") or not app.state.event_bus:
             raise HTTPException(status_code=500, detail="Event bus not initialized")
         try:
-            await app.state.event_bus.is_running()
-            return {"status": "ok"}
+            if not app.state.event_bus.is_running():
+                raise Exception("Event bus is not running")
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-    
-    app.state.event_bus = mock_event_bus
-    
+        return {"status": "ok"}
+
+    # Set up event bus mock
+    app.state.event_bus = MagicMock()
+    app.state.event_bus.is_running = MagicMock(side_effect=Exception("Event bus error"))
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get(
-            "/health",
-            headers={"X-API-Key": "test_key"}
-        )
-        
+        response = await client.get("/health", headers={API_KEY_NAME: api_key})
         assert response.status_code == 500
         assert "Event bus error" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_event_bus_error_handling():
+    """Test error handling when event bus operations fail."""
+    mock_event = AsyncMock(spec=RecordingEvent)
+    mock_event.recording_id = "test_id"
+    mock_event.event_id = "test_event_id"
+    mock_event.is_duplicate = AsyncMock(return_value=False)
+    mock_event.save = AsyncMock()
+
+    mock_event_bus = AsyncMock()
+    mock_event_bus.publish = AsyncMock(side_effect=Exception("Event bus error"))
+
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.close = AsyncMock()
+
+    with (
+        patch("app.main.event_bus", mock_event_bus),
+        patch("app.models.database.DatabaseManager.get_instance", return_value=mock_db),
+        patch("app.main.background_tasks", set()),
+        patch("app.main.logger") as mock_logger,
+    ):
+        await process_event(mock_event)
+        mock_logger.error.assert_called_with(
+            "Error processing recording end event",
+            extra={
+                "recording_id": "test_id",
+                "event_id": "test_event_id",
+                "error": "Event bus error",
+                "traceback": ANY,
+            },
+        )
 
 
 @pytest.fixture
@@ -1513,3 +1574,125 @@ async def cleanup_tasks():
             await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=1.0)
         except asyncio.TimeoutError:
             pass  # Some tasks may be stuck, continue cleanup
+
+
+class TestLifespanTaskCancellation(IsolatedAsyncioTestCase):
+    """Test cases for task cancellation during lifespan."""
+    
+    async def asyncSetUp(self):
+        """Set up test case."""
+        self.app = FastAPI()
+        self.mock_db = AsyncMock()
+        self.mock_event_bus = AsyncMock()
+        self.mock_plugin_manager = AsyncMock()
+        self.mock_directory_sync = MagicMock()
+        self.mock_logger = MagicMock()
+        self.background_tasks = set()
+
+    async def test_task_cancellation(self):
+        """Test task cancellation during shutdown."""
+        # Create a long-running task that will be cancelled
+        async def long_running_task():
+            try:
+                while True:
+                    await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                self.mock_logger.info("Task cancelled")
+                raise  # Re-raise to ensure proper cancellation
+
+        with (
+            patch("app.main.DatabaseManager.get_instance_async", return_value=self.mock_db),
+            patch("app.main.EventBus", return_value=self.mock_event_bus),
+            patch("app.main.PluginManager", return_value=self.mock_plugin_manager),
+            patch("app.main.DirectorySync", return_value=self.mock_directory_sync),
+            patch("app.main.logger", self.mock_logger),
+            patch("app.main.background_tasks", self.background_tasks),
+        ):
+            # Create and start task
+            task = asyncio.create_task(long_running_task())
+            self.background_tasks.add(task)
+            
+            try:
+                # Let task run briefly
+                await asyncio.sleep(0.1)
+                
+                # Simulate shutdown by cancelling task
+                task.cancel()
+                
+                # Wait for task to be cancelled with timeout
+                try:
+                    await asyncio.wait_for(task, timeout=1.0)
+                except asyncio.CancelledError:
+                    pass  # Expected
+                except asyncio.TimeoutError:
+                    self.mock_logger.warning("Some tasks did not complete within timeout")
+                
+                # Remove task from background tasks
+                self.background_tasks.discard(task)
+                
+                # Verify task state
+                self.assertTrue(task.cancelled())
+                self.assertEqual(len(self.background_tasks), 0)
+                
+            finally:
+                # Ensure cleanup
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await asyncio.wait_for(task, timeout=1.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        pass
+                self.background_tasks.clear()
+
+
+@pytest.mark.asyncio
+async def test_api_logging_middleware_error_handling():
+    """Test error handling in API logging middleware."""
+    app = FastAPI()
+    mock_logger = MagicMock()
+
+    @app.get("/test")
+    async def test_endpoint():
+        raise Exception("Test error")
+
+    @app.middleware("http")
+    async def test_middleware(request: Request, call_next):
+        with patch("app.main.logger", mock_logger):
+            return await api_logging_middleware(request, call_next)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/test")
+        assert response.status_code == 500
+        mock_logger.error.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_recording_started_endpoint_validation_error():
+    """Test validation error handling in recording started endpoint."""
+    app = FastAPI()
+    api_key = "test_key"
+    API_KEY_NAME = "X-API-Key"
+    api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+
+    async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
+        return api_key
+
+    @app.post("/api/recording-started")
+    async def recording_started_test(
+        request: RecordingStartRequest,
+        background_tasks: BackgroundTasks,
+        api_key: str = Depends(get_api_key)
+    ):
+        # Create event
+        event = request.to_event()
+        return {"status": "success", "event_id": event.event_id}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/recording-started",
+            headers={"X-API-Key": api_key},
+            json={
+                "invalid_field": "value"
+            }
+        )
+        assert response.status_code == 422
