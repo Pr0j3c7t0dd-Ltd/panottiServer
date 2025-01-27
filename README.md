@@ -4,6 +4,8 @@
 
 A FastAPI-based server for handling recording events with a plugin-based architecture and secure API endpoints.  More information, including the download link for the Panotti MacOS desktop app, can be found at [https://www.panotti.io/](https://www.panotti.io/).
 
+Panotti was made by AI! Learn about AI in software development on our [Substack](https://pr0j3c7t0dd.substack.com/) — practical insights on leveraging AI in modern development workflows.
+
 [![Donate with PayPal](https://www.paypalobjects.com/en_US/GB/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/donate?hosted_button_id=NJTZJX5EN3F7N)
 
 ## Features
