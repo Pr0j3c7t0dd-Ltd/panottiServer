@@ -108,7 +108,6 @@ def install_system_dependencies():
 
     print("The following system dependencies are required:")
     brew_packages = [
-        ("openai-whisper", "Required for audio transcription"),
         ("terminal-notifier", "Required for desktop notifications"),
         ("ffmpeg", "Required for audio processing"),
         ("pyenv", "Recommended for Python version management"),
