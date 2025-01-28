@@ -11,9 +11,28 @@ export async function GET() {
   }
 
   try {
-    // Remove trailing slash if present and add health endpoint
-    const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl;
-    const healthCheckUrl = `${baseUrl}/health`;
+    // Parse and validate the URL
+    const url = new URL(apiBaseUrl);
+    console.debug('API Base URL parts:', {
+      full: url.toString(),
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port,
+      host: url.host,
+      pathname: url.pathname
+    });
+
+    // Ensure we have a valid protocol
+    if (!url.protocol.startsWith('http')) {
+      return NextResponse.json(
+        { error: 'Invalid API URL protocol', url: apiBaseUrl },
+        { status: 500 }
+      );
+    }
+
+    // Construct health check URL properly
+    const healthCheckUrl = new URL('health', url).toString();
+    console.debug('Attempting health check at:', healthCheckUrl);
 
     const response = await fetch(healthCheckUrl, {
       headers: {
@@ -37,7 +56,7 @@ export async function GET() {
     
   } catch (error) {
     const errorMessage = error instanceof Error 
-      ? error.message
+      ? `${error.message} (URL: ${apiBaseUrl})`
       : 'Unknown error occurred';
       
     console.error('Health check error:', errorMessage);
