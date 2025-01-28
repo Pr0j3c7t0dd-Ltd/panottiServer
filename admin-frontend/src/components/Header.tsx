@@ -71,6 +71,7 @@ export default function Header() {
             <div className="flex items-center gap-x-4 sm:gap-x-8 lg:gap-x-12">
               <Link
                 href={isHomePage ? "#" : "/"}
+                onClick={(e) => handleNavClick(e, 'server-status')}
                 className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
               >
                 Home

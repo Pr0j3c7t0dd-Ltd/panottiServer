@@ -43,7 +43,7 @@ export function ChangePasswordModal({ isOpen, onClose, isDefault }: ChangePasswo
       if (data.success) {
         onClose();
         if (isDefault) {
-          router.push('/admin/settings');
+          router.push('/');
         }
       } else {
         setError(data.message || 'Failed to change password');

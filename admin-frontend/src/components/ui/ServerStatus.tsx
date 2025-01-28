@@ -44,7 +44,7 @@ const ServerStatus = () => {
   });
 
   return (
-    <div className="p-6 rounded-lg shadow-md text-center">
+    <div id="server-status" className="p-6 rounded-lg shadow-md text-center">
       <h2 className="text-xl font-semibold mb-4">Server Status</h2>
       <div
         className={`p-8 rounded-lg ${
