@@ -476,7 +476,7 @@ def main():
         print_step("🐍", "Checking Python version...")
         check_python_version()
         
-        print_step("⚙️", "Checking Rust installation...")
+        print_step("💿", "Checking Rust installation...")
         check_rust_installation()
         
         print_step("📝", "Checking Poetry installation...")
