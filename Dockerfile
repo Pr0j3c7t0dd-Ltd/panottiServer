@@ -61,4 +61,12 @@ RUN echo '#!/bin/bash' > /app/docker-entrypoint.sh && \
 EXPOSE ${API_PORT}
 
 # Set the entrypoint
-ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"] 
+ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"]
+
+# Add these environment variables
+ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV production
+
+# Update the build command
+RUN npm ci
+RUN npm run build 
