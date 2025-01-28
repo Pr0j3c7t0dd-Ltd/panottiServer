@@ -24,7 +24,9 @@ export async function GET() {
       const ipv4Url = new URL(process.env.NEXT_PUBLIC_API_BASE_URL || '');
       ipv4Url.hostname = addresses.address;
       
-      console.log('Debug - Using IPv4 URL:', ipv4Url.toString());
+      // Construct the health check URL properly
+      const healthCheckUrl = new URL('/health', ipv4Url);
+      console.log('Debug - Using IPv4 URL:', healthCheckUrl.toString());
       
       console.log('Debug - Attempting fetch with headers:', {
         'X-API-Key': process.env.NEXT_PUBLIC_API_KEY ? '(set)' : '(not set)',
@@ -32,7 +34,7 @@ export async function GET() {
         'Host': apiUrl.host
       });
       
-      const response = await fetch(ipv4Url.toString() + '/health', {
+      const response = await fetch(healthCheckUrl.toString(), {
         headers: {
           'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
           'Accept': 'application/json',
