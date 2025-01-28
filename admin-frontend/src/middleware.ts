@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyPassword, isDefaultPassword } from './lib/auth';
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
@@ -16,6 +15,7 @@ export async function middleware(request: NextRequest) {
 
   const isLoginPage = request.nextUrl.pathname === '/login';
   const isChangePasswordPage = request.nextUrl.pathname === '/admin/change-password';
+  const isAuthCheckEndpoint = request.nextUrl.pathname.startsWith('/api/auth/');
   const sessionToken = request.cookies.get('session_token');
 
   // Allow access to login page if not authenticated
@@ -26,15 +26,27 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // Allow access to auth check endpoints
+  if (isAuthCheckEndpoint) {
+    return response;
+  }
+
   // Protect all other routes
   if (!sessionToken) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
   // If using default password, only allow access to change password page
-  const usingDefaultPassword = await isDefaultPassword();
-  if (usingDefaultPassword && !isChangePasswordPage) {
-    return NextResponse.redirect(new URL('/admin/change-password', request.url));
+  try {
+    const baseUrl = request.nextUrl.origin;
+    const checkDefaultRes = await fetch(`${baseUrl}/api/auth/check-default`);
+    const { isDefault } = await checkDefaultRes.json();
+    
+    if (isDefault && !isChangePasswordPage) {
+      return NextResponse.redirect(new URL('/admin/change-password', request.url));
+    }
+  } catch (error) {
+    console.error('Failed to check default password:', error);
   }
 
   return response;
