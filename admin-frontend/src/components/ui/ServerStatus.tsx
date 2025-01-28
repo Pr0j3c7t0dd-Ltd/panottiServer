@@ -15,6 +15,11 @@ const ServerStatus = () => {
           },
           // Required for self-signed certificates in development
           mode: 'cors',
+          // Allow self-signed certificates
+          //@ts-ignore
+          agent: new (await import('https')).Agent({
+            rejectUnauthorized: false
+          })
         });
         
         if (!response.ok) {
