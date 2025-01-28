@@ -1,8 +1,8 @@
 [![Discord Shield](https://discord.com/api/guilds/1316533461577891882/widget.png?style=shield)](https://discord.gg/fgVQWfPCmn)
 
-<img src="panotti-icon.png" alt="Panotti logo" width="64" height="64">
-
 # panottiServer
+
+<img src="panotti-icon.png" alt="Panotti logo" width="64" height="64">
 
 A FastAPI-based Python server for handling recording events with a plugin-based architecture and secure API endpoints.  More information, including the download link for the companionPanotti MacOS desktop app, can be found at [https://www.panotti.io/](https://www.panotti.io/).
 
