@@ -8,13 +8,8 @@ const ServerStatus = () => {
     queryKey: ['serverHealth'],
     queryFn: async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/health`, {
-          headers: {
-            'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
-            'Accept': 'application/json',
-          },
-          mode: 'cors',
-        });
+        // Call our Next.js API route instead of the server directly
+        const response = await fetch('/api/health');
         
         if (!response.ok) {
           const errorData = await response.text();
@@ -39,7 +34,7 @@ const ServerStatus = () => {
             }
             throw new Error('SSL Certificate Error: Invalid certificate');
           }
-          throw err;
+          throw new Error(`Failed to check server status: ${err.message}`);
         }
         throw new Error('An unknown error occurred');
       }
