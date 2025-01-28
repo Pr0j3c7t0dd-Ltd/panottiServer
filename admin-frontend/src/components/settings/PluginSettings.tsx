@@ -64,7 +64,15 @@ function ConfigFields({
                   type="text"
                   id={fieldId}
                   value={arrayToString(value)}
-                  onChange={(e) => onUpdate(currentPath, stringToArray(e.target.value))}
+                  onChange={(e) => {
+                    const inputValue = e.target.value;
+                    const selectionStart = e.target.selectionStart;
+                    onUpdate(currentPath, stringToArray(inputValue));
+                    // Preserve cursor position after state update
+                    requestAnimationFrame(() => {
+                      e.target.setSelectionRange(selectionStart, selectionStart);
+                    });
+                  }}
                   className="block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
                 />
                 {defaults[key] !== undefined && (
