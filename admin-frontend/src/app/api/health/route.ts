@@ -16,6 +16,12 @@ export async function GET() {
 
   try {
     const url = new URL(apiBaseUrl);
+    
+    // Force IPv4 for localhost
+    if (url.hostname === 'localhost') {
+      url.hostname = '127.0.0.1';
+    }
+    
     const healthCheckUrl = new URL('health', url).toString();
 
     const httpsAgent = new https.Agent({
