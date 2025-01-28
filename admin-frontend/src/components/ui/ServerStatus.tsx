@@ -13,13 +13,7 @@ const ServerStatus = () => {
             'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
             'Accept': 'application/json',
           },
-          // Required for self-signed certificates in development
           mode: 'cors',
-          // Allow self-signed certificates
-          //@ts-ignore
-          agent: new (await import('https')).Agent({
-            rejectUnauthorized: false
-          })
         });
         
         if (!response.ok) {
@@ -31,9 +25,19 @@ const ServerStatus = () => {
         return response.json();
       } catch (err) {
         if (err instanceof Error) {
-          // Check for SSL certificate error
-          if (err.message.includes('SSL') || err.message.includes('certificate')) {
-            throw new Error('SSL Certificate Error: The server is using a self-signed certificate. Please ensure you trust the certificate.');
+          // Check for SSL certificate error and provide more helpful message in development
+          if (err.message.includes('SSL') || err.message.includes('certificate') || err.message.includes('ERR_CERT_AUTHORITY_INVALID')) {
+            if (process.env.NODE_ENV === 'development') {
+              throw new Error(
+                'SSL Certificate Error: You are using a self-signed certificate in development.\n\n' +
+                'To fix this, you need to:\n' +
+                '1. Open https://localhost:54789/health directly in your browser\n' +
+                '2. Click "Advanced"\n' +
+                '3. Click "Proceed to localhost (unsafe)"\n' +
+                '4. Return to this page and refresh'
+              );
+            }
+            throw new Error('SSL Certificate Error: Invalid certificate');
           }
           throw err;
         }
