@@ -230,7 +230,7 @@ This will:
 - Build and start the FastAPI backend (available at http://localhost:54789)
 - Build and start the Admin frontend (available at http://localhost:54790)
 
-2. Using Docker's Ollama (not recommended):
+2. Using Docker's Ollama (not recommended due to performance issues):
 ```bash
 # Build and start with Ollama
 docker-compose -f docker-compose.yml -f docker-compose.ollama.yml up --build
