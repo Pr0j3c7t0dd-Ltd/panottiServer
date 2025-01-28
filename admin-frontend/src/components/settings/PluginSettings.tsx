@@ -214,28 +214,14 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
 
       if (!res.ok) throw new Error('Failed to save plugin settings');
 
-      // Just close the modal on success, don't modify any state
+      // On success, just close the modal
       setShowRestartModal(false);
       setPendingSave(null);
     } catch (err) {
       console.error('Failed to save plugin settings:', err);
       setError('Failed to save plugin settings');
-      // Find the plugin index and revert its state
-      if (pendingSave) {
-        const pluginIndex = plugins.findIndex(p => p.name === pendingSave.name);
-        if (pluginIndex !== -1) {
-          setPlugins(prev => {
-            const updated = [...prev];
-            updated[pluginIndex] = {
-              ...updated[pluginIndex],
-              enabled: !pendingSave.enabled // Revert to opposite of what was pending
-            };
-            return updated;
-          });
-        }
-      }
-      setShowRestartModal(false);
-      setPendingSave(null);
+      // On error, revert the state like we do in handleCancelSave
+      handleCancelSave();
     }
   };
 
@@ -372,4 +358,4 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
       />
     </div>
   );
-} 
+}
