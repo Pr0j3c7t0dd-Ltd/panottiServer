@@ -2,51 +2,51 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   // Extract host from API base URL
-  const apiUrl = new URL(process.env.NEXT_PUBLIC_API_BASE_URL || '');
-  
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (!apiBaseUrl) {
+    return NextResponse.json(
+      { error: 'API base URL not configured' },
+      { status: 500 }
+    );
+  }
+
   try {
-    // Try to resolve the hostname first with IPv4
-    try {
-      const dnsPromise = await import('dns/promises');
-      const addresses = await dnsPromise.lookup(apiUrl.hostname, { family: 4 });
-      
-      // Use the resolved IPv4 address
-      const ipv4Url = new URL(process.env.NEXT_PUBLIC_API_BASE_URL || '');
-      ipv4Url.hostname = addresses.address;
-      
-      // Construct the health check URL properly
-      const healthCheckUrl = new URL('/health', ipv4Url);
-      
-      const response = await fetch(healthCheckUrl.toString(), {
-        headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
-          'Accept': 'application/json',
-          'Host': apiUrl.host
-        },
-        cache: 'no-store'
-      });
+    // Remove trailing slash if present and add health endpoint
+    const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl;
+    const healthCheckUrl = `${baseUrl}/health`;
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Server responded with status: ${response.status}, body: ${errorText}`);
-      }
+    const response = await fetch(healthCheckUrl, {
+      headers: {
+        'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
+        'Accept': 'application/json',
+      },
+      cache: 'no-store'
+    });
 
-      const data = await response.json();
-      return NextResponse.json(data);
-      
-    } catch (dnsError) {
-      throw dnsError;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Health check failed: ${response.status} - ${errorText}`);
+      return NextResponse.json(
+        { error: 'Health check failed', status: response.status, details: errorText },
+        { status: response.status }
+      );
     }
+
+    const data = await response.json();
+    return NextResponse.json(data);
+    
   } catch (error) {
     const errorMessage = error instanceof Error 
-      ? `${error.message}${error.cause ? `\nCause: ${JSON.stringify(error.cause, null, 2)}` : ''}`
-      : 'Unknown error';
+      ? error.message
+      : 'Unknown error occurred';
       
+    console.error('Health check error:', errorMessage);
+    
     return NextResponse.json(
       { 
         error: 'Failed to check server health', 
         details: errorMessage,
-        url: process.env.NEXT_PUBLIC_API_BASE_URL
+        url: apiBaseUrl
       },
       { status: 500 }
     );
