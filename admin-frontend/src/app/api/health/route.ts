@@ -1,9 +1,33 @@
 import { NextResponse } from 'next/server';
 
 export async function GET() {
+  // Extract host from API base URL and add debugging
+  const apiUrl = new URL(process.env.NEXT_PUBLIC_API_BASE_URL || '');
+  
   try {
-    // Extract host from API base URL
-    const apiUrl = new URL(process.env.NEXT_PUBLIC_API_BASE_URL || '');
+    console.log('Debug - API URL parts:', {
+      full: process.env.NEXT_PUBLIC_API_BASE_URL,
+      protocol: apiUrl.protocol,
+      hostname: apiUrl.hostname,
+      port: apiUrl.port,
+      host: apiUrl.host,
+      pathname: apiUrl.pathname
+    });
+    
+    // Try to resolve the hostname first
+    try {
+      const dnsPromise = await import('dns/promises');
+      const addresses = await dnsPromise.lookup(apiUrl.hostname);
+      console.log('Debug - DNS lookup:', addresses);
+    } catch (dnsError) {
+      console.log('Debug - DNS lookup failed:', dnsError);
+    }
+    
+    console.log('Debug - Attempting fetch with headers:', {
+      'X-API-Key': process.env.NEXT_PUBLIC_API_KEY ? '(set)' : '(not set)',
+      'Accept': 'application/json',
+      'Host': apiUrl.host
+    });
     
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/health`, {
       headers: {
@@ -21,20 +45,42 @@ export async function GET() {
     }
 
     const data = await response.json();
+    console.log('Debug - Successful response:', data);
     return NextResponse.json(data);
   } catch (error) {
     console.error('Health check error:', error);
     
     // More detailed error message for debugging
     const errorMessage = error instanceof Error 
-      ? `${error.message}${error.cause ? ` (Cause: ${error.cause})` : ''}`
+      ? `${error.message}${error.cause ? `\nCause: ${JSON.stringify(error.cause, null, 2)}` : ''}`
       : 'Unknown error';
+      
+    console.log('Debug - Full error details:', {
+      message: errorMessage,
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        cause: error.cause,
+        stack: error.stack
+      } : error
+    });
       
     return NextResponse.json(
       { 
         error: 'Failed to check server health', 
         details: errorMessage,
-        url: process.env.NEXT_PUBLIC_API_BASE_URL 
+        url: process.env.NEXT_PUBLIC_API_BASE_URL,
+        debug: {
+          apiUrl: {
+            full: process.env.NEXT_PUBLIC_API_BASE_URL,
+            parsed: {
+              protocol: apiUrl.protocol,
+              hostname: apiUrl.hostname,
+              port: apiUrl.port,
+              host: apiUrl.host
+            }
+          }
+        }
       },
       { status: 500 }
     );
