@@ -213,10 +213,15 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
 
       if (!res.ok) throw new Error('Failed to save plugin settings');
 
-      handleModalClose();
+      // On successful save, just close the modal without modifying plugin state
+      setShowRestartModal(false);
+      setPendingSave(null);
+      onRestart('Plugin settings updated');
     } catch (err) {
       console.error('Failed to save plugin settings:', err);
       setError('Failed to save plugin settings');
+      // On error, revert the state
+      handleCancelSave();
     }
   };
 
