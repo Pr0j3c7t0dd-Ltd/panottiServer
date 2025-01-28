@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
+import { RestartModal } from '@/components/settings/RestartModal';
 
 interface PluginConfig {
-  [key: string]: string | number | boolean | PluginConfig;
+  [key: string]: string | number | boolean | PluginConfig | string[];
 }
 
 interface Plugin {
@@ -17,6 +18,16 @@ interface Plugin {
 
 interface PluginSettingsProps {
   onRestart: (reason: string) => void;
+}
+
+// Helper to convert array to string for display
+function arrayToString(value: string[]): string {
+  return value.join(', ');
+}
+
+// Helper to convert string back to array
+function stringToArray(value: string): string[] {
+  return value.split(',').map(item => item.trim()).filter(Boolean);
 }
 
 // Recursive component to render config fields
@@ -40,6 +51,34 @@ function ConfigFields({
         const fieldId = `${pluginName}-${currentPath.join('-')}`;
         
         if (typeof value === 'object' && value !== null) {
+          if (Array.isArray(value)) {
+            return (
+              <div key={key} className="space-y-1">
+                <label
+                  htmlFor={fieldId}
+                  className="block text-sm font-medium text-white"
+                >
+                  {key}
+                </label>
+                <input
+                  type="text"
+                  id={fieldId}
+                  value={arrayToString(value)}
+                  onChange={(e) => onUpdate(currentPath, stringToArray(e.target.value))}
+                  className="block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                />
+                {defaults[key] !== undefined && (
+                  <p className="text-xs text-zinc-500">
+                    Default: {Array.isArray(defaults[key]) ? arrayToString(defaults[key] as string[]) : String(defaults[key])}
+                  </p>
+                )}
+                <p className="text-xs text-zinc-500">
+                  Enter values separated by commas
+                </p>
+              </div>
+            );
+          }
+          
           return (
             <div key={key} className="space-y-2">
               <h4 className="text-sm font-medium text-white capitalize">{key}</h4>
@@ -98,6 +137,8 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedPlugin, setExpandedPlugin] = useState<string | null>(null);
+  const [showRestartModal, setShowRestartModal] = useState(false);
+  const [pendingSave, setPendingSave] = useState<Plugin | null>(null);
 
   useEffect(() => {
     fetch('/api/plugins')
@@ -114,19 +155,27 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
   }, []);
 
   const handleSave = async (plugin: Plugin) => {
+    setPendingSave(plugin);
+    setShowRestartModal(true);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!pendingSave) return;
+
     try {
-      const res = await fetch(`/api/plugins/${plugin.name}`, {
+      const res = await fetch(`/api/plugins/${pendingSave.name}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          enabled: plugin.enabled,
-          config: plugin.config,
+          enabled: pendingSave.enabled,
+          config: pendingSave.config,
         }),
       });
 
       if (!res.ok) throw new Error('Failed to save plugin settings');
 
-      onRestart(`Plugin "${plugin.friendlyName}" settings have been updated`);
+      setShowRestartModal(false);
+      setPendingSave(null);
     } catch (err) {
       console.error('Failed to save plugin settings:', err);
       setError('Failed to save plugin settings');
@@ -147,7 +196,7 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
   const updatePluginConfig = (
     pluginIndex: number,
     path: string[],
-    value: string | boolean
+    value: string | boolean | string[]
   ) => {
     setPlugins((prev) => {
       const updated = [...prev];
@@ -158,7 +207,7 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
       // Navigate to the nested object
       for (let i = 0; i < path.length - 1; i++) {
         const key = path[i];
-        current[key] = { ...current[key] };
+        current[key] = typeof current[key] === 'object' ? { ...current[key] } : {};
         current = current[key] as PluginConfig;
         currentExisting = currentExisting[key] as PluginConfig;
       }
@@ -167,7 +216,9 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
       const existingValue = currentExisting[lastKey];
       
       // Coerce value based on existing type
-      if (typeof existingValue === 'boolean') {
+      if (Array.isArray(existingValue)) {
+        current[lastKey] = Array.isArray(value) ? value : stringToArray(value as string);
+      } else if (typeof existingValue === 'boolean') {
         current[lastKey] = Boolean(value);
       } else if (typeof existingValue === 'number') {
         current[lastKey] = Number(value);
@@ -188,7 +239,7 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
   }
 
   return (
-    <div>
+    <div className="space-y-6">
       <h3 className="text-xl font-semibold text-white">
         Plugin Settings
       </h3>
@@ -197,7 +248,9 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
       </div>
 
       {error && (
-        <div className="mt-2 text-sm text-red-500">{error}</div>
+        <div className="rounded-md bg-red-500/10 p-4">
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
       )}
 
       <div className="mt-6 space-y-4">
@@ -254,6 +307,15 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
           </div>
         ))}
       </div>
+      <RestartModal
+        isOpen={showRestartModal}
+        onClose={() => {
+          setShowRestartModal(false);
+          setPendingSave(null);
+        }}
+        onConfirm={handleConfirmSave}
+        reason="Saving these settings will restart the server. Any active processing on the server will be cancelled"
+      />
     </div>
   );
 } 

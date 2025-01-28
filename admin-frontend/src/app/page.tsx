@@ -3,10 +3,8 @@
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useSmoothScroll } from '@/hooks/useSmoothScroll';
-import Hero from '@/components/sections/Hero';
-import VideoSection from '@/components/sections/VideoSection';
-import Features from '@/components/sections/Features';
 import Contact from '@/components/sections/Contact';
+import ServerStatus from '@/components/ui/ServerStatus';
 
 export default function Home() {
   const smoothScrollTo = useSmoothScroll();
@@ -15,9 +13,9 @@ export default function Home() {
     <>
       <Header />
       <main className="overflow-hidden">
-        <Hero smoothScrollTo={smoothScrollTo} />
-        <VideoSection />
-        <Features />
+        <div className="container mx-auto px-4 mt-48 pb-4 sm:mt-36">
+          <ServerStatus />
+        </div>
         <Contact />
       </main>
       <Footer />

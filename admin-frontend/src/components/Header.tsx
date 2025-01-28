@@ -76,6 +76,12 @@ export default function Header() {
                 Home
               </Link>
               <Link
+                href="/admin/settings"
+                className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
+              >
+                Settings
+              </Link>
+              <Link
                 href={isHomePage ? "#contact" : "/#contact"}
                 onClick={(e) => handleNavClick(e, 'contact')}
                 className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"

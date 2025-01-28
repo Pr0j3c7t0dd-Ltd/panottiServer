@@ -15,7 +15,11 @@ function coerceConfigValues(newConfig: any, existingConfig: any): any {
   for (const [key, value] of Object.entries(newConfig)) {
     const existingValue = existingConfig[key];
     
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    if (Array.isArray(existingValue)) {
+      // Ensure array values are properly handled
+      result[key] = Array.isArray(value) ? value : 
+        (typeof value === 'string' ? value.split(',').map(item => item.trim()).filter(Boolean) : [String(value)]);
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
       // Recursively handle nested objects
       result[key] = coerceConfigValues(value, existingValue || {});
     } else if (typeof existingValue === 'boolean') {
@@ -49,10 +53,19 @@ export async function POST(
       config: coerceConfigValues(config, existingConfig.config || {}),
     };
 
-    // Write updated configuration
+    // Write updated configuration with proper YAML formatting
     await fs.writeFile(
       configPath,
-      yaml.dump(updatedConfig, { indent: 2, lineWidth: -1, noRefs: true })
+      yaml.dump(updatedConfig, { 
+        indent: 2, 
+        lineWidth: -1, 
+        noRefs: true,
+        quotingType: '"',  // Use double quotes for strings
+        forceQuotes: true,  // Force quotes around strings
+        styles: {
+          '!!seq': 'flow'  // Use flow style for sequences (arrays)
+        }
+      })
     );
 
     return NextResponse.json({ success: true });

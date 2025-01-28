@@ -4,7 +4,7 @@ import DiscordCommunity from '@/components/features/DiscordCommunity';
 
 export default function Contact() {
   return (
-    <section id="contact" className="relative mt-32 sm:mt-40">
+    <section id="contact" className="relative mt-0 sm:mt-0">
       <div className="gradient-blur pointer-events-none absolute inset-0 opacity-30" />
       <div className="relative mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">

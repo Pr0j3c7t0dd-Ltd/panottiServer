@@ -45,6 +45,7 @@ export default function SettingsPage() {
       <RestartModal
         isOpen={showRestartModal}
         onClose={() => setShowRestartModal(false)}
+        onConfirm={() => setShowRestartModal(false)}
         reason={restartReason}
       />
     </>

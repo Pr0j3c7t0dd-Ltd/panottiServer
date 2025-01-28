@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/Button';
 interface RestartModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onConfirm: () => void;
   reason: string;
 }
 
-export function RestartModal({ isOpen, onClose, reason }: RestartModalProps) {
+export function RestartModal({ isOpen, onClose, onConfirm, reason }: RestartModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -20,27 +21,22 @@ export function RestartModal({ isOpen, onClose, reason }: RestartModalProps) {
     setError('');
 
     try {
-      const res = await fetch('/api/restart', {
-        method: 'POST',
-      });
-
-      if (!res.ok) throw new Error('Failed to restart server');
-
+      await onConfirm();
       onClose();
     } catch (err) {
-      console.error('Failed to restart server:', err);
-      setError('Failed to restart server');
+      console.error('Failed to save changes:', err);
+      setError('Failed to save changes');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full flex items-center justify-center">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full flex items-center justify-center z-[100]">
       <div className="relative glass-card p-8 m-4 max-w-xl w-full">
-        <h2 className="text-xl font-bold text-white mb-4">Restart Required</h2>
+        <h2 className="text-xl font-bold text-white mb-4">Save Changes</h2>
         <p className="text-zinc-400 mb-6">
-          {reason}. The server needs to be restarted for these changes to take effect.
+          {reason}
         </p>
 
         {error && (
@@ -58,7 +54,7 @@ export function RestartModal({ isOpen, onClose, reason }: RestartModalProps) {
             onClick={handleRestart}
             disabled={loading}
           >
-            {loading ? 'Restarting...' : 'Restart Server'}
+            {loading ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>
       </div>

@@ -2,13 +2,24 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
+import { RestartModal } from '@/components/settings/RestartModal';
 
 interface EnvVars {
-  [key: string]: string;
+  [key: string]: string | boolean;
 }
 
 interface EnvironmentVariablesProps {
   onRestart: (reason: string) => void;
+}
+
+// Helper to detect if a value is boolean
+function isBooleanString(value: string): boolean {
+  return value.toLowerCase() === 'true' || value.toLowerCase() === 'false';
+}
+
+// Helper to convert string to boolean
+function stringToBoolean(value: string): boolean {
+  return value.toLowerCase() === 'true';
 }
 
 export function EnvironmentVariables({ onRestart }: EnvironmentVariablesProps) {
@@ -16,13 +27,25 @@ export function EnvironmentVariables({ onRestart }: EnvironmentVariablesProps) {
   const [defaultVars, setDefaultVars] = useState<EnvVars>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     fetch('/api/env')
       .then((res) => res.json())
       .then((data) => {
-        setEnvVars(data.env);
-        setDefaultVars(data.defaults);
+        // Convert string boolean values to actual booleans
+        const processedEnv = Object.entries(data.env).reduce((acc, [key, value]) => {
+          acc[key] = isBooleanString(String(value)) ? stringToBoolean(String(value)) : String(value);
+          return acc;
+        }, {} as EnvVars);
+
+        const processedDefaults = Object.entries(data.defaults).reduce((acc, [key, value]) => {
+          acc[key] = isBooleanString(String(value)) ? stringToBoolean(String(value)) : String(value);
+          return acc;
+        }, {} as EnvVars);
+
+        setEnvVars(processedEnv);
+        setDefaultVars(processedDefaults);
         setLoading(false);
       })
       .catch((err) => {
@@ -33,6 +56,10 @@ export function EnvironmentVariables({ onRestart }: EnvironmentVariablesProps) {
   }, []);
 
   const handleSave = async () => {
+    setShowModal(true);
+  };
+
+  const handleConfirmSave = async () => {
     try {
       const res = await fetch('/api/env', {
         method: 'POST',
@@ -42,7 +69,7 @@ export function EnvironmentVariables({ onRestart }: EnvironmentVariablesProps) {
 
       if (!res.ok) throw new Error('Failed to save environment variables');
 
-      onRestart('Environment variables have been updated');
+      setShowModal(false);
     } catch (err) {
       console.error('Failed to save environment variables:', err);
       setError('Failed to save environment variables');
@@ -75,18 +102,30 @@ export function EnvironmentVariables({ onRestart }: EnvironmentVariablesProps) {
             >
               {key}
             </label>
-            <input
-              type="text"
-              id={key}
-              value={value}
-              onChange={(e) =>
-                setEnvVars((prev) => ({ ...prev, [key]: e.target.value }))
-              }
-              className="block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
-            />
-            {defaultVars[key] && (
+            {typeof value === 'boolean' ? (
+              <input
+                type="checkbox"
+                id={key}
+                checked={value}
+                onChange={(e) =>
+                  setEnvVars((prev) => ({ ...prev, [key]: e.target.checked }))
+                }
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-white/10 bg-white/5 rounded"
+              />
+            ) : (
+              <input
+                type="text"
+                id={key}
+                value={value}
+                onChange={(e) =>
+                  setEnvVars((prev) => ({ ...prev, [key]: e.target.value }))
+                }
+                className="block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+              />
+            )}
+            {defaultVars[key] !== undefined && (
               <p className="text-xs text-zinc-500">
-                Default: {defaultVars[key]}
+                Default: {typeof defaultVars[key] === 'boolean' ? (defaultVars[key] ? 'true' : 'false') : String(defaultVars[key])}
               </p>
             )}
           </div>
@@ -101,6 +140,13 @@ export function EnvironmentVariables({ onRestart }: EnvironmentVariablesProps) {
           Save Changes
         </Button>
       </div>
+
+      <RestartModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onConfirm={handleConfirmSave}
+        reason="For these changes to take effect, you must stop the server and start it again in a new shell, as environment variables cannot be updated in a running process"
+      />
     </div>
   );
 } 
