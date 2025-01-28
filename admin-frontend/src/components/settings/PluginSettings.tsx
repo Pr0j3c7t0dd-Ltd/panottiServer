@@ -372,4 +372,4 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
       />
     </div>
   );
-} 
+}
