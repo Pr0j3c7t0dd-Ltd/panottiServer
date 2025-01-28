@@ -14,7 +14,7 @@ from pathlib import Path
 # ANSI Color codes
 class Colors:
     HEADER = '\x1b[38;5;26m'     # Blue
-    BLUE = '\033[94m'       # Blue
+    BLUE = '\x1b[38;5;26m'       # Blue
     GREEN = '\033[92m'      # Green
     YELLOW = '\033[93m'     # Yellow
     RED = '\033[91m'        # Red
@@ -421,7 +421,6 @@ def check_node_installation():
 
 def setup_admin_frontend():
     """Setup the admin frontend application"""
-    print_step("🖥️", "Setting up admin frontend...")
     admin_dir = Path("admin-frontend")
     
     if not admin_dir.exists():
@@ -513,11 +512,11 @@ def main():
         print("   - Add your API keys in the remote_meeting_notes plugin configuration")
         print(f"\n{color_text('2. Start the server using one of the following commands:', Colors.BOLD)}")
         print("   a. Using the shell script (recommended):")
-        print(color_text("      ./start_servers.sh", Colors.GREEN))
+        print(color_text("\n     👉 ./start_servers.sh 👈\n", Colors.GREEN))
         print("   b. Using Docker Compose:")
         print(color_text("      docker-compose up", Colors.GREEN))
         print(f"\n{color_text('3. After you start the server, you can access the admin frontend:', Colors.BOLD)}")
-        print(color_text("   - Visit http://localhost:54790/", Colors.BLUE))
+        print(color_text("   - 👉 Visit http://localhost:54790/  👈", Colors.BLUE))
         print("   - Default password: Pa55w0rd")
         print("   - You will be prompted to change this password on first login")
         print(f"\n{color_text('🎯 Make sure all configuration files are properly set up before starting the server.', Colors.YELLOW)}")
