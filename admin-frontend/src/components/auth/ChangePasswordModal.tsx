@@ -70,6 +70,7 @@ export function ChangePasswordModal({ isOpen, onClose, isDefault }: ChangePasswo
               type="password"
               name="oldPassword"
               required
+              autoComplete="current-password"
               className="mt-1 block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
               value={oldPassword}
               onChange={(e) => setOldPassword(e.target.value)}
@@ -83,6 +84,7 @@ export function ChangePasswordModal({ isOpen, onClose, isDefault }: ChangePasswo
               type="password"
               name="newPassword"
               required
+              autoComplete="new-password"
               className="mt-1 block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -96,6 +98,7 @@ export function ChangePasswordModal({ isOpen, onClose, isDefault }: ChangePasswo
               type="password"
               name="confirmPassword"
               required
+              autoComplete="new-password"
               className="mt-1 block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
