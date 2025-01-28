@@ -11,6 +11,36 @@ import subprocess
 import sys
 from pathlib import Path
 
+# ANSI Color codes
+class Colors:
+    HEADER = '\033[95m'     # Purple
+    BLUE = '\033[94m'       # Blue
+    GREEN = '\033[92m'      # Green
+    YELLOW = '\033[93m'     # Yellow
+    RED = '\033[91m'        # Red
+    BOLD = '\033[1m'        # Bold
+    UNDERLINE = '\033[4m'   # Underline
+    END = '\033[0m'         # Reset
+
+def color_text(text, color):
+    """Wrap text with color codes"""
+    return f"{color}{text}{Colors.END}"
+
+def print_step(emoji, text):
+    """Print a setup step with consistent formatting"""
+    print(f"\n{emoji} {color_text(text, Colors.BLUE)}")
+
+def print_success(text):
+    """Print a success message"""
+    print(color_text(text, Colors.GREEN))
+
+def print_warning(text):
+    """Print a warning message"""
+    print(color_text(text, Colors.YELLOW))
+
+def print_error(text):
+    """Print an error message"""
+    print(color_text(text, Colors.RED))
 
 def get_user_confirmation(message):
     """Ask user for confirmation before proceeding with an action"""
@@ -247,16 +277,29 @@ def copy_plugin_yaml_files():
 def download_whisper_model():
     """Download the Whisper model"""
     if get_user_confirmation("Would you like to download the Whisper model? This is required for audio transcription."):
-        print("Downloading Whisper model...")
+        print_step("🎙️", "Downloading Whisper model (this may take a few minutes)...")
         script_path = Path(
             "app/plugins/audio_transcription_local/scripts/download_models.py"
         )
         if script_path.exists():
-            subprocess.run(
-                [sys.executable, str(script_path), "--model", "base.en"], check=True
-            )
+            try:
+                subprocess.run(
+                    [sys.executable, str(script_path), "--model", "base.en"], 
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                print_success("Whisper model downloaded successfully!")
+            except subprocess.CalledProcessError as e:
+                print_error(f"Error downloading Whisper model: {e.stderr}")
+                if not get_user_confirmation("Would you like to continue with setup?"):
+                    sys.exit(1)
+        else:
+            print_error("Download script not found!")
+            if not get_user_confirmation("Would you like to continue with setup?"):
+                sys.exit(1)
     else:
-        print("Whisper model is required for audio transcription functionality.")
+        print_warning("Whisper model is required for audio transcription functionality.")
         sys.exit(1)
 
 
@@ -356,32 +399,32 @@ def check_node_installation():
         major_version = int(version_num[0])
         
         if major_version < 18:
-            print(f"Node.js version {node_version} is installed, but version 18 or higher is required.")
+            print_warning(f"Node.js version {node_version} is installed, but version 18 or higher is required.")
             if platform.system() == "Darwin" and get_user_confirmation("Would you like to install Node.js 18 via Homebrew?"):
                 subprocess.run(["brew", "install", "node@18"], check=True)
                 # Link the installed version
                 subprocess.run(["brew", "link", "node@18", "--force"], check=True)
-                print("Node.js 18 installed successfully!")
+                print_success("Node.js 18 installed successfully!")
             else:
-                print("Please install Node.js 18 or higher manually from https://nodejs.org/")
+                print_warning("Please install Node.js 18 or higher manually from https://nodejs.org/")
                 sys.exit(1)
     except (subprocess.CalledProcessError, FileNotFoundError):
         if platform.system() == "Darwin" and get_user_confirmation("Node.js is not installed. Would you like to install it via Homebrew?"):
             subprocess.run(["brew", "install", "node@18"], check=True)
             subprocess.run(["brew", "link", "node@18", "--force"], check=True)
-            print("Node.js installed successfully!")
+            print_success("Node.js installed successfully!")
         else:
-            print("Please install Node.js 18 or higher manually from https://nodejs.org/")
+            print_warning("Please install Node.js 18 or higher manually from https://nodejs.org/")
             sys.exit(1)
 
 
 def setup_admin_frontend():
     """Setup the admin frontend application"""
-    print("\n🖥️  Setting up admin frontend...")
+    print_step("🖥️", "Setting up admin frontend...")
     admin_dir = Path("admin-frontend")
     
     if not admin_dir.exists():
-        print("Error: admin-frontend directory not found!")
+        print_error("Error: admin-frontend directory not found!")
         sys.exit(1)
         
     # Copy .env.local if it doesn't exist
@@ -389,7 +432,7 @@ def setup_admin_frontend():
     env_target = admin_dir / ".env.local"
     if not env_target.exists() and env_example.exists():
         shutil.copy(env_example, env_target)
-        print("Created admin frontend .env.local from sample file")
+        print_success("Created admin frontend .env.local from sample file")
     
     # Install npm dependencies
     os.chdir(admin_dir)
@@ -401,81 +444,88 @@ def setup_admin_frontend():
     subprocess.run(["npm", "run", "init-password"], check=True)
     
     os.chdir("..")
-    print("Admin frontend setup completed successfully!")
+    print_success("Admin frontend setup completed successfully!")
 
 
 def main():
     """Main setup function"""
     try:
-        print("\n🚀 Welcome to the panottiServer setup script!")
+        print(f"\n{color_text('🚀 Welcome to the panottiServer setup script!', Colors.HEADER)}")
         print("This script will guide you through the installation process.")
         print("You can choose which components to install.\n")
         
-        print("⚠️  Important Note:")
+        print(f"{color_text('⚠️  Important Note:', Colors.YELLOW)}")
         print("If you plan to customize the code or create your own plugins,")
         print("please first fork the repository before running this setup script:")
-        print("https://github.com/Pr0j3c7t0dd-Ltd/panottiServer\n")
+        print(color_text("https://github.com/Pr0j3c7t0dd-Ltd/panottiServer\n", Colors.UNDERLINE))
 
         if not get_user_confirmation("Would you like to proceed with the setup?"):
-            print("Setup cancelled.")
+            print_warning("Setup cancelled.")
             sys.exit(0)
 
         # Check Ollama setup first
-        print("\n🤖 Checking Ollama setup...")
+        print_step("🤖", "Checking Ollama setup...")
         check_ollama_setup()
 
-        # First check and install Homebrew as it's needed for other dependencies
-        print("\n🍺 Checking Homebrew installation...")
+        print_step("🍺", "Checking Homebrew installation...")
         check_brew_installation()
-        # Then install system dependencies including pyenv
-        print("\n📦 Installing system dependencies...")
+        
+        print_step("📦", "Installing system dependencies...")
         install_system_dependencies()
-        # Now check Python version since we have the tools to install it if needed
-        print("\n🐍 Checking Python version...")
+        
+        print_step("🐍", "Checking Python version...")
         check_python_version()
         
-        print("\n⚙️  Checking Rust installation...")
+        print_step("⚙️", "Checking Rust installation...")
         check_rust_installation()
-        print("\n📝 Checking Poetry installation...")
+        
+        print_step("📝", "Checking Poetry installation...")
         check_poetry_installation()
-        print("\n🌐 Setting up virtual environment...")
+        
+        print_step("🌐", "Setting up virtual environment...")
         setup_virtual_environment()
-        print("\n🎙️ Downloading Whisper model...")
+        
+        print_step("🎙️", "Downloading Whisper model...")
         download_whisper_model()
-        print("\n🔒 Setting up SSL certificates...")
+        
+        print_step("🔒", "Setting up SSL certificates...")
         create_ssl_directory()
-        print("\n💻 Checking Node.js installation...")
+        
+        print_step("💻", "Checking Node.js installation...")
         check_node_installation()
-        print("\n🖥️  Setting up admin frontend...")
+        
+        print_step("🖥️", "Setting up admin frontend...")
         setup_admin_frontend()
-        print("\n⚡ Setting up environment files...")
+        
+        print_step("⚡", "Setting up environment files...")
         copy_env_file()
-        print("\n🔧 Setting up plugin configurations...")
+        
+        print_step("🔧", "Setting up plugin configurations...")
         copy_plugin_yaml_files()
 
-        print("\n✨ Setup completed successfully! 💥")
-        print("\n📋 Important Next Steps:")
-        print("1. Review and configure your plugin settings:")
+        print(f"\n{color_text('✨ Setup completed successfully! 💥', Colors.GREEN + Colors.BOLD)}")
+        print(f"\n{color_text('📋 Important Next Steps:', Colors.HEADER)}")
+        print(color_text("1. Review and configure your plugin settings:", Colors.BOLD))
         print("   - Check app/plugins/meeting_notes/plugin.yaml")
         print("   - By default, local meeting note processing is enabled")
         print("   - To use remote processing, enable the remote_meeting_notes plugin")
         print("   - Add your API keys in the remote_meeting_notes plugin configuration")
-        print("\n2. Start the server using one of the following commands:")
+        print(f"\n{color_text('2. Start the server using one of the following commands:', Colors.BOLD)}")
         print("   a. Using the shell script (recommended):")
-        print("      ./start_servers.sh")
+        print(color_text("      ./start_servers.sh", Colors.GREEN))
         print("   b. Using Docker Compose:")
-        print("      docker-compose up")
-        print("\n3. After you start the server, you can access the admin frontend:")
-        print("   - Visit http://localhost:54790/")
+        print(color_text("      docker-compose up", Colors.GREEN))
+        print(f"\n{color_text('3. After you start the server, you can access the admin frontend:', Colors.BOLD)}")
+        print(color_text("   - Visit http://localhost:54790/", Colors.BLUE))
         print("   - Default password: Pa55w0rd")
         print("   - You will be prompted to change this password on first login")
-        print("\n🎯 Make sure all configuration files are properly set up before starting the server.")
+        print(f"\n{color_text('🎯 Make sure all configuration files are properly set up before starting the server.', Colors.YELLOW)}")
 
     except KeyboardInterrupt:
-        print("\n❌ Setup cancelled by user.")
+        print_error("\n❌ Setup cancelled by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ An error occurred during setup: {e}")
+        print_error(f"\n❌ An error occurred during setup: {e}")
         sys.exit(1)
 
 

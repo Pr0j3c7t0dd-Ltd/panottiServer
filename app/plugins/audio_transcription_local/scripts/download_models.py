@@ -8,7 +8,8 @@ import os
 import sys
 from pathlib import Path
 
-from faster_whisper import download_model
+from huggingface_hub import snapshot_download
+from faster_whisper import WhisperModel
 
 
 def get_project_root() -> Path:
@@ -31,15 +32,21 @@ def download_whisper_model(model_name: str, output_dir: str) -> None:
         # First ensure the output directory exists
         os.makedirs(output_dir, exist_ok=True)
 
-        # Download the model
-        download_model(model_name, output_dir=output_dir)
+        # Download the model using huggingface_hub's snapshot_download
+        repo_id = f"Systran/faster-whisper-{model_name}"
+        snapshot_download(
+            repo_id=repo_id,
+            local_dir=output_dir,
+            local_dir_use_symlinks=False
+        )
 
-        # Verify the download
-        config_path = os.path.join(output_dir, "config.json")
-        if not os.path.exists(config_path):
-            raise RuntimeError(f"Model files not found after download in {output_dir}")
+        # Verify the download by trying to load the model
+        try:
+            WhisperModel(model_name, download_root=output_dir, local_files_only=True)
+            print(f"Successfully downloaded and verified model '{model_name}' to {output_dir}")
+        except Exception as e:
+            raise RuntimeError(f"Model verification failed: {e}")
 
-        print(f"Successfully downloaded model '{model_name}' to {output_dir}")
     except Exception as e:
         print(f"Error downloading model: {e}", file=sys.stderr)
         sys.exit(1)
