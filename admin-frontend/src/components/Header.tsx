@@ -58,11 +58,11 @@ export default function Header() {
                   <Image
                     src="/images/icon_final.webp"
                     alt="Panotti Logo"
-                    width={64}
-                    height={64}
+                    width={32}
+                    height={32}
                     className="size-8"
-                    priority
-                    sizes="64px"
+                    priority={true}
+                    loading="eager"
                   />
                   <span className="text-lg font-semibold text-white">PanottiServer Admin</span>
                 </div>

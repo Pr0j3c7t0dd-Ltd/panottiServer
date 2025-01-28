@@ -23,10 +23,7 @@ export async function GET() {
     }
     
     const healthCheckUrl = new URL('health', url).toString();
-
-    const httpsAgent = new https.Agent({
-      rejectUnauthorized: false
-    });
+    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
     const response = await axios.get(healthCheckUrl, {
       httpsAgent,
@@ -39,8 +36,6 @@ export async function GET() {
     return NextResponse.json(response.data);
     
   } catch (error) {
-    console.error('Health check error:', error);
-
     if (error instanceof AxiosError) {
       return NextResponse.json(
         {
