@@ -25,7 +25,11 @@ export function LoginForm() {
       const data = await res.json();
 
       if (data.success) {
-        router.push('/admin/settings');
+        if (data.requiresPasswordChange) {
+          router.push('/admin/change-password');
+        } else {
+          router.push('/');
+        }
       } else {
         setError(data.message || 'Invalid password');
       }
