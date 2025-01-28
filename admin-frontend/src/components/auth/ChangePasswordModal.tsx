@@ -120,6 +120,7 @@ export function ChangePasswordModal({ isOpen, onClose, isDefault }: ChangePasswo
           <div className="flex justify-end space-x-3">
             {!isDefault && (
               <Button
+                type="button"
                 variant="secondary"
                 onClick={onClose}
               >
