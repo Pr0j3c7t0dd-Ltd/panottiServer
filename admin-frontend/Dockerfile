@@ -7,7 +7,11 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # Copy configuration files
-COPY postcss.config.js tailwind.config.ts tsconfig.json ./
+COPY postcss.config.js postcss.config.mjs tailwind.config.ts tsconfig.json next.config.js .eslintrc.json .prettierrc ./
+
+# Copy sensitive files
+COPY .env.local ./.env.local
+COPY password-hash.txt ./password-hash.txt
 
 # Copy the rest of the application
 COPY . .
