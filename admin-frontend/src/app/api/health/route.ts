@@ -2,17 +2,22 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
+    // Extract host from API base URL
+    const apiUrl = new URL(process.env.NEXT_PUBLIC_API_BASE_URL || '');
+    
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/health`, {
       headers: {
         'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
         'Accept': 'application/json',
+        'Host': apiUrl.host
       },
       // Required for self-signed certificates
       cache: 'no-store'
     });
 
     if (!response.ok) {
-      throw new Error(`Server responded with status: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Server responded with status: ${response.status}, body: ${errorText}`);
     }
 
     const data = await response.json();
