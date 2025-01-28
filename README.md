@@ -23,6 +23,10 @@ If you wish to support our work, please donate via PayPal:
 - Audio transcription with OpenAI Whisper (offline mode)
 - Automated meeting notes generation with local or remote Ollama LLM
 - Desktop notifications for important events
+- Admin dashboard for monitoring and configuration
+  - Real-time event monitoring
+  - Plugin management interface
+  - System configuration
 
 ## Help & Support
 
@@ -179,14 +183,11 @@ Note: When using self-signed certificates in development, your browser will show
 
 ### Docker Deployment
 
-The application can be run using Docker and Docker Compose for easier deployment and consistent environments.
+The application consists of two main services:
+1. Backend API server (FastAPI)
+2. Admin frontend (React)
 
-> ⚠️ **IMPORTANT WARNING**: Running Ollama within Docker is **strongly discouraged** due to significant resource constraints and potential stability issues. It is highly recommended to:
-> 1. Run Ollama directly on your host machine
-> 2. Run only the application in Docker
-> 3. Configure the application to connect to your host's Ollama server
->
-> This approach provides better performance and stability while maintaining the benefits of containerization for the main application.
+Both services are configured in the Docker Compose setup and will be built and started together.
 
 #### Prerequisites
 
@@ -203,8 +204,8 @@ curl -fsSL https://get.docker.com | sh
 
 #### Configuration
 
-The application uses two Docker Compose files:
-- `docker-compose.yml`: Core application configuration
+The application uses these Docker Compose files:
+- `docker-compose.yml`: Core services configuration (API + Admin Frontend)
 - `docker-compose.ollama.yml`: Optional Ollama service configuration
 
 When using host's Ollama, update your plugin configuration in `app/plugins/meeting_notes_local/plugin.yaml`:
@@ -218,12 +219,16 @@ ollama_url: "http://172.17.0.1:11434/api/generate"  # Linux
 
 1. Using host's Ollama (recommended):
 ```bash
-# Build and start the application
+# Build and start all services
 docker-compose up --build
 
 # Run in detached mode
 docker-compose up -d
 ```
+
+This will:
+- Build and start the FastAPI backend (available at http://localhost:54789)
+- Build and start the Admin frontend (available at http://localhost:54790)
 
 2. Using Docker's Ollama (not recommended):
 ```bash
@@ -239,59 +244,13 @@ docker-compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
 docker-compose down
 ```
 
-#### Updating Docker Containers
+#### Accessing the Services
 
-When you need to update the containers with new changes:
-
-1. Stop the running containers:
-```bash
-docker compose down
-```
-
-2. Rebuild the containers without using cache:
-```bash
-# For host Ollama (recommended):
-docker compose build --no-cache app
-
-# For Docker Ollama (not recommended):
-docker compose -f docker-compose.yml -f docker-compose.ollama.yml build --no-cache
-```
-
-3. Start the containers again:
-```bash
-# For host Ollama (recommended):
-docker compose up -d
-
-# For Docker Ollama (not recommended):
-docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
-```
-
-All in one command:
-```bash
-# For host Ollama (recommended):
-docker compose down && docker compose build --no-cache app && docker compose up -d
-
-# For Docker Ollama (not recommended):
-docker compose down && docker compose -f docker-compose.yml -f docker-compose.ollama.yml build --no-cache && docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
-```
-
-#### Running with Docker directly
-
-1. Build the Docker image:
-```bash
-docker build -t panotti-server .
-```
-
-2. Run the container:
-```bash
-docker run -p 8001:8001 \
-  --env-file .env \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/logs:/app/logs \
-  panotti-server
-```
-
-The server will be accessible at `http://localhost:54789`
+After starting the containers:
+- Backend API: http://localhost:54789
+- Admin Dashboard: http://localhost:54790
+- API Documentation: http://localhost:54789/docs
+- ReDoc Documentation: http://localhost:54789/redoc
 
 ## Usage
 
