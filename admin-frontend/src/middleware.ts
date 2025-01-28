@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyPassword } from './lib/auth';
+import { verifyPassword, isDefaultPassword } from './lib/auth';
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
@@ -15,6 +15,7 @@ export async function middleware(request: NextRequest) {
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
   const isLoginPage = request.nextUrl.pathname === '/login';
+  const isChangePasswordPage = request.nextUrl.pathname === '/admin/change-password';
   const sessionToken = request.cookies.get('session_token');
 
   // Allow access to login page if not authenticated
@@ -28,6 +29,12 @@ export async function middleware(request: NextRequest) {
   // Protect all other routes
   if (!sessionToken) {
     return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  // If using default password, only allow access to change password page
+  const usingDefaultPassword = await isDefaultPassword();
+  if (usingDefaultPassword && !isChangePasswordPage) {
+    return NextResponse.redirect(new URL('/admin/change-password', request.url));
   }
 
   return response;
