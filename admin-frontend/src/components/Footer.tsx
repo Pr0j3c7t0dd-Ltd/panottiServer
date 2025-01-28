@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 
 function DiscordIcon({ className = "w-5 h-5" }) {

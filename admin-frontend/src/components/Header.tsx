@@ -2,12 +2,17 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState } from 'react';
 import AnnouncementStrip from '@/components/ui/AnnouncementStrip';
+import { Button } from '@/components/ui/Button';
+import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal';
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const isHomePage = pathname === '/';
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     if (isHomePage) {
@@ -23,6 +28,20 @@ export default function Header() {
           behavior: 'smooth'
         });
       }
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const res = await fetch('/api/logout', {
+        method: 'POST',
+      });
+
+      if (!res.ok) throw new Error('Failed to logout');
+
+      router.push('/login');
+    } catch (err) {
+      console.error('Failed to logout:', err);
     }
   };
 
@@ -49,7 +68,7 @@ export default function Header() {
                 </div>
               </Link>
             </div>
-            <div className="flex gap-x-4 sm:gap-x-8 lg:gap-x-12">
+            <div className="flex items-center gap-x-4 sm:gap-x-8 lg:gap-x-12">
               <Link
                 href={isHomePage ? "#" : "/"}
                 className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
@@ -63,10 +82,27 @@ export default function Header() {
               >
                 Contact Us
               </Link>
+              <button
+                onClick={() => setShowChangePassword(true)}
+                className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
+              >
+                Change Password
+              </button>
+              <Button
+                variant="secondary"
+                onClick={handleLogout}
+                size="sm"
+              >
+                Logout
+              </Button>
             </div>
           </nav>
         </header>
       </div>
+      <ChangePasswordModal
+        isOpen={showChangePassword}
+        onClose={() => setShowChangePassword(false)}
+      />
     </div>
   );
 }
