@@ -216,18 +216,16 @@ def copy_env_file():
 
 def copy_plugin_yaml_files():
     """Copy plugin.yaml.example files to plugin.yaml for each plugin"""
-    if get_user_confirmation("Would you like to set up plugin configuration files (say 'yes' to all for default setup)?"):
+    if get_user_confirmation("Would you like to set up all plugin configuration files with default settings?"):
         plugins_dir = Path("app/plugins")
         for plugin_dir in plugins_dir.iterdir():
             if plugin_dir.is_dir() and not plugin_dir.name.startswith("__"):
                 example_yaml = plugin_dir / "plugin.yaml.example"
                 target_yaml = plugin_dir / "plugin.yaml"
                 if example_yaml.exists() and not target_yaml.exists():
-                    if get_user_confirmation(f"Create configuration for plugin {plugin_dir.name}?"):
-                        shutil.copy(example_yaml, target_yaml)
-                        print(f"Created {target_yaml} from example file")
-                    else:
-                        print(f"Skipped {plugin_dir.name} plugin configuration")
+                    shutil.copy(example_yaml, target_yaml)
+                    print(f"Created {target_yaml} from example file")
+        print("All plugin configurations have been set up with default settings")
     else:
         print("Plugin configuration is required for the application to run.")
         sys.exit(1)
