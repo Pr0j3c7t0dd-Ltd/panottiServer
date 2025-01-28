@@ -37,11 +37,10 @@ export async function POST(
   request: Request,
   context: { params: { pluginName: string } }
 ) {
-  const { params } = context;
   try {
+    const params = await context.params;
     const { enabled, config } = await request.json();
-    const pluginName = await params.pluginName;
-    const pluginPath = path.join(PLUGINS_DIR, pluginName);
+    const pluginPath = path.join(PLUGINS_DIR, params.pluginName);
 
     // Read existing plugin.yaml
     const configPath = path.join(pluginPath, 'plugin.yaml');
