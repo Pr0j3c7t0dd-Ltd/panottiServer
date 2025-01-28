@@ -27,8 +27,9 @@ function arrayToString(value: string[]): string {
 
 // Helper to convert string back to array
 function stringToArray(value: string): string[] {
-  // Don't filter out empty values to preserve commas
-  return value.split(',').map(item => item.trim());
+  return value.split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
 }
 
 // Recursive component to render config fields
@@ -53,6 +54,8 @@ function ConfigFields({
         
         if (typeof value === 'object' && value !== null) {
           if (Array.isArray(value)) {
+            const [inputValue, setInputValue] = useState(arrayToString(value));
+            
             return (
               <div key={key} className="space-y-1">
                 <label
@@ -64,15 +67,12 @@ function ConfigFields({
                 <input
                   type="text"
                   id={fieldId}
-                  value={arrayToString(value)}
+                  value={inputValue}
                   onChange={(e) => {
-                    const inputValue = e.target.value;
+                    const newValue = e.target.value;
                     const selectionStart = e.target.selectionStart;
-                    // Only filter empty values when updating the actual state
-                    const arrayValue = inputValue.split(',')
-                      .map(item => item.trim())
-                      .filter(Boolean);
-                    onUpdate(currentPath, arrayValue);
+                    setInputValue(newValue);
+                    onUpdate(currentPath, stringToArray(newValue));
                     // Preserve cursor position after state update
                     requestAnimationFrame(() => {
                       const input = document.getElementById(fieldId) as HTMLInputElement;
