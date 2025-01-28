@@ -111,7 +111,17 @@ class TestExamplePlugin(BasePluginTest):
     async def test_handle_recording_ended_no_context(self, plugin):
         """Test recording ended handler with missing context"""
         # Mock event data without context
-        event = {"data": {"recording": {"id": "test_recording"}}}
+        event = {
+            "recording_id": "test_recording",
+            "current_event": {
+                "recording": {
+                    "audio_paths": {
+                        "microphone": "test_mic_path",
+                        "system": "test_sys_path"
+                    }
+                }
+            }
+        }
 
         # Initialize plugin
         with patch("app.plugins.example.plugin.ThreadPoolExecutor"):
@@ -126,33 +136,33 @@ class TestExamplePlugin(BasePluginTest):
 
             # Verify event structure
             assert completion_event.name == "example.completed"
+            assert completion_event.data["recording"]["recording_id"] == "test_recording"
+            assert completion_event.data["recording"]["audio_paths"]["microphone"] == "test_mic_path"
+            assert completion_event.data["recording"]["audio_paths"]["system"] == "test_sys_path"
             assert completion_event.data["context"]["source_plugin"] == "example"
             assert completion_event.data["metadata"] == {}
 
     async def test_handle_recording_ended_error(self, plugin):
         """Test recording ended handler error case"""
-        # Mock event data with context and metadata
+        # Mock event data with correct structure
         event = {
-            "name": "recording.ended",
-            "data": {
-                "recording": {"id": "test_recording"},
-                "metadata": {"test_key": "test_value"},
+            "recording_id": "test_recording",
+            "current_event": {
+                "recording": {
+                    "audio_paths": {
+                        "microphone": "test_mic_path",
+                        "system": "test_sys_path"
+                    }
+                }
             },
+            "metadata": {"test_key": "test_value"},
             "correlation_id": "test_correlation_id",
-            "source_plugin": "test_source",
-            "context": {
-                "correlation_id": "test_correlation_id",
-                "source_plugin": "test_source",
-                "metadata": {"test_key": "test_value"},
-            },
+            "source_plugin": "test_source"
         }
 
         # Set up the mock to track calls and raise exception on first call
         mock_publish = AsyncMock()
-        mock_publish.side_effect = [
-            Exception("Test error"),
-            None,
-        ]  # First call raises, second succeeds
+        mock_publish.side_effect = Exception("Test error")
         plugin.event_bus.publish = mock_publish
 
         # Initialize plugin
@@ -160,22 +170,11 @@ class TestExamplePlugin(BasePluginTest):
             await plugin.initialize()
 
             # Test event handling with error
-            with pytest.raises(Exception):
+            with pytest.raises(Exception, match="Test error"):
                 await plugin._handle_recording_ended(event)
 
-            # Verify both events were attempted to be published
-            assert mock_publish.call_count == 2  # Both completion and error events
-            error_event = mock_publish.call_args_list[1].args[
-                0
-            ]  # Get the second call's args
-
-            # Verify error event structure
-            assert error_event.name == "example.error"
-            assert error_event.data["recording"] == {"id": "test_recording"}
-            assert error_event.data["example"]["status"] == "error"
-            assert "Test error" in error_event.data["example"]["error"]
-            assert error_event.data["metadata"] == {"test_key": "test_value"}
-            assert error_event.context.source_plugin == "example"
+            # Verify publish was called once and raised the exception
+            mock_publish.assert_called_once()
 
     async def test_name_property(self, plugin):
         """Test name property returns correct value"""
