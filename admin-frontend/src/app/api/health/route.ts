@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 
+// This is needed for self-signed certificates
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 export async function GET() {
   // Extract host from API base URL
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -13,6 +16,7 @@ export async function GET() {
   try {
     // Parse and validate the URL
     const url = new URL(apiBaseUrl);
+    
     console.debug('API Base URL parts:', {
       full: url.toString(),
       protocol: url.protocol,
@@ -21,14 +25,6 @@ export async function GET() {
       host: url.host,
       pathname: url.pathname
     });
-
-    // Ensure we have a valid protocol
-    if (!url.protocol.startsWith('http')) {
-      return NextResponse.json(
-        { error: 'Invalid API URL protocol', url: apiBaseUrl },
-        { status: 500 }
-      );
-    }
 
     // Construct health check URL properly
     const healthCheckUrl = new URL('health', url).toString();
