@@ -1,4 +1,25 @@
 services:
+  admin-frontend:
+    build: 
+      context: ./admin-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "54790:54790"
+    volumes:
+      - ./admin-frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - PORT=54790
+      - NEXT_TELEMETRY_DISABLED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:54790"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
   app:
     build: .
     ports:

@@ -79,7 +79,7 @@ class ExamplePlugin(PluginBase):
             )
             raise
 
-    async def _handle_recording_ended(self, event_data: EventData) -> None:
+    async def _handle_recording_ended(self, event_data: Event | dict) -> None:
         """Handle recording.ended event.
 
         This is an example event handler that demonstrates how to process events.
@@ -88,109 +88,72 @@ class ExamplePlugin(PluginBase):
             event_data: Event data containing both event data and context
         """
         try:
-            # Initialize context as None
-            context = None
+            # Extract data handling both dict and Event object formats
+            if isinstance(event_data, dict):
+                recording_id = event_data.get("recording_id")
+                current_event = event_data.get("current_event", {})
+                recording_data = current_event.get("recording", {})
+                audio_paths = recording_data.get("audio_paths", {})
+                mic_path = audio_paths.get("microphone")
+                sys_path = audio_paths.get("system")
+                metadata = event_data.get("metadata", {})
+                correlation_id = str(metadata.get("correlation_id", uuid.uuid4()))
+            else:
+                recording_id = event_data.data.get("recording_id")
+                mic_path = event_data.data.get("microphone_audio_path")
+                sys_path = event_data.data.get("system_audio_path")
+                metadata = event_data.data.get("metadata", {})
+                correlation_id = str(getattr(event_data.context, "correlation_id", uuid.uuid4()))
 
-            # Extract context from event
-            context = (
-                event_data.get("context")
-                if isinstance(event_data, dict)
-                else getattr(event_data, "context", None)
-            )
-            if not context:
-                logger.warning("No context found in event")
-                context = EventContext(correlation_id=str(uuid.uuid4()))
+            if not recording_id:
+                logger.error("No recording_id found in event data")
+                return
 
-            logger.debug(
-                "Handling recording.ended event",
+            # Process the event
+            logger.info(
+                "Processing recording ended event",
                 extra={
-                    "event_id": getattr(context, "event_id", None),
-                    "event_type": getattr(context, "event_type", None),
-                },
+                    "recording_id": recording_id,
+                    "mic_path": mic_path,
+                    "sys_path": sys_path
+                }
             )
 
-            # Example processing
-            debug_mode = self.get_config("debug_mode", False)
-            example_setting = self.get_config("example_setting")
-            recording_id = event_data.get("data", {}).get("recording", {}).get("id")
-
-            # Example of emitting a completion event with preserved event chain
+            # Emit completion event
             if self.event_bus:
-                completion_event = Event.create(
+                completed_event = Event.create(
                     name="example.completed",
                     data={
-                        "recording": event_data.get("data", {}).get("recording", {}),
-                        "example": {
+                        "recording": {
                             "status": "completed",
                             "timestamp": datetime.now(UTC).isoformat(),
                             "recording_id": recording_id,
-                            "config": {
-                                "debug_mode": debug_mode,
-                                "example_setting": example_setting,
-                            },
+                            "audio_paths": {
+                                "system": sys_path,
+                                "microphone": mic_path
+                            }
                         },
-                        "metadata": event_data.get("data", {}).get("metadata", {}),
+                        "metadata": metadata,
                         "context": {
-                            "correlation_id": getattr(
-                                event_data, "correlation_id", str(uuid.uuid4())
-                            ),
+                            "correlation_id": correlation_id,
                             "source_plugin": self.name,
-                            "metadata": event_data.get("data", {}).get("metadata", {}),
-                        },
+                            "metadata": metadata
+                        }
                     },
-                    correlation_id=getattr(
-                        event_data, "correlation_id", str(uuid.uuid4())
-                    ),
+                    correlation_id=correlation_id,
                     source_plugin=self.name,
-                    priority=EventPriority.NORMAL,
+                    priority=EventPriority.NORMAL
                 )
-                await self.event_bus.publish(completion_event)
-
-            logger.info(
-                "Example plugin processed recording.ended event",
-                extra={
-                    "event_id": getattr(context, "event_id", None),
-                    "debug_mode": debug_mode,
-                    "example_setting": example_setting,
-                },
-            )
+                await self.event_bus.publish(completed_event)
 
         except Exception as e:
             logger.error(
                 "Error handling recording.ended event",
                 extra={
-                    "event_id": getattr(context, "event_id", None) if context else None,  # type: ignore
                     "error": str(e),
-                    "error_type": type(e).__name__,
-                },
+                    "error_type": type(e).__name__
+                }
             )
-
-            # Example of emitting an error event with preserved event chain
-            if self.event_bus:
-                error_event = Event.create(
-                    name="example.error",
-                    data={
-                        # Preserve original event data
-                        "recording": event_data.get("data", {}).get("recording", {}),
-                        # Add current event data
-                        "example": {
-                            "status": "error",
-                            "timestamp": datetime.now(UTC).isoformat(),
-                            "error": str(e),
-                            "debug_mode": debug_mode,
-                            "example_setting": example_setting,
-                            "event_id": getattr(context, "event_id", None),
-                        },
-                        # Preserve metadata
-                        "metadata": event_data.get("metadata", {})
-                        or event_data.get("data", {}).get("metadata", {}),
-                    },
-                    correlation_id=getattr(context, "correlation_id", None)
-                    or str(uuid.uuid4()),
-                    source_plugin=self.name,
-                    priority=EventPriority.NORMAL,
-                )
-                await self.event_bus.publish(error_event)
             raise
 
     @property

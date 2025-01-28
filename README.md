@@ -2,6 +2,8 @@
 
 # panottiServer
 
+<img src="panotti-icon.png" alt="Panotti logo" width="64" height="64">
+
 A FastAPI-based Python server for handling recording events with a plugin-based architecture and secure API endpoints.  More information, including the download link for the companionPanotti MacOS desktop app, can be found at [https://www.panotti.io/](https://www.panotti.io/).
 
 Panotti was made by AI! Learn about AI in software development on our [Substack](https://pr0j3c7t0dd.substack.com/) — practical insights on leveraging AI in modern development workflows.
@@ -345,7 +347,7 @@ python run_server.py
 
 2. Using the shell script:
 ```bash
-./start_server.sh
+./start_servers.sh
 ```
 
 Both methods will read the port configuration from your `.env` file. The default port is 54789 if not specified.
@@ -656,7 +658,7 @@ python run_server.py
 
 2. Using the shell script:
 ```bash
-./start_server.sh
+./start_servers.sh
 ```
 
 Both methods will read the port configuration from your `.env` file. The default port is 54789 if not specified.

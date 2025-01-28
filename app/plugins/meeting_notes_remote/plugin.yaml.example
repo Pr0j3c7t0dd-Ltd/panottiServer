@@ -1,10 +1,11 @@
 name: "meeting_notes_remote"
 version: "1.0.0"
 enabled: false
-dependencies: ["audio_transcription"]
+dependencies:
+  - "audio_transcription"
 config:
   output_directory: "data/meeting_notes_remote"
-  provider: "anthropic"  # Supported values: openai, anthropic, google
+  provider: "anthropic"
   max_concurrent_tasks: 4
   timeout: 600
   openai:

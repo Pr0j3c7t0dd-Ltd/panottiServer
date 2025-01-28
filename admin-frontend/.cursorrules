@@ -1,0 +1,148 @@
+# Rules for Next.js Site with Tailwind CSS
+
+## General Rules
+
+### Packages
+- Install and use the following packages for a production-quality website:
+  - **Tailwind CSS**: `tailwindcss` for styling.
+  - **React Query**: For data fetching and caching.
+  - **Zod** or **Yup**: For schema validation.
+  - **Jest** with **React Testing Library**: For testing.
+  - **ESLint**: For linting, with `eslint-config-next` and `eslint-config-tailwindcss`.
+  - **Prettier**: For consistent code formatting.
+  - **Husky**: For Git hooks to enforce code quality on commit.
+  - **Commitlint**: To enforce conventional commits.
+  - **NextAuth.js**: For authentication.
+  - **Helmet**: For securing HTTP headers.
+  - **Dotenv**: For environment variable management.
+  - **Pino**: For logging.
+  - **Sentry**: For error tracking.
+  - **PostCSS Plugins**: For additional CSS processing if needed.
+  - **SWC or Babel Plugins**: For transpilation as required.
+
+### Folder Structure
+```
+.
+|-- public/                # Static files (images, fonts, etc.)
+|-- src/
+    |-- components/        # Reusable components
+    |   |-- ui/            # Low-level UI components
+    |   |-- layouts/       # Layout components
+    |-- features/          # Feature-specific components
+    |-- hooks/             # Custom React hooks
+    |-- lib/               # Utilities and helper functions
+    |-- pages/             # Next.js routes
+    |   |-- api/           # API routes
+    |   |-- _app.tsx       # Custom App component
+    |   |-- _document.tsx  # Custom Document component
+    |-- styles/            # Global and utility CSS
+    |-- types/             # TypeScript type definitions
+    |-- services/          # External services or API integrations
+    |-- middleware.ts      # Middleware for API and route handling
+    |-- prisma/            # Database ORM schema (if using Prisma)
+    |-- tests/             # Unit and integration tests
+```
+
+### Best Coding Practices
+- Use **TypeScript** strictly.
+- Follow a modular structure, separating concerns (e.g., logic in hooks, presentation in components).
+- Use **functional components** with React hooks.
+- Prefer **server components** for SSR and CSR where possible.
+- Optimize images with `next/image`.
+- Use Tailwind classes consistently with a utility-first mindset.
+- Encapsulate styles using `className` and avoid inline styles.
+- Use absolute imports with `baseUrl` set in `tsconfig.json`.
+- Leverage Next.js `getStaticProps` and `getServerSideProps` for data fetching.
+- Write clear and descriptive comments where necessary.
+
+## Non-Functional Requirements
+
+### Testing
+- Use **Jest** for unit testing and **React Testing Library** for component testing.
+- Write tests for all components and hooks with at least 80% coverage.
+- Use **Cypress** for end-to-end testing.
+- Configure `jest.config.js` with appropriate TypeScript support.
+
+### Logging
+- Use **Pino** for structured logging.
+- Add a custom logging service in `src/lib/logger.ts`.
+- Log all API requests and significant actions in the application lifecycle.
+
+### Security
+- Use **Helmet** for securing HTTP headers.
+- Sanitize all user input using `Zod` or `Yup`.
+- Use environment variables securely with `.env.local`.
+- Implement CSRF protection in forms.
+- Enforce HTTPS in production.
+- Use secure cookies with `httpOnly` and `secure` flags.
+
+### Performance
+- Use `next/image` for optimized images.
+- Prefetch pages using `next/link`.
+- Enable caching with proper `Cache-Control` headers.
+- Minimize and lazy-load third-party scripts.
+- Monitor performance using **Next.js Analytics** or a similar tool.
+
+### Accessibility
+- Follow **WCAG** guidelines.
+- Use semantic HTML.
+- Test with screen readers.
+- Ensure keyboard navigability.
+
+### Deployment
+- Use **Vercel** for hosting or set up a CI/CD pipeline with GitHub Actions.
+- Automate testing in the CI/CD pipeline.
+- Optimize builds with `next build`.
+
+## Additional Guidelines
+
+### ESLint Configuration
+Use the following `.eslintrc.js` configuration:
+```javascript
+module.exports = {
+  root: true,
+  extends: ["next", "next/core-web-vitals", "prettier", "plugin:tailwindcss/recommended"],
+  plugins: ["tailwindcss"],
+  rules: {
+    "react/react-in-jsx-scope": "off",
+    "tailwindcss/no-custom-classname": "off",
+  },
+};
+```
+
+### Prettier Configuration
+Use the following `.prettierrc` configuration:
+```json
+{
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "tabWidth": 2,
+  "semi": true
+}
+```
+
+### Tailwind Configuration
+Ensure `tailwind.config.js` has content paths:
+```javascript
+module.exports = {
+  content: ["./src/**/*.{js,ts,jsx,tsx}"],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+```
+
+### Commitlint Configuration
+Use `commitlint` to enforce conventional commits:
+```javascript
+module.exports = {
+  extends: ["@commitlint/config-conventional"],
+};
+```
+
+### Git Hooks
+Configure `Husky` for pre-commit and pre-push checks:
+```bash
+npx husky add .husky/pre-commit "npm run lint && npm test"
+npx husky add .husky/pre-push "npm run build"

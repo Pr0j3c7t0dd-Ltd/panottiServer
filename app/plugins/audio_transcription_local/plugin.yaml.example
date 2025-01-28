@@ -1,7 +1,8 @@
 name: "audio_transcription_local"
 version: "1.0.0"
 enabled: true
-dependencies: ["noise_reduction"]
+dependencies:
+  - "noise_reduction"
 config:
   output_directory: "data/transcripts_local"
   model_name: "base.en"
