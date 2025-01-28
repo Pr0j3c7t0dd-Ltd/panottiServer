@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const isDefault = await isDefaultPassword();
 
     // Set session cookie
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     cookieStore.set('session_token', 'authenticated', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
