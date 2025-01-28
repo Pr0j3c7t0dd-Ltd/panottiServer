@@ -151,23 +151,27 @@ function ConfigFields({
 export function PluginSettings({ onRestart }: PluginSettingsProps) {
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [expandedPlugin, setExpandedPlugin] = useState<string | null>(null);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [pendingSave, setPendingSave] = useState<Plugin | null>(null);
 
+  const fetchPlugins = async () => {
+    try {
+      const res = await fetch('/api/plugins');
+      const data = await res.json();
+      setPlugins(data);
+      setLoading(false);
+    } catch (err) {
+      console.error('Failed to load plugins:', err);
+      setError('Failed to load plugins');
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/plugins')
-      .then((res) => res.json())
-      .then((data) => {
-        setPlugins(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Failed to load plugins:', err);
-        setError('Failed to load plugins');
-        setLoading(false);
-      });
+    fetchPlugins();
   }, []);
 
   const handleSave = async (plugin: Plugin) => {
@@ -201,6 +205,8 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
 
   const handleConfirmSave = async () => {
     if (!pendingSave) return;
+    setIsSaving(true);
+    setError('');
 
     try {
       const res = await fetch(`/api/plugins/${pendingSave.name}`, {
@@ -214,28 +220,21 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
 
       if (!res.ok) throw new Error('Failed to save plugin settings');
 
-      // Just close the modal on success, don't modify any state
+      // Wait for a moment to allow server to process changes
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Refresh plugin list to get latest state
+      await fetchPlugins();
+
+      // Only close modal after everything is done
       setShowRestartModal(false);
       setPendingSave(null);
     } catch (err) {
       console.error('Failed to save plugin settings:', err);
       setError('Failed to save plugin settings');
-      // Find the plugin index and revert its state
-      if (pendingSave) {
-        const pluginIndex = plugins.findIndex(p => p.name === pendingSave.name);
-        if (pluginIndex !== -1) {
-          setPlugins(prev => {
-            const updated = [...prev];
-            updated[pluginIndex] = {
-              ...updated[pluginIndex],
-              enabled: !pendingSave.enabled // Revert to opposite of what was pending
-            };
-            return updated;
-          });
-        }
-      }
-      setShowRestartModal(false);
-      setPendingSave(null);
+      handleCancelSave();
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -369,6 +368,7 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
         onClose={handleCancelSave}
         onConfirm={handleConfirmSave}
         reason="Saving these settings will restart the server. Any active processing on the server will be cancelled"
+        isLoading={isSaving}
       />
     </div>
   );
