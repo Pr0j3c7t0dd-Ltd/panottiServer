@@ -62,6 +62,14 @@ export function ChangePasswordModal({ isOpen, onClose, isDefault }: ChangePasswo
           {isDefault ? 'Change Default Password' : 'Change Password'}
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="text"
+            name="username"
+            autoComplete="username"
+            defaultValue="admin"
+            className="hidden"
+            aria-hidden="true"
+          />
           <div>
             <label className="block text-sm font-medium text-white">
               Current Password

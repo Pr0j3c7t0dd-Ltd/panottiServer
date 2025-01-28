@@ -16,7 +16,8 @@ export async function GET() {
         const pluginPath = path.join(PLUGINS_DIR, dir);
         const stat = await fs.stat(pluginPath);
         
-        if (!stat.isDirectory()) return null;
+        // Skip if not a directory or if it's a __pycache__ directory
+        if (!stat.isDirectory() || dir === '__pycache__') return null;
 
         try {
           // Read both plugin.yaml and plugin.yaml.example
