@@ -35,11 +35,13 @@ function coerceConfigValues(newConfig: any, existingConfig: any): any {
 
 export async function POST(
   request: Request,
-  { params }: { params: { pluginName: string } }
+  context: { params: { pluginName: string } }
 ) {
+  const { params } = context;
   try {
     const { enabled, config } = await request.json();
-    const pluginPath = path.join(PLUGINS_DIR, params.pluginName);
+    const pluginName = await params.pluginName;
+    const pluginPath = path.join(PLUGINS_DIR, pluginName);
 
     // Read existing plugin.yaml
     const configPath = path.join(pluginPath, 'plugin.yaml');
