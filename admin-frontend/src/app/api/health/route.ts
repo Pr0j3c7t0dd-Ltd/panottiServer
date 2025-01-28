@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
+import axios, { AxiosError } from 'axios';
+import https from 'https';
 
 // This is needed for self-signed certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 export async function GET() {
-  // Extract host from API base URL
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!apiBaseUrl) {
     return NextResponse.json(
@@ -14,55 +15,39 @@ export async function GET() {
   }
 
   try {
-    // Parse and validate the URL
     const url = new URL(apiBaseUrl);
-    
-    console.debug('API Base URL parts:', {
-      full: url.toString(),
-      protocol: url.protocol,
-      hostname: url.hostname,
-      port: url.port,
-      host: url.host,
-      pathname: url.pathname
+    const healthCheckUrl = new URL('health', url).toString();
+
+    const httpsAgent = new https.Agent({
+      rejectUnauthorized: false
     });
 
-    // Construct health check URL properly
-    const healthCheckUrl = new URL('health', url).toString();
-    console.debug('Attempting health check at:', healthCheckUrl);
-
-    const response = await fetch(healthCheckUrl, {
+    const response = await axios.get(healthCheckUrl, {
+      httpsAgent,
       headers: {
         'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
-        'Accept': 'application/json',
-      },
-      cache: 'no-store'
+        'Accept': 'application/json'
+      }
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Health check failed: ${response.status} - ${errorText}`);
-      return NextResponse.json(
-        { error: 'Health check failed', status: response.status, details: errorText },
-        { status: response.status }
-      );
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(response.data);
     
   } catch (error) {
-    const errorMessage = error instanceof Error 
-      ? `${error.message} (URL: ${apiBaseUrl})`
-      : 'Unknown error occurred';
-      
-    console.error('Health check error:', errorMessage);
+    console.error('Health check error:', error);
+
+    if (error instanceof AxiosError) {
+      return NextResponse.json(
+        {
+          error: 'Failed to check server health',
+          details: error.response?.data || error.message,
+          status: error.response?.status
+        },
+        { status: error.response?.status || 500 }
+      );
+    }
     
     return NextResponse.json(
-      { 
-        error: 'Failed to check server health', 
-        details: errorMessage,
-        url: apiBaseUrl
-      },
+      { error: 'Failed to check server health' },
       { status: 500 }
     );
   }
