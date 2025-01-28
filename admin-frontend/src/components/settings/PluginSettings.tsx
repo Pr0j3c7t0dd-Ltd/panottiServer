@@ -175,27 +175,9 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
     setShowRestartModal(true);
   };
 
-  const handleConfirmSave = async () => {
-    if (!pendingSave) return;
-
-    try {
-      const res = await fetch(`/api/plugins/${pendingSave.name}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          enabled: pendingSave.enabled,
-          config: pendingSave.config,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Failed to save plugin settings');
-
-      setShowRestartModal(false);
-      setPendingSave(null);
-    } catch (err) {
-      console.error('Failed to save plugin settings:', err);
-      setError('Failed to save plugin settings');
-    }
+  const handleModalClose = () => {
+    setShowRestartModal(false);
+    setPendingSave(null);
   };
 
   const handleCancelSave = () => {
@@ -213,8 +195,29 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
         });
       }
     }
-    setShowRestartModal(false);
-    setPendingSave(null);
+    handleModalClose();
+  };
+
+  const handleConfirmSave = async () => {
+    if (!pendingSave) return;
+
+    try {
+      const res = await fetch(`/api/plugins/${pendingSave.name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: pendingSave.enabled,
+          config: pendingSave.config,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to save plugin settings');
+
+      handleModalClose();
+    } catch (err) {
+      console.error('Failed to save plugin settings:', err);
+      setError('Failed to save plugin settings');
+    }
   };
 
   const togglePlugin = (index: number) => {
