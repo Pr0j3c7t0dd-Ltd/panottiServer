@@ -13,7 +13,7 @@ from pathlib import Path
 
 # ANSI Color codes
 class Colors:
-    HEADER = '\033[94m'     # Blue
+    HEADER = '\x1b[38;5;26m'     # Blue
     BLUE = '\033[94m'       # Blue
     GREEN = '\033[92m'      # Green
     YELLOW = '\033[93m'     # Yellow

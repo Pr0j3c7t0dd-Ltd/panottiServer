@@ -34,15 +34,23 @@ def download_whisper_model(model_name: str, output_dir: str) -> None:
 
         # Download the model using huggingface_hub's snapshot_download
         repo_id = f"Systran/faster-whisper-{model_name}"
+        
+        # First download the model files
         snapshot_download(
             repo_id=repo_id,
             local_dir=output_dir,
-            local_dir_use_symlinks=False
+            local_files_only=False  # Allow downloading from Hub
         )
 
         # Verify the download by trying to load the model
         try:
-            WhisperModel(model_name, download_root=output_dir, local_files_only=True)
+            # Initialize model with local files and online access
+            model = WhisperModel(
+                model_name, 
+                download_root=output_dir, 
+                local_files_only=False,  # Allow downloading any missing files
+                compute_type="int8"
+            )
             print(f"Successfully downloaded and verified model '{model_name}' to {output_dir}")
         except Exception as e:
             raise RuntimeError(f"Model verification failed: {e}")
