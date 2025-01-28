@@ -31,10 +31,10 @@ export default function AnnouncementStrip({ smoothScrollTo }: AnnouncementStripP
             </a>
             <span className="text-zinc-600">•</span>
           <Link
-            href="https://www.panotti.io/#features"
+            href="https://www.panotti.io/"
             className="text-zinc-400 hover:text-white"
           >
-            Learn More <span aria-hidden="true">→</span>
+            Panotti.io website <span aria-hidden="true">→</span>
           </Link>
         </div>
       </div>
