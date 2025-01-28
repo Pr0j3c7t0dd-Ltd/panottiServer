@@ -198,6 +198,25 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
     }
   };
 
+  const handleCancelSave = () => {
+    if (pendingSave) {
+      // Find the plugin index and revert its state
+      const pluginIndex = plugins.findIndex(p => p.name === pendingSave.name);
+      if (pluginIndex !== -1) {
+        setPlugins(prev => {
+          const updated = [...prev];
+          updated[pluginIndex] = {
+            ...updated[pluginIndex],
+            enabled: !pendingSave.enabled // Revert to opposite of what was pending
+          };
+          return updated;
+        });
+      }
+    }
+    setShowRestartModal(false);
+    setPendingSave(null);
+  };
+
   const togglePlugin = (index: number) => {
     const updatedPlugins = [...plugins];
     updatedPlugins[index] = {
@@ -324,10 +343,7 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
       </div>
       <RestartModal
         isOpen={showRestartModal}
-        onClose={() => {
-          setShowRestartModal(false);
-          setPendingSave(null);
-        }}
+        onClose={handleCancelSave}
         onConfirm={handleConfirmSave}
         reason="Saving these settings will restart the server. Any active processing on the server will be cancelled"
       />
