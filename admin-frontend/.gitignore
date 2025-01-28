@@ -1,5 +1,6 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 .env.local
+password-hash.txt
 
 # dependencies
 /node_modules
@@ -39,4 +40,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-password-hash.txt
