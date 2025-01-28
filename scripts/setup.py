@@ -111,8 +111,7 @@ def install_system_dependencies():
     brew_packages = [
         ("terminal-notifier", "Required for desktop notifications"),
         ("ffmpeg", "Required for audio processing"),
-        ("pyenv", "Recommended for Python version management"),
-        ("poetry", "Recommended for Python dependency management"),
+        ("pyenv", "Recommended for Python version management")
     ]
 
     for package, description in brew_packages:
@@ -160,13 +159,27 @@ def check_rust_installation():
 def check_poetry_installation():
     """Check if Poetry is installed, install if not"""
     try:
+        # First try to check if poetry is in PATH
         subprocess.run(["poetry", "--version"], check=True, capture_output=True)
+        print("Poetry is already installed")
+        return True
     except (subprocess.CalledProcessError, FileNotFoundError):
-        if get_user_confirmation("Poetry is not installed. Would you like to install it using Homebrew?"):
-            subprocess.run(["brew", "install", "poetry"], check=True)
-        else:
-            print("Poetry is required for dependency management. Please install it manually.")
-            sys.exit(1)
+        # If not in PATH, check if it's installed via Homebrew
+        try:
+            subprocess.run(["brew", "list", "poetry"], check=True, capture_output=True)
+            print("Poetry is installed via Homebrew but not in PATH")
+            if get_user_confirmation("Would you like to add Poetry to your PATH?"):
+                # Add Poetry to PATH
+                subprocess.run(["brew", "link", "poetry", "--force"], check=True)
+                return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            if get_user_confirmation("Poetry is not installed. Would you like to install it using Homebrew?"):
+                subprocess.run(["brew", "install", "poetry"], check=True)
+                return True
+            else:
+                print("Poetry is required for dependency management. Please install it manually.")
+                sys.exit(1)
+    return False
 
 
 def setup_virtual_environment():
