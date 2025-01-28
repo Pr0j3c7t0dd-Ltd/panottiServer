@@ -195,6 +195,12 @@ def copy_env_file():
             api_key = get_user_input("Enter your API_KEY", "your_api_key_here")
             update_env_value(".env", "API_KEY", api_key)
             
+            # Update admin frontend .env.local
+            admin_env_path = Path("admin-frontend/.env.local")
+            if admin_env_path.exists():
+                update_env_value(admin_env_path, "NEXT_PUBLIC_API_KEY", api_key)
+                print("Updated admin frontend API key configuration")
+            
             # Get RECORDINGS_DIR
             print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
             recordings_dir = get_user_input("Enter the path to your recordings directory")
@@ -330,6 +336,63 @@ def check_ollama_setup():
         print("in app/plugins/remote_meeting_notes/plugin.yaml")
 
 
+def check_node_installation():
+    """Check if Node.js is installed and at the correct version"""
+    try:
+        # Check Node.js version
+        node_version = subprocess.run(["node", "--version"], capture_output=True, text=True, check=True).stdout.strip()
+        version_num = node_version.lstrip('v').split('.')
+        major_version = int(version_num[0])
+        
+        if major_version < 18:
+            print(f"Node.js version {node_version} is installed, but version 18 or higher is required.")
+            if platform.system() == "Darwin" and get_user_confirmation("Would you like to install Node.js 18 via Homebrew?"):
+                subprocess.run(["brew", "install", "node@18"], check=True)
+                # Link the installed version
+                subprocess.run(["brew", "link", "node@18", "--force"], check=True)
+                print("Node.js 18 installed successfully!")
+            else:
+                print("Please install Node.js 18 or higher manually from https://nodejs.org/")
+                sys.exit(1)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        if platform.system() == "Darwin" and get_user_confirmation("Node.js is not installed. Would you like to install it via Homebrew?"):
+            subprocess.run(["brew", "install", "node@18"], check=True)
+            subprocess.run(["brew", "link", "node@18", "--force"], check=True)
+            print("Node.js installed successfully!")
+        else:
+            print("Please install Node.js 18 or higher manually from https://nodejs.org/")
+            sys.exit(1)
+
+
+def setup_admin_frontend():
+    """Setup the admin frontend application"""
+    print("\nSetting up admin frontend...")
+    admin_dir = Path("admin-frontend")
+    
+    if not admin_dir.exists():
+        print("Error: admin-frontend directory not found!")
+        sys.exit(1)
+        
+    # Copy .env.local if it doesn't exist
+    env_example = admin_dir / ".env.local.sample"
+    env_target = admin_dir / ".env.local"
+    if not env_target.exists() and env_example.exists():
+        shutil.copy(env_example, env_target)
+        print("Created admin frontend .env.local from sample file")
+    
+    # Install npm dependencies
+    os.chdir(admin_dir)
+    print("\nInstalling admin frontend dependencies...")
+    subprocess.run(["npm", "install"], check=True)
+    
+    # Run password initialization
+    print("\nInitializing admin password...")
+    subprocess.run(["npm", "run", "init-password"], check=True)
+    
+    os.chdir("..")
+    print("Admin frontend setup completed successfully!")
+
+
 def main():
     """Main setup function"""
     try:
@@ -359,11 +422,13 @@ def main():
         check_rust_installation()
         check_poetry_installation()
         setup_virtual_environment()
-        copy_env_file()
-        copy_plugin_yaml_files()
         # check_docker_installation()
         download_whisper_model()
         create_ssl_directory()
+        check_node_installation()
+        setup_admin_frontend()
+        copy_env_file()
+        copy_plugin_yaml_files()
 
         print("\nSetup completed successfully!")
         print("\nImportant Next Steps:")
@@ -377,6 +442,10 @@ def main():
         print("      ./start_servers.sh")
         print("   b. Using Docker Compose:")
         print("      docker-compose up")
+        print("\n3. After you start the server, you can access the admin frontend:")
+        print("   - Visit http://localhost:54790/")
+        print("   - Default password: Pa55w0rd")
+        print("   - You will be prompted to change this password on first login")
         print("\nMake sure all configuration files are properly set up before starting the server.")
 
     except KeyboardInterrupt:
