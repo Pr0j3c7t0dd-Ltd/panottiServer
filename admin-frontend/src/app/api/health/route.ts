@@ -1,27 +1,28 @@
 import { NextResponse } from 'next/server';
-import https from 'https';
 
 export async function GET() {
   try {
-    const agent = new https.Agent({
-      rejectUnauthorized: false
-    });
-
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/health`, {
       headers: {
         'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
         'Accept': 'application/json',
       },
       // @ts-ignore
-      agent: agent
+      next: {
+        revalidate: 30
+      }
     });
+
+    if (!response.ok) {
+      throw new Error(`Server responded with status: ${response.status}`);
+    }
 
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
     console.error('Health check error:', error);
     return NextResponse.json(
-      { error: 'Failed to check server health' },
+      { error: 'Failed to check server health', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
