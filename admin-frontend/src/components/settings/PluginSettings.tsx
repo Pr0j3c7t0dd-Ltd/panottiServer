@@ -27,7 +27,8 @@ function arrayToString(value: string[]): string {
 
 // Helper to convert string back to array
 function stringToArray(value: string): string[] {
-  return value.split(',').map(item => item.trim()).filter(Boolean);
+  // Don't filter out empty values to preserve commas
+  return value.split(',').map(item => item.trim());
 }
 
 // Recursive component to render config fields
@@ -67,10 +68,17 @@ function ConfigFields({
                   onChange={(e) => {
                     const inputValue = e.target.value;
                     const selectionStart = e.target.selectionStart;
-                    onUpdate(currentPath, stringToArray(inputValue));
+                    // Only filter empty values when updating the actual state
+                    const arrayValue = inputValue.split(',')
+                      .map(item => item.trim())
+                      .filter(Boolean);
+                    onUpdate(currentPath, arrayValue);
                     // Preserve cursor position after state update
                     requestAnimationFrame(() => {
-                      e.target.setSelectionRange(selectionStart, selectionStart);
+                      const input = document.getElementById(fieldId) as HTMLInputElement;
+                      if (input) {
+                        input.setSelectionRange(selectionStart, selectionStart);
+                      }
                     });
                   }}
                   className="block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
