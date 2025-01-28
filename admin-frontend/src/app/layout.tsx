@@ -29,6 +29,11 @@ export const metadata: Metadata = {
   },
 };
 
+// Create a client-side wrapper component
+const ClientProviders = ({ children }: { children: React.ReactNode }) => {
+  return <QueryProvider>{children}</QueryProvider>;
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -40,9 +45,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased relative min-h-screen`}
         suppressHydrationWarning
       >
-        <QueryProvider>
+        <ClientProviders>
           {children}
-        </QueryProvider>
+        </ClientProviders>
       </body>
     </html>
   );
