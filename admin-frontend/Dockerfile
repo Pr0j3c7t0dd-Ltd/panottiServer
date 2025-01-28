@@ -18,7 +18,7 @@ COPY . .
 
 # Set environment variables
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=development
+ENV NODE_ENV=production
 ENV PORT=54790
 
 # Build the application
@@ -27,5 +27,5 @@ RUN npm run build
 # Expose the port
 EXPOSE 54790
 
-# Start the application in development mode
-CMD ["npm", "run", "dev"]
+# Start the application
+CMD ["npm", "start"]
