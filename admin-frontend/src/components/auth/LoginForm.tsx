@@ -38,6 +38,15 @@ export function LoginForm() {
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
+      <input
+        type="text"
+        name="username"
+        id="username"
+        autoComplete="username"
+        defaultValue="admin"
+        className="hidden"
+        aria-hidden="true"
+      />
       <div>
         <label htmlFor="password" className="sr-only">
           Password
@@ -47,6 +56,7 @@ export function LoginForm() {
           name="password"
           type="password"
           required
+          autoComplete="current-password"
           className="block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
           placeholder="Admin Password"
           value={password}
