@@ -39,6 +39,9 @@ yarn-error.log*
 .env.local
 # but allow sample env files
 !.env.*.sample
+# allow the api/env folder
+!**/api/env
+!**/api/env/**
 
 # vercel
 .vercel
