@@ -1,3 +1,12 @@
+# First ignore everything in admin-frontend
+/admin-frontend/*
+# Then explicitly un-ignore everything in admin-frontend
+!/admin-frontend/**/*
+
+# Allow admin-frontend/src/lib directory
+!/admin-frontend/src/lib/
+!/admin-frontend/src/lib/**
+
 .vscode
 output.txt
 *.DS_Store
@@ -27,8 +36,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Only ignore Python-related lib directories
+/lib/
+python*/lib/
 parts/
 sdist/
 var/
