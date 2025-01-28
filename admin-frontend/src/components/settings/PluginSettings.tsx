@@ -199,14 +199,13 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
   };
 
   const togglePlugin = (index: number) => {
-    setPlugins((prev) => {
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        enabled: !updated[index].enabled,
-      };
-      return updated;
-    });
+    const updatedPlugins = [...plugins];
+    updatedPlugins[index] = {
+      ...updatedPlugins[index],
+      enabled: !updatedPlugins[index].enabled,
+    };
+    setPlugins(updatedPlugins);
+    handleSave(updatedPlugins[index]);
   };
 
   const updatePluginConfig = (
