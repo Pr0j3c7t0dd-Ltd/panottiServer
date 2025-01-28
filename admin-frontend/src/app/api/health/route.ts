@@ -14,39 +14,47 @@ export async function GET() {
       pathname: apiUrl.pathname
     });
     
-    // Try to resolve the hostname first
+    // Try to resolve the hostname first with IPv4
     try {
       const dnsPromise = await import('dns/promises');
-      const addresses = await dnsPromise.lookup(apiUrl.hostname);
+      const addresses = await dnsPromise.lookup(apiUrl.hostname, { family: 4 });
       console.log('Debug - DNS lookup:', addresses);
-    } catch (dnsError) {
-      console.log('Debug - DNS lookup failed:', dnsError);
-    }
-    
-    console.log('Debug - Attempting fetch with headers:', {
-      'X-API-Key': process.env.NEXT_PUBLIC_API_KEY ? '(set)' : '(not set)',
-      'Accept': 'application/json',
-      'Host': apiUrl.host
-    });
-    
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/health`, {
-      headers: {
-        'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
+      
+      // Use the resolved IPv4 address
+      const ipv4Url = new URL(process.env.NEXT_PUBLIC_API_BASE_URL || '');
+      ipv4Url.hostname = addresses.address;
+      
+      console.log('Debug - Using IPv4 URL:', ipv4Url.toString());
+      
+      console.log('Debug - Attempting fetch with headers:', {
+        'X-API-Key': process.env.NEXT_PUBLIC_API_KEY ? '(set)' : '(not set)',
         'Accept': 'application/json',
         'Host': apiUrl.host
-      },
-      // Required for self-signed certificates
-      cache: 'no-store'
-    });
+      });
+      
+      const response = await fetch(ipv4Url.toString() + '/health', {
+        headers: {
+          'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
+          'Accept': 'application/json',
+          'Host': apiUrl.host
+        },
+        // Required for self-signed certificates
+        cache: 'no-store'
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Server responded with status: ${response.status}, body: ${errorText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server responded with status: ${response.status}, body: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Debug - Successful response:', data);
+      return NextResponse.json(data);
+      
+    } catch (dnsError) {
+      console.log('Debug - DNS lookup failed:', dnsError);
+      throw dnsError;
     }
-
-    const data = await response.json();
-    console.log('Debug - Successful response:', data);
-    return NextResponse.json(data);
   } catch (error) {
     console.error('Health check error:', error);
     
