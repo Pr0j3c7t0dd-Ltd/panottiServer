@@ -24,14 +24,21 @@ if [ ! -f "$SSL_KEYFILE" ] || [ ! -f "$SSL_CERTFILE" ]; then
 fi
 
 # Start Admin Frontend server in the background
-ADMIN_START_SCRIPT="admin-frontend/start_admin_server.sh"
-if [ -f "$ADMIN_START_SCRIPT" ]; then
+ADMIN_DIR="admin-frontend"
+if [ -d "$ADMIN_DIR" ]; then
     echo "Starting Admin Frontend server on port $ADMIN_PORT in the background..."
     lsof -i :"$ADMIN_PORT" -t | xargs kill -9 2>/dev/null  # Kill any process using the port
-    chmod +x "$ADMIN_START_SCRIPT"
-    (cd admin-frontend && ./start_admin_server.sh) &  # Run in background from admin-frontend directory
+    
+    # Copy .env.local.sample to .env.local if it doesn't exist
+    if [ ! -f "$ADMIN_DIR/.env.local" ] && [ -f "$ADMIN_DIR/.env.local.sample" ]; then
+        echo "Creating .env.local from sample..."
+        cp "$ADMIN_DIR/.env.local.sample" "$ADMIN_DIR/.env.local"
+    fi
+    
+    # Start Next.js from the admin-frontend directory
+    (cd "$ADMIN_DIR" && npx cross-env PORT="$ADMIN_PORT" npm run dev) &
 else
-    echo "Admin frontend start script not found. Exiting..."
+    echo "Admin frontend directory not found. Exiting..."
     exit 1
 fi
 
