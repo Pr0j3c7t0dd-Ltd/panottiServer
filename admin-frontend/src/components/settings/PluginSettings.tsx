@@ -171,6 +171,7 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
   }, []);
 
   const handleSave = async (plugin: Plugin) => {
+    if (showRestartModal) return;
     setPendingSave(plugin);
     setShowRestartModal(true);
   };
@@ -227,12 +228,13 @@ export function PluginSettings({ onRestart }: PluginSettingsProps) {
 
   const togglePlugin = (index: number) => {
     const updatedPlugins = [...plugins];
-    updatedPlugins[index] = {
+    const updatedPlugin = {
       ...updatedPlugins[index],
       enabled: !updatedPlugins[index].enabled,
     };
+    updatedPlugins[index] = updatedPlugin;
     setPlugins(updatedPlugins);
-    handleSave(updatedPlugins[index]);
+    handleSave(updatedPlugin);
   };
 
   const updatePluginConfig = (
