@@ -1,6 +1,6 @@
 [![Discord Shield](https://discord.com/api/guilds/1316533461577891882/widget.png?style=shield)](https://discord.gg/fgVQWfPCmn)
 
-<img src="panotti-icon.png" alt="Panotti logo" width="32" height="32">
+<img src="panotti-icon.png" alt="Panotti logo" width="64" height="64">
 
 # panottiServer
 
