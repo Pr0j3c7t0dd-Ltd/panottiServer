@@ -1,29 +1,9 @@
 services:
-  admin-frontend:
-    build: 
-      context: ./admin-frontend
-      dockerfile: Dockerfile
-    ports:
-      - "54790:54790"
-    volumes:
-      - ./admin-frontend:/app
-      - /app/node_modules
-      - /app/.next
-    environment:
-      - NODE_ENV=development
-      - PORT=54790
-      - NEXT_TELEMETRY_DISABLED=1
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:54790"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
   app:
     build: .
     ports:
       - "${API_PORT}:${API_PORT}"
+      - "54790:54790"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -47,6 +27,7 @@ services:
       - ./app/plugins/noise_reduction/plugin.yaml:/app/app/plugins/noise_reduction/plugin.yaml
       - ${RECORDINGS_DIR}:${RECORDINGS_DIR}
       - ./recordings:/app/recordings
+      - ./admin-frontend:/app/admin-frontend
     env_file:
       - .env
     environment:
@@ -60,22 +41,19 @@ services:
       - API_PORT=${API_PORT}
       - OLLAMA_MODEL=llama3.1:8b
       - OLLAMA_TIMEOUT=600
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:${API_PORT}/docs"]
+      test: |
+        /bin/sh -c '
+        curl -k -f "https://127.0.0.1:${API_PORT}/docs" &&
+        wget --spider http://localhost:54790
+        '
       interval: 30s
       timeout: 60s
       retries: 10
       start_period: 120s
-    command: >
-      sh -c "
-      echo '=== Environment ===' &&
-      env | sort &&
-      echo '=== Directory Structure ===' &&
-      ls -laR /app &&
-      echo '=== Starting App ===' &&
-      /app/docker-entrypoint.sh
-      "
 
 volumes:
   whisper_models: 
