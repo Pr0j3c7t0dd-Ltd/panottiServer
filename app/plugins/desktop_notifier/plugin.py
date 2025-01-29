@@ -304,6 +304,7 @@ class DesktopNotifierPlugin(PluginBase):
                     "Desktop notifications not implemented for this platform",
                     extra={"plugin": self.name, "platform": os.uname().sysname},
                 )
+                return  # Continue execution without raising
         except subprocess.CalledProcessError as e:
             logger.error(
                 "Failed to send notification",
@@ -313,7 +314,7 @@ class DesktopNotifierPlugin(PluginBase):
                     "recording_id": recording_id,
                 },
             )
-            raise
+            # Don't raise, allow completion event to be sent
 
     async def _open_notes_file(self, notes_path: str) -> None:
         """Open notes file with default application"""
@@ -325,12 +326,13 @@ class DesktopNotifierPlugin(PluginBase):
                     "Auto-open not implemented for this platform",
                     extra={"plugin": self.name, "platform": os.uname().sysname},
                 )
+                return  # Continue execution without raising
         except subprocess.CalledProcessError as e:
             logger.error(
                 "Failed to open notes file",
                 extra={"plugin": self.name, "error": str(e), "notes_path": notes_path},
             )
-            raise
+            # Don't raise, allow completion event to be sent
 
     async def _init_database(self) -> None:
         """Initialize database tables"""
