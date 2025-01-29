@@ -9,6 +9,7 @@ This plugin automatically generates meeting notes from transcription files using
 - Generates structured meeting notes in markdown format
 - Supports concurrent processing using multi-threading
 - Maintains state in SQLite database
+- Automatic Docker environment detection and Ollama URL adjustment
 
 ## Configuration
 
@@ -24,6 +25,10 @@ The configuration supports the following options:
   - Local Ollama (default): `http://localhost:11434/api/generate`
   - Docker on macOS/Windows using host Ollama: `http://host.docker.internal:11434/api/generate`
   - Docker on Linux using host Ollama: `http://172.17.0.1:11434/api/generate`
+  
+  Note: When running in Docker, the plugin will automatically adjust the `ollama_url` if set to `localhost`:
+  - First tries `host.docker.internal` (for macOS/Windows)
+  - Falls back to `172.17.0.1` (for Linux) if `host.docker.internal` is not accessible
 - `model_name`: Ollama model to use (default: llama2:latest)
 - `num_ctx`: Context window size (default: 128000)
 - `max_concurrent_tasks`: Maximum number of concurrent processing tasks
@@ -31,10 +36,10 @@ The configuration supports the following options:
 
 ## Requirements
 
-- Ollama server running either (all options requires setting the appropriate `ollama_url`):
+- Ollama server running either:
   - On the host machine, running the app as a standalone process (default)
-  - On the host machine, but called from the app running in Docker
-  - Runnig ollama within Docker (not recommended)
+  - On the host machine, but called from the app running in Docker (automatic URL adjustment)
+  - Running ollama within Docker (not recommended)
 - Python packages (see requirements.txt):
   - requests>=2.31.0
 
