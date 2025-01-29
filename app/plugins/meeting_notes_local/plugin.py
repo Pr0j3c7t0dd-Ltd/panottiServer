@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC
 from datetime import datetime as dt
 from pathlib import Path
+import os
 from typing import Any, cast
 
 import aiohttp
@@ -18,6 +19,11 @@ from app.utils.logging_config import get_logger
 EventData = dict[str, Any] | RecordingEvent
 
 logger = get_logger(__name__)
+
+
+def is_running_in_docker() -> bool:
+    """Check if we're running inside a Docker container"""
+    return os.path.exists('/.dockerenv')
 
 
 class MeetingNotesLocalPlugin(PluginBase):
@@ -51,6 +57,25 @@ class MeetingNotesLocalPlugin(PluginBase):
                 )
                 self.timeout = config_dict.get("timeout", self.timeout)
 
+        # Adjust Ollama URL if running in Docker and using localhost
+        if is_running_in_docker() and "localhost" in self.ollama_url:
+            original_url = self.ollama_url
+            # Try host.docker.internal first (works on macOS/Windows)
+            self.ollama_url = self.ollama_url.replace("localhost", "host.docker.internal")
+            
+            # If host.docker.internal doesn't work, try Linux bridge network IP
+            if not self._test_ollama_connection():
+                self.ollama_url = self.ollama_url.replace("host.docker.internal", "172.17.0.1")
+                
+            logger.info(
+                "Adjusted Ollama URL for Docker environment",
+                extra={
+                    "plugin_name": self.name,
+                    "original_url": original_url,
+                    "new_url": self.ollama_url,
+                }
+            )
+
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -67,6 +92,15 @@ class MeetingNotesLocalPlugin(PluginBase):
                 "num_ctx": self.num_ctx,
             },
         )
+
+    def _test_ollama_connection(self) -> bool:
+        """Test if we can connect to Ollama at the current URL"""
+        try:
+            import requests
+            response = requests.get(self.ollama_url.replace("/api/generate", "/api/version"), timeout=2)
+            return response.status_code == 200
+        except Exception:
+            return False
 
     async def _initialize(self) -> None:
         """Initialize plugin"""
