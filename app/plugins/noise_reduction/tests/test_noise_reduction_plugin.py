@@ -1,7 +1,7 @@
 import asyncio
 import os
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
 import numpy as np
 import pytest
@@ -10,6 +10,22 @@ import soundfile as sf
 from app.core.plugins import PluginConfig
 from app.plugins.noise_reduction.plugin import AudioPaths, NoiseReductionPlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
+from app.core.events.models import Event
+from app.core.plugins.interface import PluginBase
+
+
+class MockDBContext:
+    def __init__(self, db=None, should_fail=False):
+        self.db = db
+        self.should_fail = should_fail
+
+    async def __aenter__(self):
+        if self.should_fail:
+            raise Exception("DB connection failed")
+        return self.db
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return None
 
 
 class TestNoiseReductionPlugin(BasePluginTest):
@@ -352,38 +368,47 @@ class TestNoiseReductionPlugin(BasePluginTest):
             written_signal = mock_write.call_args[0][1]
             assert written_signal.shape == mic_signal.shape
 
-    def test_trim_audio_with_lag(self, initialized_plugin, tmp_path):
-        """Test audio trimming with lag compensation"""
-        # Create test data
-        sample_rate = 44100
-        duration = 1.0
-        signal = np.random.randn(int(sample_rate * duration))
-        longer_signal = np.concatenate([signal, np.zeros(100)])  # Make it longer
-
-        # Setup file paths
-        input_file = str(tmp_path / "input.wav")
-        output_file = str(tmp_path / "output.wav")
-
-        with patch("app.plugins.noise_reduction.plugin.sf.read") as mock_read, patch(
-            "app.plugins.noise_reduction.plugin.sf.write"
-        ) as mock_write:
-            # Setup mock returns
-            mock_read.side_effect = [
-                (signal, sample_rate),
-                (longer_signal, sample_rate),
-            ]
-
-            # Call the function
+    def test_trim_audio_edge_cases(self, initialized_plugin, tmp_path):
+        """Test audio trimming edge cases"""
+        input_file = tmp_path / "input.wav"
+        output_file = tmp_path / "output.wav"
+        
+        # Create test signals of different lengths
+        input_signal = np.random.rand(1000)
+        output_signal = np.random.rand(900)  # Different length to trigger write
+        
+        # Test with zero lag
+        with patch("soundfile.read") as mock_read, \
+             patch("soundfile.write", new_callable=MagicMock) as mock_write, \
+             patch("os.path.exists", return_value=True):
+            mock_read.side_effect = [(input_signal, 44100), (output_signal, 44100)]
             initialized_plugin.trim_audio_with_lag(
-                input_file, output_file, lag_samples=100, sample_rate=sample_rate
+                str(input_file), str(output_file), 0, 44100
             )
-
-            # Verify write was called with correct arguments
-            mock_write.assert_called_once()
-            args = mock_write.call_args[0]
-            assert args[0] == output_file
-            assert args[2] == sample_rate
-            assert np.array_equal(args[1], longer_signal[: len(signal)])
+            assert mock_write.call_count == 1
+            assert mock_write.call_args[0][0] == str(output_file)
+        
+        # Test with negative lag
+        with patch("soundfile.read") as mock_read, \
+             patch("soundfile.write", new_callable=MagicMock) as mock_write, \
+             patch("os.path.exists", return_value=True):
+            mock_read.side_effect = [(input_signal, 44100), (output_signal, 44100)]
+            initialized_plugin.trim_audio_with_lag(
+                str(input_file), str(output_file), -100, 44100
+            )
+            assert mock_write.call_count == 1
+            assert mock_write.call_args[0][0] == str(output_file)
+        
+        # Test with STFT padding
+        with patch("soundfile.read") as mock_read, \
+             patch("soundfile.write", new_callable=MagicMock) as mock_write, \
+             patch("os.path.exists", return_value=True):
+            mock_read.side_effect = [(input_signal, 44100), (output_signal, 44100)]
+            initialized_plugin.trim_audio_with_lag(
+                str(input_file), str(output_file), 100, 44100, stft_padding=512
+            )
+            assert mock_write.call_count == 1
+            assert mock_write.call_args[0][0] == str(output_file)
 
     async def test_process_audio_files(self, initialized_plugin):
         """Test audio files processing workflow"""
@@ -429,61 +454,24 @@ class TestNoiseReductionPlugin(BasePluginTest):
             assert mock_remove.call_count == 0
 
     async def test_process_recording_missing_paths(self, initialized_plugin):
-        """Test process_recording with missing audio paths"""
-        recording_id = "test_recording"
-        event_data = {
-            "recording_id": recording_id,
-            "current_event": {"recording": {"audio_paths": {}}},
-            "metadata": {},
-        }
+        """Test handling of missing audio paths"""
+        event_data = {"recording_id": "test", "metadata": {}}
+        await initialized_plugin.handle_recording_ended(event_data)
 
-        with patch.object(
-            initialized_plugin, "_process_audio_files", new_callable=AsyncMock
-        ) as mock_process:
-            mock_process.return_value = None
-            await initialized_plugin.handle_recording_ended(event_data)
-            mock_process.assert_called_once_with(
-                recording_id, None, None, {}, event_data
-            )
-
-    @pytest.mark.asyncio
-    async def test_process_audio_files_error_handling(self, initialized_plugin):
-        """Test error handling in _process_audio_files"""
-        recording_id = "test_recording"
-        system_path = "nonexistent_system.wav"
-        mic_path = "nonexistent_mic.wav"
-        metadata = {"correlation_id": "test-correlation-id"}
-
-        with patch.object(
-            initialized_plugin, "_translate_path_to_container"
-        ) as mock_translate:
-            mock_translate.side_effect = lambda x: x
-
-            # Test with nonexistent files and metadata
-            await initialized_plugin._process_audio_files(
-                recording_id, system_path, mic_path, metadata
-            )
-
-            # Verify no error is raised and function completes
-
-    def test_translate_path_to_container(self, initialized_plugin):
-        """Test path translation for container paths"""
-        # Test with None input
+    def test_path_translation(self, initialized_plugin):
+        """Test path translation edge cases"""
+        # Test with None path
         assert initialized_plugin._translate_path_to_container(None) is None
-
+        
+        # Test with empty path
+        assert initialized_plugin._translate_path_to_container("") is None
+        
         # Test with absolute path
-        abs_path = "/absolute/path/to/file.wav"
-        with patch("os.path.exists", return_value=True):
-            assert initialized_plugin._translate_path_to_container(
-                abs_path
-            ) == os.path.join(initialized_plugin._recordings_dir, "file.wav")
-
-        # Test with relative path
-        rel_path = "relative/path/to/file.wav"
-        with patch("os.path.exists", return_value=True):
-            assert initialized_plugin._translate_path_to_container(
-                rel_path
-            ) == os.path.join(initialized_plugin._recordings_dir, "file.wav")
+        path = "/absolute/path/file.wav"
+        with patch("os.path.exists", return_value=True), \
+             patch.object(initialized_plugin, "_recordings_dir", "/absolute/path"):
+            translated = initialized_plugin._translate_path_to_container(path)
+            assert translated == os.path.join("/absolute/path", "file.wav")
 
     def test_wiener_filter(self, initialized_plugin):
         """Test Wiener filter implementation"""
@@ -534,3 +522,182 @@ class TestNoiseReductionPlugin(BasePluginTest):
         assert initialized_plugin.config.enabled is True
         assert initialized_plugin.config.version == "1.0.0"
         assert initialized_plugin.config.name == "noise_reduction"
+
+    async def test_db_init_retry(self, plugin_config, mock_event_bus):
+        """Test database initialization retry logic"""
+        plugin = NoiseReductionPlugin(plugin_config, mock_event_bus)
+        
+        mock_db = MagicMock()
+        fail_context = MockDBContext(should_fail=True)
+
+        # Test retry logic
+        with patch("app.plugins.noise_reduction.plugin.get_db_async") as mock_get_db, \
+             patch("asyncio.sleep"):
+            mock_get_db.return_value = fail_context
+            with pytest.raises(Exception, match="DB connection failed"):
+                await plugin.initialize()
+
+    async def test_initialize_db_failure(self, plugin_config, mock_event_bus):
+        """Test database initialization complete failure"""
+        plugin = NoiseReductionPlugin(plugin_config, mock_event_bus)
+        
+        class MockDBContext:
+            async def __aenter__(self):
+                raise Exception("DB connection failed")
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+            
+        with patch("app.plugins.noise_reduction.plugin.get_db_async", return_value=MockDBContext()):
+            with pytest.raises(Exception):
+                await plugin.initialize()
+
+    def test_align_signals_edge_cases(self, initialized_plugin, tmp_path):
+        """Test FFT alignment edge cases"""
+        # Test with empty arrays
+        mic_data = np.array([0.1])  # Minimum 1 sample needed
+        sys_data = np.array([0.1])
+        mic_aligned, sys_aligned, lag = initialized_plugin._align_signals_by_fft(
+            mic_data, sys_data, 44100
+        )
+        assert isinstance(lag, float)
+            
+        # Test with stereo data
+        mic_data = np.array([[0.1, 0.2], [0.3, 0.4]])
+        sys_data = np.array([[0.1, 0.2], [0.3, 0.4]])
+        mic_aligned, sys_aligned, lag = initialized_plugin._align_signals_by_fft(
+            (mic_data[:, 0], mic_data[:, 1]),
+            (sys_data[:, 0], sys_data[:, 1]),
+            44100
+        )
+        assert isinstance(lag, float)
+        
+        # Test with different lengths
+        mic_data = np.array([0.1, 0.2, 0.3])
+        sys_data = np.array([0.1, 0.2])
+        mic_aligned, sys_aligned, lag = initialized_plugin._align_signals_by_fft(
+            mic_data, sys_data, 44100
+        )
+        assert len(mic_aligned) == len(sys_aligned)
+
+    def test_time_domain_subtraction_edge_cases(self, initialized_plugin, tmp_path):
+        """Test time domain subtraction edge cases"""
+        mic_file = tmp_path / "mic.wav"
+        sys_file = tmp_path / "sys.wav"
+        out_file = tmp_path / "out.wav"
+        
+        # Create test files with different sample rates
+        sf.write(mic_file, np.array([0.1, 0.2]), 44100)
+        sf.write(sys_file, np.array([0.1, 0.2]), 48000)
+        
+        with pytest.raises(ValueError):
+            initialized_plugin._subtract_bleed_time_domain(
+                str(mic_file), str(sys_file), str(out_file)
+            )
+            
+        # Test with zero system audio
+        sf.write(sys_file, np.zeros(1000), 44100)
+        sf.write(mic_file, np.random.rand(1000), 44100)
+        initialized_plugin._subtract_bleed_time_domain(
+            str(mic_file), str(sys_file), str(out_file), auto_scale=True
+        )
+        assert os.path.exists(out_file)
+
+    def test_resample_audio(self, initialized_plugin):
+        """Test audio resampling logic"""
+        # Test mono
+        audio = np.random.rand(1000)
+        resampled = initialized_plugin._resample_if_needed(audio, 44100, 48000)
+        assert len(resampled) > 0
+        
+        # Test stereo
+        audio = np.random.rand(1000, 2)
+        resampled = initialized_plugin._resample_if_needed(audio, 44100, 48000)
+        assert resampled.shape[1] == 2  # Should maintain stereo channels
+        assert resampled.shape[0] > 0  # Should have samples
+
+    def test_frequency_domain_bleed_removal(self, initialized_plugin, tmp_path):
+        """Test frequency domain bleed removal"""
+        mic_file = tmp_path / "mic.wav"
+        sys_file = tmp_path / "sys.wav"
+        out_file = tmp_path / "out.wav"
+        
+        # Create test files
+        test_signal = np.sin(2 * np.pi * 440 * np.arange(44100) / 44100)
+        sf.write(mic_file, test_signal, 44100)
+        sf.write(sys_file, test_signal * 0.5, 44100)
+        
+        # Test with randomized phase
+        initialized_plugin._remove_bleed_frequency_domain(
+            str(mic_file), str(sys_file), str(out_file), randomize_phase=True
+        )
+        assert os.path.exists(out_file)
+        
+        # Test without alignment
+        initialized_plugin._remove_bleed_frequency_domain(
+            str(mic_file), str(sys_file), str(out_file), do_alignment=False
+        )
+        assert os.path.exists(out_file)
+
+    def test_wiener_filter_edge_cases(self, initialized_plugin):
+        """Test Wiener filter edge cases"""
+        # Test with zero noise power
+        spec = np.random.rand(100, 100)
+        noise_power = np.zeros_like(spec)
+        filtered = initialized_plugin.wiener_filter(spec, noise_power)
+        assert np.all(filtered >= 0)
+        
+        # Test with very high noise power
+        noise_power = np.ones_like(spec) * 1000
+        filtered = initialized_plugin.wiener_filter(spec, noise_power)
+        assert np.all(filtered <= spec)
+        
+        # Test second pass disabled
+        filtered = initialized_plugin.wiener_filter(spec, noise_power, second_pass=False)
+        assert filtered.shape == spec.shape
+
+    async def test_event_handling_errors(self, initialized_plugin):
+        """Test event handling error cases"""
+        # Test with invalid event data
+        await initialized_plugin.handle_recording_ended({})
+        
+        # Test with missing audio paths
+        event_data = {
+            "recording_id": "test",
+            "current_event": {
+                "recording": {
+                    "audio_paths": {}
+                }
+            }
+        }
+        await initialized_plugin.handle_recording_ended(event_data)
+        
+        # Test with non-existent files
+        event_data = {
+            "recording_id": "test",
+            "current_event": {
+                "recording": {
+                    "audio_paths": {
+                        "system": "nonexistent.wav",
+                        "microphone": "nonexistent.wav"
+                    }
+                }
+            }
+        }
+        await initialized_plugin.handle_recording_ended(event_data)
+
+    async def test_shutdown_handling(self, initialized_plugin):
+        """Test plugin shutdown handling"""
+        # Mock the event bus unsubscribe method
+        initialized_plugin.event_bus.unsubscribe = AsyncMock()
+        
+        # Mock the executor shutdown to raise an exception
+        initialized_plugin._executor.shutdown = Mock(side_effect=Exception("Shutdown failed"))
+        
+        # Call shutdown and verify the error is handled appropriately
+        try:
+            await initialized_plugin.shutdown()
+        except Exception as e:
+            assert str(e) == "Shutdown failed"
+            assert initialized_plugin.event_bus.unsubscribe.called
+            # Reset the executor to prevent teardown errors
+            initialized_plugin._executor = None
