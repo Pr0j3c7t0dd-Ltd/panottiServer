@@ -6,10 +6,12 @@ kanban-plugin: board
 
 ## To Do
 
+- [ ] Run another fresh install
 
 
 ## Doing
 
+- [ ] More test coverage
 
 
 ## Done
