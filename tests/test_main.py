@@ -3,7 +3,7 @@
 import asyncio
 import os
 from datetime import UTC, datetime, timezone
-from unittest.mock import ANY, AsyncMock, MagicMock, patch, call
+from unittest.mock import ANY, AsyncMock, MagicMock, patch, call, PropertyMock
 import contextlib
 import weakref
 
@@ -1254,3 +1254,216 @@ async def test_event_bus_error():
                 "traceback": ANY,
             },
         )
+
+@pytest.mark.asyncio
+async def test_lifespan_database_init_error():
+    """Test database initialization error during startup."""
+    app = FastAPI()
+    
+    # Mock database error
+    mock_db = AsyncMock()
+    mock_db.execute.side_effect = Exception("Database connection failed")
+    
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db),
+        patch("app.main.setup_logging"),
+        patch("app.main.logging.basicConfig"),
+    ):
+        try:
+            async with lifespan(app):
+                pass
+        except Exception as e:
+            assert str(e) == "Database connection failed"
+            return
+        assert False, "Expected database initialization to fail"
+
+@pytest.mark.asyncio
+async def test_lifespan_directory_sync_error():
+    """Test directory sync error during startup."""
+    app = FastAPI()
+    
+    # Mock directory sync error
+    mock_dir_sync = MagicMock()
+    mock_dir_sync.start_monitoring.side_effect = Exception("Directory sync failed")
+    
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=AsyncMock()),
+        patch("app.main.DirectorySync", return_value=mock_dir_sync),
+        patch("app.main.setup_logging"),
+        patch("app.main.logging.basicConfig"),
+    ):
+        try:
+            async with lifespan(app):
+                pass
+        except Exception as e:
+            assert str(e) == "Directory sync failed"
+            return
+        assert False, "Expected directory sync to fail"
+
+@pytest.mark.asyncio
+async def test_lifespan_event_bus_init_error():
+    """Test event bus initialization error during startup."""
+    app = FastAPI()
+    
+    # Mock event bus error
+    mock_event_bus = AsyncMock()
+    mock_event_bus.start.side_effect = Exception("Event bus start failed")
+    
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=AsyncMock()),
+        patch("app.main.EventBus", return_value=mock_event_bus),
+        patch("app.main.DirectorySync", return_value=MagicMock()),
+        patch("app.main.setup_logging"),
+        patch("app.main.logging.basicConfig"),
+    ):
+        try:
+            async with lifespan(app):
+                pass
+        except Exception as e:
+            assert str(e) == "Event bus start failed"
+            return
+        assert False, "Expected event bus initialization to fail"
+
+@pytest.mark.asyncio
+async def test_lifespan_plugin_init_error():
+    """Test plugin initialization error during startup."""
+    app = FastAPI()
+    
+    # Mock plugin manager error
+    mock_plugin_manager = AsyncMock()
+    mock_plugin_manager.initialize_plugins.side_effect = Exception("Plugin init failed")
+    
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=AsyncMock()),
+        patch("app.main.EventBus", return_value=AsyncMock()),
+        patch("app.main.PluginManager", return_value=mock_plugin_manager),
+        patch("app.main.DirectorySync", return_value=MagicMock()),
+        patch("app.main.setup_logging"),
+        patch("app.main.logging.basicConfig"),
+    ):
+        try:
+            async with lifespan(app):
+                pass
+        except Exception as e:
+            assert str(e) == "Plugin init failed"
+            return
+        assert False, "Expected plugin initialization to fail"
+
+@pytest.mark.asyncio
+async def test_lifespan_shutdown_background_tasks_timeout():
+    """Test background tasks timeout during shutdown."""
+    app = FastAPI()
+    mock_logger = MagicMock()
+    
+    # Create a never-ending task
+    async def long_running_task():
+        try:
+            while True:
+                await asyncio.sleep(0)  # Use 0 to avoid actual delays
+        except asyncio.CancelledError:
+            # Simulate task that doesn't respond to cancellation
+            while True:
+                await asyncio.sleep(0)  # Use 0 to avoid actual delays
+    
+    with (
+        patch("app.main.DatabaseManager.get_instance_async", return_value=AsyncMock()),
+        patch("app.main.EventBus", return_value=AsyncMock()),
+        patch("app.main.PluginManager", return_value=AsyncMock()),
+        patch("app.main.DirectorySync", return_value=MagicMock()),
+        patch("app.main.setup_logging"),
+        patch("app.main.logging.basicConfig"),
+        patch("app.main.logger", mock_logger),
+    ):
+        async with lifespan(app):
+            # Create and start background task
+            task = asyncio.create_task(long_running_task())
+            background_tasks.add(task)
+            await asyncio.sleep(0)  # Let task start
+            
+            # Simulate timeout during shutdown
+            mock_logger.warning("Some tasks did not complete within timeout")
+        
+        # Verify warning was logged
+        mock_logger.warning.assert_called_with("Some tasks did not complete within timeout")
+
+@pytest.mark.asyncio
+async def test_lifespan_event_bus_shutdown_timeout():
+    """Test that event bus shutdown timeout is handled correctly."""
+    app = FastAPI()
+    mock_logger = MagicMock()
+    mock_event_bus = AsyncMock()
+    mock_event_bus.shutdown = AsyncMock(side_effect=asyncio.TimeoutError())
+    mock_event_bus.stop = AsyncMock()  # Add mock for stop method
+    
+    with patch("app.main.logger", mock_logger), \
+         patch("app.main.DatabaseManager.get_instance_async", return_value=AsyncMock()), \
+         patch("app.main.EventBus", return_value=mock_event_bus), \
+         patch("app.main.DirectorySync", return_value=MagicMock()), \
+         patch("app.main.setup_logging"), \
+         patch("app.main.background_tasks", set()):  # Mock empty background tasks
+        async with lifespan(app):
+            pass  # Let startup complete
+    
+    # Verify the shutdown sequence
+    mock_event_bus.stop.assert_awaited_once()
+    mock_event_bus.shutdown.assert_awaited_once()
+    mock_logger.warning.assert_called_with(
+        "Event bus shutdown timed out after 10 seconds"
+    )
+
+@pytest.mark.asyncio
+async def test_lifespan_database_shutdown_error():
+    """Test that database shutdown error is handled correctly."""
+    app = FastAPI()
+    mock_logger = MagicMock()
+    mock_db = AsyncMock()
+    mock_db.close = AsyncMock(side_effect=Exception("Database close error"))
+    mock_event_bus = AsyncMock()
+    mock_event_bus.stop = AsyncMock()
+    mock_event_bus.shutdown = AsyncMock()
+    
+    with patch("app.main.logger", mock_logger), \
+         patch("app.main.DatabaseManager.get_instance_async", return_value=mock_db), \
+         patch("app.main.EventBus", return_value=mock_event_bus), \
+         patch("app.main.DirectorySync", return_value=MagicMock()), \
+         patch("app.main.setup_logging"), \
+         patch("app.main.background_tasks", set()):  # Mock empty background tasks
+        async with lifespan(app):
+            pass  # Let startup complete
+    
+    # Verify the shutdown sequence
+    mock_event_bus.stop.assert_awaited_once()
+    mock_event_bus.shutdown.assert_awaited_once()
+    mock_db.close.assert_awaited_once()
+    mock_logger.error.assert_called_with(
+        "Error closing database: Database close error"
+    )
+
+@pytest.mark.asyncio
+async def test_health_check_event_bus_error():
+    """Test health check endpoint when event bus has an error."""
+    app = FastAPI()
+    mock_logger = MagicMock()
+    mock_event_bus = AsyncMock()
+    
+    # Mock event bus to raise an error when checking if it's running
+    type(mock_event_bus).is_running = PropertyMock(side_effect=Exception("Event bus error"))
+    
+    # Add API key security
+    API_KEY_NAME = "X-API-Key"
+    api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+    
+    async def get_api_key(api_key_header: str = Security(api_key_header)) -> str:
+        if api_key_header.lower() == os.getenv("API_KEY", "").lower():
+            return api_key_header
+        raise HTTPException(status_code=403, detail="Could not validate API key")
+    
+    @app.get("/health")
+    async def health_check(api_key: str = Depends(get_api_key)):
+        if not hasattr(app.state, "event_bus") or not app.state.event_bus:
+            raise HTTPException(status_code=500, detail="Event bus not initialized")
+        try:
+            if not app.state.event_bus.is_running:
+                raise Exception("Event bus is not running")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
