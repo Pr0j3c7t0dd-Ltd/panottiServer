@@ -203,6 +203,8 @@ class MeetingNotesLocalPlugin(PluginBase):
         # Get today's date in the specified format
         today_date = dt.now(UTC).strftime("%B %-d, %Y at %-I:%M %p")
 
+        system_prompt = """You are a professional meeting notes taker. Your task is to analyze the meeting transcript and create clear, concise, and well-structured meeting notes.  You will think step by step to ensure the results you return are accurate. If you don't know any information, then do not include it in the notes, but rather state 'unknown'."""
+
         # Prepare prompt with explicit metadata handling
         prompt = f"""Please analyze the following transcript and create comprehensive meeting notes in markdown format. The transcript includes METADATA in JSON format that you should use for the meeting title and information section.
 
@@ -287,6 +289,7 @@ Keep each bullet point concise but informative]
                     json={
                         "model": self.model,
                         "prompt": prompt,
+                        "system": system_prompt,
                         "stream": False,
                         "options": {"num_ctx": self.num_ctx, "temperature": 0},
                     },

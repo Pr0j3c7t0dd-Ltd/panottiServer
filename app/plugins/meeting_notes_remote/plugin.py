@@ -530,7 +530,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                 },
             )
 
-            system_prompt = """You are a professional meeting notes taker. Your task is to analyze the meeting transcript and create clear, concise, and well-structured meeting notes."""
+            system_prompt = """You are a professional meeting notes taker. Your task is to analyze the meeting transcript and create clear, concise, and well-structured meeting notes.  You will think step by step to ensure the results you return are accurate. If you don't know any information, then do not include it in the notes, but rather state 'unknown'."""
 
             # Get today's date in the specified format
             today_date = dt.now(UTC).strftime("%B %-d, %Y at %-I:%M %p")
