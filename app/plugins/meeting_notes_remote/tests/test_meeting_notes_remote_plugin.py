@@ -1,14 +1,24 @@
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch, mock_open
+import sys
+from unittest.mock import MagicMock
+
+# Mock the genai module
+sys.modules['genai'] = MagicMock()
+# Specifically mock GenerativeModel as a class type
+class MockGenerativeModel:
+    def __init__(self, *args, **kwargs):
+        pass
+sys.modules['genai'].GenerativeModel = MockGenerativeModel
 
 import pytest
 from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
 
 from app.core.events import ConcreteEventBus, Event, EventPriority
 from app.core.plugins import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
-
 
 class TestMeetingNotesRemotePlugin(BasePluginTest):
     """Test suite for MeetingNotesRemotePlugin"""
@@ -394,3 +404,55 @@ Speaker 2: I'll prepare the report by next week.
             result = await plugin._generate_notes_with_llm("Test transcript", "test-123")
             assert result == "Test notes"
             mock_generate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_initialization_with_openai_provider(self, plugin_config):
+        plugin_config.config = {
+            "output_directory": "/tmp",
+            "max_concurrent_tasks": 5,
+            "timeout": 30,
+            "provider": "openai",
+            "openai": {"api_key": "test_openai_key", "model": "gpt-3.5"}
+        }
+        plugin = MeetingNotesRemotePlugin(plugin_config)
+        await plugin._initialize()
+        assert isinstance(plugin.client, AsyncOpenAI)
+        assert plugin.model == "gpt-3.5"
+
+    @pytest.mark.asyncio
+    async def test_initialization_with_anthropic_provider(self, plugin_config):
+        plugin_config.config = {
+            "output_directory": "/tmp",
+            "max_concurrent_tasks": 5,
+            "timeout": 30,
+            "provider": "anthropic",
+            "anthropic": {"api_key": "test_anthropic_key", "model": "claude-v1"}
+        }
+        plugin = MeetingNotesRemotePlugin(plugin_config)
+        await plugin._initialize()
+        assert isinstance(plugin.client, AsyncAnthropic)
+        assert plugin.model == "claude-v1"
+
+    @pytest.mark.asyncio
+    @patch('app.plugins.meeting_notes_remote.plugin.genai.GenerativeModel', new=MockGenerativeModel)
+    async def test_initialization_with_google_provider(self, plugin_config):
+        plugin_config.config = {
+            "output_directory": "/tmp",
+            "max_concurrent_tasks": 5,
+            "timeout": 30,
+            "provider": "google",
+            "google": {"api_key": "test_google_key", "model": "genai-v1"}
+        }
+        plugin = MeetingNotesRemotePlugin(plugin_config)
+        await plugin._initialize()
+        # Check for the mock class type
+        assert isinstance(plugin.client, MockGenerativeModel)
+        assert plugin.model == "genai-v1"
+
+    def test_initialization_with_unsupported_provider(self, plugin_config):
+        plugin_config.config = {
+            "provider": "unsupported"
+        }
+        with pytest.raises(ValueError, match="Unsupported provider: unsupported"):
+            plugin = MeetingNotesRemotePlugin(plugin_config)
+            plugin._initialize()
