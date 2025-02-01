@@ -257,3 +257,35 @@ Speaker 2: I'll prepare the report by next week.
         await plugin.publish(test_event)
 
         assert not callback_called
+
+    async def test_configuration_parsing(self, plugin_config, event_bus):
+        config_dict = {
+            "ollama_url": "http://new-url.com",
+            "model_name": "new_model",
+            "output_directory": "/new/output/dir",
+            "num_ctx": 10,
+            "max_concurrent_tasks": 5,
+            "timeout": 30
+        }
+        plugin_config.config = config_dict
+        with patch("pathlib.Path.mkdir") as mock_mkdir:
+            plugin = MeetingNotesLocalPlugin(plugin_config, event_bus)
+            
+            assert plugin.ollama_url == "http://new-url.com"
+            assert plugin.model == "new_model"
+            assert plugin.output_dir == Path("/new/output/dir")
+            assert plugin.num_ctx == 10
+            assert plugin.max_concurrent_tasks == 5
+            assert plugin.timeout == 30
+
+    async def test_docker_url_adjustment(self, plugin_config, event_bus):
+        plugin_config.config = {"ollama_url": "http://localhost:8000"}
+
+        with patch("app.plugins.meeting_notes_local.plugin.is_running_in_docker", return_value=True) as mock_docker_check, \
+             patch.object(MeetingNotesLocalPlugin, "_test_ollama_connection", return_value=False) as mock_test_connection:
+            plugin = MeetingNotesLocalPlugin(plugin_config, event_bus)
+            await plugin._initialize()
+            print(f"Mock docker check called: {mock_docker_check.called}")
+            print(f"Mock test connection called: {mock_test_connection.called}")
+            print(f"Ollama URL after initialization: {plugin.ollama_url}")
+            assert plugin.ollama_url == "http://172.17.0.1:8000"
