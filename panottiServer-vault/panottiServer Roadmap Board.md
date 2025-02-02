@@ -6,7 +6,6 @@ kanban-plugin: board
 
 ## To Do
 
-- [ ] Run another fresh install
 
 
 ## Doing
@@ -17,6 +16,7 @@ kanban-plugin: board
 ## Done
 
 **Complete**
+- [x] Run another fresh install
 
 
 ***

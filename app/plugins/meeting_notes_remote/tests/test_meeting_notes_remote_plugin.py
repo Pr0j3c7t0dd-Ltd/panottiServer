@@ -1,14 +1,24 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch, mock_open
+import sys
+from unittest.mock import MagicMock
+
+# Mock the genai module
+sys.modules['genai'] = MagicMock()
+# Specifically mock GenerativeModel as a class type
+class MockGenerativeModel:
+    def __init__(self, *args, **kwargs):
+        pass
+sys.modules['genai'].GenerativeModel = MockGenerativeModel
 
 import pytest
 from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
 
 from app.core.events import ConcreteEventBus, Event, EventPriority
 from app.core.plugins import PluginConfig
 from app.plugins.meeting_notes_remote.plugin import MeetingNotesRemotePlugin
 from tests.plugins.test_plugin_interface import BasePluginTest
-
 
 class TestMeetingNotesRemotePlugin(BasePluginTest):
     """Test suite for MeetingNotesRemotePlugin"""
@@ -206,3 +216,243 @@ Speaker 2: I'll prepare the report by next week.
         with patch.object(Path, "mkdir"):
             await plugin.initialize()
             # Should not raise an exception
+
+    async def test_initialization_error_handling(self, plugin_with_mock_bus):
+        """Test error handling during initialization"""
+        with patch.object(Path, "mkdir", side_effect=PermissionError("Access denied")):
+            with pytest.raises(PermissionError):
+                await plugin_with_mock_bus.initialize()
+
+    async def test_metadata_handling(self, plugin_with_mock_bus, sample_transcript):
+        """Test metadata handling in transcription completed event"""
+        transcript_path = Path("test_transcript.txt")
+        metadata = {
+            "meeting_title": "Test Meeting",
+            "date": "2024-01-20T10:00:00Z",
+            "attendees": ["user1@example.com"]
+        }
+        
+        event = Event.create(
+            name="transcription_local.completed",
+            data={
+                "transcription": {
+                    "recording_id": "test_recording",
+                    "transcript_path": str(transcript_path)
+                },
+                "metadata": metadata
+            },
+            source_plugin="transcription_local",
+            correlation_id="test_correlation_id",
+            priority=EventPriority.NORMAL,
+        )
+
+        with patch.object(Path, "mkdir"), \
+             patch.object(plugin_with_mock_bus, "_read_transcript", return_value=sample_transcript), \
+             patch.object(plugin_with_mock_bus, "_generate_meeting_notes", return_value=Path("output.md")), \
+             patch.object(plugin_with_mock_bus, "_get_transcript_path", return_value=transcript_path):
+            
+            await plugin_with_mock_bus.initialize()
+            await plugin_with_mock_bus.handle_transcription_completed(event)
+
+            plugin_with_mock_bus.event_bus.publish.assert_called_once()
+            call_args = plugin_with_mock_bus.event_bus.publish.call_args[0][0]
+            assert call_args.data["metadata"] == metadata
+
+    async def test_event_bus_error_handling(self, plugin_with_mock_bus):
+        """Test error handling in event bus operations"""
+        plugin_with_mock_bus.event_bus.publish.side_effect = Exception("Network error")
+        transcript_path = Path("test_transcript.txt")
+        
+        event = Event.create(
+            name="transcription_local.completed",
+            data={
+                "transcription": {
+                    "recording_id": "test_recording",
+                    "transcript_path": str(transcript_path)
+                }
+            },
+            source_plugin="transcription_local",
+            correlation_id="test-123",
+        )
+
+        with patch.object(Path, "mkdir"), \
+             patch.object(plugin_with_mock_bus, "_read_transcript", return_value="test"), \
+             patch.object(plugin_with_mock_bus, "_generate_meeting_notes", return_value=Path("output.md")), \
+             patch.object(plugin_with_mock_bus, "_get_transcript_path", return_value=transcript_path):
+            
+            await plugin_with_mock_bus.initialize()
+            # Should not raise exception
+            await plugin_with_mock_bus.handle_transcription_completed(event)
+
+    async def test_transcript_path_handling(self, plugin_with_mock_bus):
+        """Test transcript path handling"""
+        # Test with string path
+        event = Event.create(
+            name="transcription_local.completed",
+            data={
+                "transcription": {
+                    "recording_id": "test_recording",
+                    "transcript_path": "test_transcript.txt"
+                }
+            },
+            source_plugin="transcription_local",
+            correlation_id="test-123",
+        )
+        
+        with patch.object(plugin_with_mock_bus, "_get_transcript_path", 
+                         return_value=Path("test_transcript.txt")) as mock_get_path:
+            path = await plugin_with_mock_bus._get_transcript_path(event)
+            assert path == Path("test_transcript.txt")
+
+            # Test with Path object
+            event.data["transcription"]["transcript_path"] = Path("test_transcript.txt")
+            path = await plugin_with_mock_bus._get_transcript_path(event)
+            assert path == Path("test_transcript.txt")
+
+    async def test_transcript_reading(self, plugin):
+        """Test transcript reading functionality"""
+        test_content = "Test transcript content"
+        transcript_path = Path("test_transcript.txt")
+        
+        # Mock the file operations
+        with patch.object(Path, "read_text", return_value=test_content) as mock_read:
+            content = await plugin._read_transcript(transcript_path)
+            assert content == test_content
+            mock_read.assert_called_once()
+
+        # Test error handling
+        with patch.object(Path, "read_text", side_effect=FileNotFoundError()), \
+             pytest.raises(FileNotFoundError):
+            await plugin._read_transcript(transcript_path)
+
+    def test_llm_response_cleaning(self, plugin):
+        """Test LLM response cleaning"""
+        # Test markdown code block removal
+        response = "```\nTest notes\n```\nMore notes"
+        cleaned = plugin._clean_llm_response(response)
+        assert cleaned == "Test notes\n\nMore notes"
+
+        # Test whitespace handling
+        response = "\n\nTest   notes  \n\n  More notes\n\n"
+        cleaned = plugin._clean_llm_response(response)
+        assert cleaned == "Test   notes  \n\n  More notes"
+
+    async def test_output_path_handling(self, plugin):
+        """Test output path generation"""
+        transcript_path = Path("data/transcripts/meeting_2024_01_20.txt")
+        output_path = plugin._get_output_path(transcript_path)
+        assert output_path.suffix == ".md"
+        assert output_path.parent == plugin.output_dir
+
+    async def test_shutdown_handling(self, plugin):
+        """Test plugin shutdown"""
+        with patch.object(plugin._executor, "shutdown") as mock_shutdown:
+            await plugin.shutdown()
+            mock_shutdown.assert_called_once_with(wait=True)
+
+    async def test_generate_notes_with_openai(self, plugin):
+        """Test meeting notes generation with OpenAI"""
+        mock_response = AsyncMock()
+        mock_response.choices = [AsyncMock(message=AsyncMock(content="Test notes"))]
+        
+        # Create a mock client with the proper structure
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        
+        with patch.object(plugin, "client", mock_client):
+            result = await plugin._generate_notes_with_llm("Test transcript", "test-123")
+            assert result == "Test notes"
+            mock_client.chat.completions.create.assert_called_once()
+
+    async def test_generate_notes_with_anthropic(self, plugin_config):
+        """Test meeting notes generation with Anthropic"""
+        config = plugin_config
+        config.config["provider"] = "anthropic"
+        config.config["anthropic"] = {
+            "api_key": "test_key",
+            "model": "claude-3-opus-20240229"
+        }
+        plugin = MeetingNotesRemotePlugin(config)
+
+        mock_response = AsyncMock()
+        mock_response.content = [AsyncMock(text="Test notes")]
+        
+        # Create a mock client with the proper structure
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        
+        with patch.object(plugin, "client", mock_client):
+            result = await plugin._generate_notes_with_llm("Test transcript", "test-123")
+            assert result == "Test notes"
+            mock_client.messages.create.assert_called_once()
+
+    async def test_generate_notes_with_google(self, plugin_config):
+        """Test meeting notes generation with Google"""
+        config = plugin_config
+        config.config["provider"] = "google"
+        config.config["google"] = {
+            "api_key": "test_key",
+            "model": "gemini-pro"
+        }
+        plugin = MeetingNotesRemotePlugin(config)
+
+        mock_response = AsyncMock()
+        mock_response.text = "Test notes"
+        
+        with patch.object(plugin.client, "generate_content_async", 
+                         return_value=mock_response) as mock_generate:
+            result = await plugin._generate_notes_with_llm("Test transcript", "test-123")
+            assert result == "Test notes"
+            mock_generate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_initialization_with_openai_provider(self, plugin_config):
+        plugin_config.config = {
+            "output_directory": "/tmp",
+            "max_concurrent_tasks": 5,
+            "timeout": 30,
+            "provider": "openai",
+            "openai": {"api_key": "test_openai_key", "model": "gpt-3.5"}
+        }
+        plugin = MeetingNotesRemotePlugin(plugin_config)
+        await plugin._initialize()
+        assert isinstance(plugin.client, AsyncOpenAI)
+        assert plugin.model == "gpt-3.5"
+
+    @pytest.mark.asyncio
+    async def test_initialization_with_anthropic_provider(self, plugin_config):
+        plugin_config.config = {
+            "output_directory": "/tmp",
+            "max_concurrent_tasks": 5,
+            "timeout": 30,
+            "provider": "anthropic",
+            "anthropic": {"api_key": "test_anthropic_key", "model": "claude-v1"}
+        }
+        plugin = MeetingNotesRemotePlugin(plugin_config)
+        await plugin._initialize()
+        assert isinstance(plugin.client, AsyncAnthropic)
+        assert plugin.model == "claude-v1"
+
+    @pytest.mark.asyncio
+    @patch('app.plugins.meeting_notes_remote.plugin.genai.GenerativeModel', new=MockGenerativeModel)
+    async def test_initialization_with_google_provider(self, plugin_config):
+        plugin_config.config = {
+            "output_directory": "/tmp",
+            "max_concurrent_tasks": 5,
+            "timeout": 30,
+            "provider": "google",
+            "google": {"api_key": "test_google_key", "model": "genai-v1"}
+        }
+        plugin = MeetingNotesRemotePlugin(plugin_config)
+        await plugin._initialize()
+        # Check for the mock class type
+        assert isinstance(plugin.client, MockGenerativeModel)
+        assert plugin.model == "genai-v1"
+
+    def test_initialization_with_unsupported_provider(self, plugin_config):
+        plugin_config.config = {
+            "provider": "unsupported"
+        }
+        with pytest.raises(ValueError, match="Unsupported provider: unsupported"):
+            plugin = MeetingNotesRemotePlugin(plugin_config)
+            plugin._initialize()
