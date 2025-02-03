@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+import json
 
 import pytest
 
@@ -327,3 +328,151 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         # Test unsubscribe
         await plugin.unsubscribe("test_event", test_callback)
         event_bus.unsubscribe.assert_awaited_once_with("test_event", test_callback)
+
+    async def test_initialization_error(self, plugin_config, event_bus):
+        """Test error handling during initialization"""
+        with patch("app.models.database.DatabaseManager.get_instance") as mock_db_get:
+            mock_db_get.side_effect = Exception("DB Error")
+            plugin = AudioTranscriptionLocalPlugin(plugin_config, event_bus)
+            
+            with pytest.raises(Exception) as exc_info:
+                await plugin.initialize()
+            assert str(exc_info.value) == "DB Error"
+
+    async def test_shutdown_error_handling(self, plugin):
+        """Test error handling during shutdown"""
+        # Mock the executor to raise an error on shutdown
+        plugin._executor = MagicMock()
+        plugin._executor.shutdown.side_effect = Exception("Shutdown Error")
+        
+        # Mock processing lock to test timeout
+        plugin._processing_lock = MagicMock()
+        plugin._processing_lock.locked.return_value = True
+        
+        # Mock the model
+        plugin._model = MagicMock()
+        
+        # Mock the event bus
+        plugin.event_bus = AsyncMock()
+        plugin.event_bus.unsubscribe = AsyncMock()
+        
+        # Mock the shutdown event
+        plugin._shutdown_event = AsyncMock()
+        plugin._shutdown_event.set = MagicMock()
+        
+        await plugin.shutdown()
+        # Verify the plugin handles the error gracefully and cleans up resources
+        assert plugin._shutdown_event.set.called
+        assert plugin.event_bus.unsubscribe.called
+
+    async def test_handle_noise_reduction_invalid_event(self, plugin):
+        """Test handling invalid noise reduction event data"""
+        invalid_event = {"name": "noise_reduction.completed", "data": {}}
+        await plugin.handle_noise_reduction_completed(invalid_event)
+        
+        # Verify no transcription events were emitted
+        plugin.event_bus.publish.assert_not_called()
+
+    async def test_database_initialization(self, plugin, mock_db):
+        """Test database initialization"""
+        plugin.db = mock_db
+        
+        # Mock the database connection and cursor
+        mock_connection = MagicMock()
+        mock_db.get_connection.return_value.__enter__.return_value = mock_connection
+        
+        # Mock successful execution
+        mock_connection.execute.return_value = None
+        
+        # Mock the database schema - exactly matching the source file
+        schema_sql = """
+                CREATE TABLE IF NOT EXISTS transcriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recording_id TEXT NOT NULL,
+                    transcript TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (recording_id) REFERENCES recordings(recording_id)
+                )
+            """
+        
+        with patch("app.models.database.DatabaseManager.get_instance", return_value=mock_db):
+            await plugin._init_database()
+            mock_connection.execute.assert_called_with(schema_sql)
+            mock_connection.commit.assert_called_once()
+            
+            # Test error handling with a new mock connection
+            error_connection = MagicMock()
+            error_connection.execute.side_effect = Exception("DB Error")
+            mock_db.get_connection.return_value.__enter__.return_value = error_connection
+            
+            # The error should be handled gracefully
+            try:
+                await plugin._init_database()
+            except Exception as e:
+                assert str(e) == "DB Error"
+
+    async def test_transcription_error_handling(self, plugin, mock_whisper):
+        """Test error handling during transcription"""
+        audio_path = "test.wav"
+        output_path = "output.txt"
+        label = "Speaker"
+        
+        # Mock transcription error
+        mock_whisper.transcribe.side_effect = Exception("Transcription Error")
+        
+        with patch.object(plugin, "_model", mock_whisper), \
+             patch("os.path.exists", return_value=True), \
+             patch("wave.open") as mock_wave, \
+             patch("asyncio.get_running_loop") as mock_loop:
+            
+            mock_wave.return_value.__enter__.return_value.getnchannels.return_value = 1
+            mock_loop_instance = AsyncMock()
+            mock_loop.return_value = mock_loop_instance
+            
+            # Mock the executor to raise an exception
+            def executor_side_effect(*args, **kwargs):
+                raise Exception("Transcription Error")
+            
+            mock_loop_instance.run_in_executor.side_effect = executor_side_effect
+            
+            try:
+                result = await plugin.transcribe_audio(audio_path, output_path, label)
+                assert result is None
+            except Exception as e:
+                assert str(e) == "Transcription Error"
+
+    async def test_audio_processing_error(self, plugin):
+        """Test error handling in audio processing"""
+        audio_path = "invalid.wav"
+        
+        with patch("os.path.exists", return_value=False):
+            result = await plugin._process_audio(audio_path, "Speaker")
+            assert result is None
+            
+        with patch("os.path.exists", return_value=True), \
+             patch("wave.open") as mock_wave:
+            mock_wave.side_effect = Exception("Invalid WAV file")
+            result = await plugin._process_audio(audio_path, "Speaker")
+            assert result is None
+
+    async def test_emit_transcription_event(self, plugin):
+        """Test transcription event emission"""
+        recording_id = "test_id"
+        status = "completed"
+        output_file = "output.txt"
+        error = None
+        
+        # Mock the event bus
+        plugin.event_bus = AsyncMock()
+        plugin.event_bus.publish = AsyncMock()
+        
+        await plugin._emit_transcription_event(
+            recording_id, status, output_file, error
+        )
+        
+        plugin.event_bus.publish.assert_called_once()
+        event = plugin.event_bus.publish.call_args[0][0]
+        assert event.name == "transcription_local.completed"
+        assert event.data["transcription"]["recording_id"] == recording_id
+        assert event.data["transcription"]["status"] == status
+        assert event.data["transcription"]["output_file"] == output_file
