@@ -343,12 +343,13 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
     async def test_shutdown_error_handling(self, plugin):
         """Test error handling during shutdown"""
         # Mock the executor to raise an error on shutdown
-        plugin._executor = MagicMock()
-        plugin._executor.shutdown.side_effect = Exception("Shutdown Error")
+        executor = MagicMock()
+        executor.shutdown.side_effect = Exception("Shutdown Error")
+        plugin._executor = executor
         
-        # Mock processing lock to test timeout
+        # Mock processing lock to simulate a busy state that times out
         plugin._processing_lock = MagicMock()
-        plugin._processing_lock.locked.return_value = True
+        plugin._processing_lock.locked.side_effect = [True, True, False]  # Will return True twice then False
         
         # Mock the model
         plugin._model = MagicMock()
@@ -357,14 +358,18 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
         plugin.event_bus = AsyncMock()
         plugin.event_bus.unsubscribe = AsyncMock()
         
-        # Mock the shutdown event
-        plugin._shutdown_event = AsyncMock()
-        plugin._shutdown_event.set = MagicMock()
+        # Test shutdown
+        await plugin._shutdown()
         
-        await plugin.shutdown()
-        # Verify the plugin handles the error gracefully and cleans up resources
-        assert plugin._shutdown_event.set.called
-        assert plugin.event_bus.unsubscribe.called
+        # Verify event bus unsubscribe was called
+        plugin.event_bus.unsubscribe.assert_called_once_with(
+            "noise_reduction.completed", plugin.handle_noise_reduction_completed
+        )
+        
+        # Verify executor shutdown was attempted
+        executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+        # Verify executor was set to None after shutdown attempt
+        assert plugin._executor is None
 
     async def test_handle_noise_reduction_invalid_event(self, plugin):
         """Test handling invalid noise reduction event data"""
