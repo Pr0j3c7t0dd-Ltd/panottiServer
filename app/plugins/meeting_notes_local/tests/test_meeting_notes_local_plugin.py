@@ -1,9 +1,11 @@
 from concurrent.futures import Future
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from datetime import datetime as dt, UTC
 
 import aioresponses
 import pytest
+import aiohttp
 
 from app.core.events import Event, EventContext
 from app.core.plugins import PluginConfig
@@ -289,3 +291,132 @@ Speaker 2: I'll prepare the report by next week.
             print(f"Mock test connection called: {mock_test_connection.called}")
             print(f"Ollama URL after initialization: {plugin.ollama_url}")
             assert plugin.ollama_url == "http://172.17.0.1:8000"
+
+    async def test_clean_llm_response(self, plugin):
+        """Test cleaning of LLM response"""
+        # Test with markdown code block
+        response = "```\nTest notes\n```"
+        cleaned = plugin._clean_llm_response(response)
+        assert cleaned == "Test notes"
+
+        # Test without code block
+        response = "Test notes"
+        cleaned = plugin._clean_llm_response(response)
+        assert cleaned == "Test notes"
+
+        # Test with multiple code blocks - should keep all content
+        response = "```\nFirst block\n```\nMiddle text\n```\nSecond block\n```"
+        cleaned = plugin._clean_llm_response(response)
+        assert "First block" in cleaned
+        assert "Middle text" in cleaned
+        assert "Second block" in cleaned
+
+    async def test_get_transcript_path_error_cases(self, plugin):
+        """Test error cases for getting transcript path"""
+        # Test with missing data
+        event = Event(
+            name="test.event",
+            data={},
+            context=EventContext(correlation_id="test_id"),
+        )
+        path = await plugin._get_transcript_path(event)
+        assert path is None
+
+        # Test with invalid transcription data
+        event = Event(
+            name="test.event",
+            data={"transcription": {}},
+            context=EventContext(correlation_id="test_id"),
+        )
+        path = await plugin._get_transcript_path(event)
+        assert path is None
+
+    async def test_generate_notes_with_llm_error(self, plugin, mock_aioresponse):
+        """Test LLM generation error handling"""
+        mock_aioresponse.post(
+            plugin.ollama_url,
+            exception=aiohttp.ClientError("Connection error")
+        )
+
+        result = await plugin._generate_notes_with_llm("Test transcript", "test_id")
+        assert "Error calling Ollama API" in result
+
+    async def test_generate_meeting_notes_error(self, plugin):
+        """Test meeting notes generation error handling"""
+        transcript_path = Path("nonexistent.txt")
+        result = await plugin._generate_meeting_notes(transcript_path, "test_id", "rec_123")
+        assert result is None
+
+    async def test_handle_event_unsupported(self, plugin):
+        """Test handling of unsupported events"""
+        event = Event(
+            name="unsupported.event",
+            data={},
+            context=EventContext(correlation_id="test_id"),
+        )
+        await plugin.handle_event(event)
+        # Should not raise any exception
+
+    async def test_docker_url_adjustment_failure(self, plugin_config):
+        """Test Docker URL adjustment when connection tests fail"""
+        with patch("app.plugins.meeting_notes_local.plugin.is_running_in_docker", return_value=True), \
+             patch.object(MeetingNotesLocalPlugin, "_test_ollama_connection", return_value=False):
+            plugin = MeetingNotesLocalPlugin(plugin_config)
+            assert "172.17.0.1" in plugin.ollama_url
+
+    async def test_read_transcript_error(self, plugin):
+        """Test transcript reading error handling"""
+        transcript_path = Path("nonexistent.txt")
+        
+        # Create a future that raises an exception
+        future = Future()
+        future.set_exception(FileNotFoundError("File not found"))
+        plugin._executor.submit.return_value = future
+
+        with pytest.raises(FileNotFoundError):
+            await plugin._read_transcript(transcript_path)
+
+    async def test_generate_meeting_notes_from_text_empty(self, plugin):
+        """Test meeting notes generation with empty transcript"""
+        result = await plugin._generate_meeting_notes_from_text("")
+        assert "No transcript text found" in result
+
+    async def test_generate_meeting_notes_from_text_metadata_parsing(self, plugin, mock_aioresponse):
+        """Test meeting notes generation with various metadata formats"""
+        transcript = """## Metadata
+```json
+{
+    "event": {
+        "title": "Test Meeting",
+        "date": "2024-01-20T10:00:00Z"
+    }
+}
+```
+## Transcript
+Speaker 1: Test content
+"""
+        mock_aioresponse.post(
+            plugin.ollama_url,
+            payload={"response": "Generated notes"},
+            status=200
+        )
+
+        result = await plugin._generate_meeting_notes_from_text(transcript)
+        assert result == "Generated notes"
+
+    async def test_generate_meeting_notes_with_recording_id(self, plugin, sample_transcript):
+        """Test meeting notes generation with recording ID"""
+        transcript_path = Path("test.txt")
+        recording_id = "rec_123"
+        
+        mock_read = AsyncMock(return_value=sample_transcript)
+        mock_generate = AsyncMock(return_value="Generated notes")
+        mock_write = AsyncMock()
+        
+        with patch.object(plugin, "_read_transcript", mock_read), \
+             patch.object(plugin, "_generate_meeting_notes_from_text", mock_generate), \
+             patch("builtins.open", mock_open()):
+            result = await plugin._generate_meeting_notes(transcript_path, "test_id", recording_id)
+            assert result is not None
+            mock_read.assert_awaited_once()
+            mock_generate.assert_awaited_once()
