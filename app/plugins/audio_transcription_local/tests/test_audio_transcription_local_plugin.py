@@ -1,7 +1,8 @@
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch, call
 import json
+import wave
 
 import pytest
 
@@ -456,23 +457,196 @@ class TestAudioTranscriptionLocalPlugin(BasePluginTest):
             assert result is None
 
     async def test_emit_transcription_event(self, plugin):
-        """Test transcription event emission"""
-        recording_id = "test_id"
+        """Test emitting transcription event"""
+        recording_id = "test_recording"
         status = "completed"
         output_file = "output.txt"
         error = None
-        
-        # Mock the event bus
-        plugin.event_bus = AsyncMock()
-        plugin.event_bus.publish = AsyncMock()
-        
+        original_event = {
+            "metadata": {"test": "data"},
+            "context": {"metadata": {"additional": "info"}}
+        }
+        transcript_paths = {"mic": "mic.txt", "sys": "sys.txt"}
+
         await plugin._emit_transcription_event(
-            recording_id, status, output_file, error
+            recording_id, status, output_file, error, original_event, transcript_paths
+        )
+        plugin.event_bus.publish.assert_called_once()
+
+    async def test_emit_transcription_event_error(self, plugin):
+        """Test emitting transcription event with error"""
+        recording_id = "test_recording"
+        status = "error"
+        error = "Test error"
+        original_event = {
+            "recording": {"id": "test"},
+            "noise_reduction": {"status": "completed"},
+            "metadata": {"test": "data"}
+        }
+
+        await plugin._emit_transcription_event(recording_id, status, error=error, original_event=original_event)
+        plugin.event_bus.publish.assert_called_once()
+
+    async def test_handle_noise_reduction_completed_invalid_event(self, plugin):
+        """Test handling invalid noise reduction event"""
+        event_data = {"name": "wrong.event"}
+        await plugin.handle_noise_reduction_completed(event_data)
+        plugin.event_bus.publish.assert_not_called()
+
+    async def test_handle_noise_reduction_completed_missing_data(self, plugin):
+        """Test handling noise reduction event with missing data"""
+        event_data = {
+            "name": "noise_reduction.completed",
+            "data": {}
+        }
+        await plugin.handle_noise_reduction_completed(event_data)
+        plugin.event_bus.publish.assert_not_called()
+
+    async def test_handle_noise_reduction_completed_full_flow(self, plugin, mock_whisper):
+        """Test full flow of noise reduction handling"""
+        event_data = {
+            "name": "noise_reduction.completed",
+            "data": {
+                "noise_reduction": {
+                    "recording_id": "test_recording",
+                    "output_path": "processed.wav",
+                    "system_audio_path": "system.wav"
+                },
+                "recording": {"id": "test"},
+                "metadata": {
+                    "speaker_labels": {
+                        "microphone": "Speaker 1",
+                        "system": "Speaker 2"
+                    }
+                },
+                "context": {
+                    "metadata": {
+                        "additional": "info"
+                    }
+                }
+            }
+        }
+
+        with patch.object(plugin, "validate_wav_file", return_value=True), \
+             patch.object(plugin, "_process_audio", new_callable=AsyncMock) as mock_process, \
+             patch.object(plugin, "merge_transcripts", new_callable=AsyncMock) as mock_merge, \
+             patch.object(plugin, "_emit_transcription_event", new_callable=AsyncMock) as mock_emit, \
+             patch("os.path.exists", side_effect=lambda x: x in ["processed.wav", "system.wav"]):
+
+            mock_process.return_value = Path("test_output.md")
+            await plugin.handle_noise_reduction_completed(event_data)
+
+            # Verify processing of both mic and system audio
+            assert mock_process.call_count == 3  # Updated to expect 3 calls
+            mock_merge.assert_called_once()
+            mock_emit.assert_called_once()
+
+    async def test_process_audio(self, plugin, mock_whisper):
+        """Test processing audio file"""
+        audio_path = "test.wav"
+        speaker_label = "Speaker"
+        metadata = {"test": "data"}
+
+        with patch.object(plugin, "validate_wav_file", return_value=True), \
+             patch.object(plugin, "transcribe_audio", new_callable=AsyncMock) as mock_transcribe, \
+             patch("os.path.exists", return_value=True):
+
+            mock_transcribe.return_value = Path("output.md")
+            result = await plugin._process_audio(audio_path, speaker_label, metadata)
+
+            assert result == Path("output.md")
+            mock_transcribe.assert_called_once()
+
+    async def test_process_audio_invalid_path(self, plugin):
+        """Test processing audio with invalid path"""
+        with patch("os.path.exists", return_value=False):
+            result = await plugin._process_audio("invalid.wav", "Speaker")
+            assert result is None
+
+    async def test_process_audio_transcription_error(self, plugin):
+        """Test processing audio with transcription error"""
+        with patch.object(plugin, "validate_wav_file", return_value=True), \
+             patch.object(plugin, "transcribe_audio", side_effect=Exception("Transcription error")), \
+             patch("os.path.exists", return_value=True):
+
+            result = await plugin._process_audio("test.wav", "Speaker")
+            assert result is None
+
+    @patch("app.plugins.audio_transcription_local.plugin.Path.mkdir")
+    @patch("pathlib.Path")
+    @patch("app.plugins.audio_transcription_local.plugin.WhisperModel")
+    async def test_init_model(self, mock_whisper_model_cls, mock_path, mock_mkdir, tmp_path):
+        """Test initialization of the Whisper model"""
+        test_root = tmp_path / "test"
+        test_root.mkdir(parents=True, exist_ok=True)
+        
+        # Create mock paths
+        mock_file = MagicMock(spec=Path)
+        mock_file.__str__.return_value = str(test_root / "app/plugins/audio_transcription_local/plugin.py")
+        mock_file.resolve.return_value = mock_file
+        
+        mock_parent = MagicMock(spec=Path)
+        mock_parent.__str__.return_value = str(test_root / "app/plugins/audio_transcription_local")
+        mock_file.parent = mock_parent
+        
+        mock_project_root = MagicMock(spec=Path)
+        mock_project_root.__str__.return_value = str(test_root)
+        mock_parent.parent.parent.parent = mock_project_root
+        
+        models_dir = MagicMock(spec=Path)
+        models_dir.__str__.return_value = str(test_root / "models")
+        
+        model_dir = MagicMock(spec=Path)
+        model_dir.__str__.return_value = str(test_root / "models/whisper")
+        model_dir.parent = models_dir
+        
+        # Set up path resolution
+        def path_side_effect(p):
+            if str(p) == str(test_root / "app/plugins/audio_transcription_local/plugin.py"):
+                return mock_file
+            elif str(p) == str(test_root / "models"):
+                return models_dir
+            elif str(p) == str(test_root / "models/whisper"):
+                return model_dir
+            return Path(p)
+        mock_path.side_effect = path_side_effect
+        
+        # Set up model directory resolution
+        mock_project_root.__truediv__.side_effect = lambda x: models_dir if x == "models" else Path(x)
+        models_dir.__truediv__.return_value = model_dir
+        
+        # Create mock WhisperModel instance
+        mock_whisper_model = MagicMock()
+        mock_whisper_model_cls.return_value = mock_whisper_model
+
+        # Create plugin instance with config
+        config = PluginConfig(
+            name="audio_transcription_local",
+            version="1.0.0",
+            enabled=True,
+            config={"model_name": "base.en"}
         )
         
-        plugin.event_bus.publish.assert_called_once()
-        event = plugin.event_bus.publish.call_args[0][0]
-        assert event.name == "transcription_local.completed"
-        assert event.data["transcription"]["recording_id"] == recording_id
-        assert event.data["transcription"]["status"] == status
-        assert event.data["transcription"]["output_file"] == output_file
+        # Create plugin instance and initialize model
+        with patch("app.plugins.audio_transcription_local.plugin.__file__", str(test_root / "app/plugins/audio_transcription_local/plugin.py")):
+            plugin = AudioTranscriptionLocalPlugin(config)
+            plugin._init_model()
+
+            # Verify model initialization
+            mock_whisper_model_cls.assert_called_once_with(
+                model_size_or_path="base.en",
+                device="cpu",
+                device_index=0,
+                compute_type="default",
+                download_root=str(test_root / "models/whisper"),
+                local_files_only=False
+            )
+            assert plugin._model == mock_whisper_model
+            
+            # Verify all mkdir calls
+            assert mock_mkdir.call_count == 3
+            mock_mkdir.assert_has_calls([
+                call(parents=True, exist_ok=True),
+                call(parents=True, exist_ok=True),
+                call(parents=True, exist_ok=True)
+            ])
