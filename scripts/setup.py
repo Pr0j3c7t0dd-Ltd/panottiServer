@@ -357,7 +357,7 @@ def check_docker_installation():
 def check_ollama_setup():
     """Check if user wants to use local meeting note processing and setup Ollama"""
     if get_user_confirmation("\nDo you plan to process meeting notes locally on your machine?"):
-        print(f"{color_text('\n⚠️  Important Note:', Colors.YELLOW)}")
+        print(f"{color_text('\\n⚠️  Important Note:', Colors.YELLOW)}")
         print("Local meeting note processing requires Ollama (https://ollama.com/download)")
         if get_user_confirmation("\nHave you already installed Ollama on your machine?"):
             try:
