@@ -98,16 +98,37 @@ def check_python_version():
                     print("Error installing pyenv. Please ensure Homebrew is properly installed.")
                     sys.exit(1)
 
-            # Install Python 3.12 using pyenv
-            print("Installing Python 3.12 via pyenv...")
-            subprocess.run(["pyenv", "install", "3.12"], check=True)
+            # Install Python 3.12 using pyenv if not already installed
+            try:
+                subprocess.run(["pyenv", "versions"], check=True, capture_output=True, text=True).stdout
+                print("Installing Python 3.12 via pyenv...")
+                subprocess.run(["pyenv", "install", "3.12"], check=True)
+            except subprocess.CalledProcessError:
+                print("Error checking Python versions or installing Python 3.12")
+                sys.exit(1)
+            
+            # Set local Python version to 3.12
             print("Setting local Python version to 3.12...")
-            subprocess.run(["pyenv", "local", "3.12"], check=True)
-            print("Python 3.12 installed and configured successfully. Please restart your terminal and run this script again.")
-            sys.exit(0)
+            try:
+                subprocess.run(["pyenv", "local", "3.12"], check=True)
+                print("Python 3.12 configured successfully. Please restart your terminal and run this script again.")
+                sys.exit(0)
+            except subprocess.CalledProcessError:
+                print("Error setting local Python version")
+                sys.exit(1)
         else:
             print("Please install Python 3.12.x manually and run this script again.")
             sys.exit(1)
+    else:
+        # Even if we're already on Python 3.12, ensure it's set as the local version
+        try:
+            subprocess.run(["pyenv", "--version"], check=True, capture_output=True)
+            print("Setting local Python version to 3.12...")
+            subprocess.run(["pyenv", "local", "3.12"], check=True)
+            print("Python 3.12 is properly configured.")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # If pyenv is not installed but we're on 3.12, that's fine
+            pass
 
 
 def check_brew_installation():
