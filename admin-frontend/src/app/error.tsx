@@ -10,7 +10,12 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Log the error to an error reporting service
+    // Check for chunk loading errors and reload
+    if (error.message.includes('Loading chunk')) {
+      window.location.reload();
+      return;
+    }
+    // Log other errors to an error reporting service
     console.error(error);
   }, [error]);
 
