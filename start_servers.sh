@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Activate Python virtual environment
+if [ -f ".venv/bin/activate" ]; then
+    echo "Activating virtual environment..."
+    source .venv/bin/activate
+else
+    echo "Virtual environment not found. Exiting..."
+    exit 1
+fi
+
 # Load environment variables from .env file
 if [ -f .env ]; then
     echo "Loading environment variables from .env file..."
