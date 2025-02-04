@@ -260,8 +260,23 @@ def setup_virtual_environment():
     if get_user_confirmation("Would you like to set up the virtual environment and install dependencies?"):
         print("Setting up virtual environment using venv...")
         subprocess.run([sys.executable, "-m", "venv", ".venv"], check=True)
-        activate_script = ".venv/bin/activate" if platform.system() != "Windows" else ".venv\\Scripts\\activate"
-        subprocess.run([f"source {activate_script} && poetry install"], shell=True, check=True)
+        
+        # Get the path to the Python executable in the virtual environment
+        if platform.system() == "Windows":
+            venv_python = ".venv\\Scripts\\python.exe"
+            venv_pip = ".venv\\Scripts\\pip.exe"
+        else:
+            venv_python = ".venv/bin/python"
+            venv_pip = ".venv/bin/pip"
+
+        # Upgrade pip in the virtual environment
+        subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip"], check=True)
+        
+        # Install poetry using the venv's pip
+        subprocess.run([venv_pip, "install", "poetry"], check=True)
+        
+        # Use the venv's Python to run poetry install
+        subprocess.run([venv_python, "-m", "poetry", "install"], check=True)
     else:
         print("Virtual environment setup skipped. Note that this is required for the application to run.")
         sys.exit(1)
