@@ -28,7 +28,7 @@ def color_text(text, color):
 
 def print_step(emoji, text):
     """Print a setup step with consistent formatting"""
-    print(f"\n{emoji} {color_text(text, Colors.BLUE)}")
+    print("\n" + emoji + " " + color_text(text, Colors.BLUE))
 
 def print_success(text):
     """Print a success message"""
@@ -357,7 +357,7 @@ def check_docker_installation():
 def check_ollama_setup():
     """Check if user wants to use local meeting note processing and setup Ollama"""
     if get_user_confirmation("\nDo you plan to process meeting notes locally on your machine?"):
-        print(f"{color_text('\\n⚠️  Important Note:', Colors.YELLOW)}")
+        print("\n" + color_text('⚠️  Important Note:', Colors.YELLOW))
         print("Local meeting note processing requires Ollama (https://ollama.com/download)")
         if get_user_confirmation("\nHave you already installed Ollama on your machine?"):
             try:
@@ -450,11 +450,11 @@ def setup_admin_frontend():
 def main():
     """Main setup function"""
     try:
-        print(f"\n{color_text('🚀 Welcome to the panottiServer setup script!', Colors.HEADER)}")
+        print("\n" + color_text('🚀 Welcome to the panottiServer setup script!', Colors.HEADER))
         print("This script will guide you through the installation process.")
         print("You can choose which components to install.\n")
         
-        print(f"{color_text('⚠️  Important Note:', Colors.YELLOW)}")
+        print("\n" + color_text('⚠️  Important Note:', Colors.YELLOW))
         print("If you plan to customize the code or create your own plugins,")
         print("please first fork the repository before running this setup script:")
         print(color_text("https://github.com/Pr0j3c7t0dd-Ltd/panottiServer\n", Colors.UNDERLINE))
@@ -503,23 +503,23 @@ def main():
         print_step("🔧", "Setting up plugin configurations...")
         copy_plugin_yaml_files()
 
-        print(f"\n{color_text('✨ Setup completed successfully! 💥', Colors.GREEN + Colors.BOLD)}")
-        print(f"\n{color_text('📋 Important Next Steps:', Colors.HEADER)}")
+        print("\n" + color_text('✨ Setup completed successfully! 💥', Colors.GREEN + Colors.BOLD))
+        print("\n" + color_text('📋 Important Next Steps:', Colors.HEADER))
         print(color_text("1. Review and configure your plugin settings:", Colors.BOLD))
         print("   - Check app/plugins/meeting_notes/plugin.yaml")
         print("   - By default, local meeting note processing is enabled")
         print("   - To use remote processing, enable the remote_meeting_notes plugin")
         print("   - Add your API keys in the remote_meeting_notes plugin configuration")
-        print(f"\n{color_text('2. Start the server using one of the following commands:', Colors.BOLD)}")
+        print("\n" + color_text('2. Start the server using one of the following commands:', Colors.BOLD))
         print("   a. Using the shell script (recommended):")
         print(color_text("\n     👉 ./start_servers.sh 👈\n", Colors.GREEN))
         print("   b. Using Docker Compose:")
         print(color_text("      docker-compose up", Colors.GREEN))
-        print(f"\n{color_text('3. After you start the server, you can access the admin frontend:', Colors.BOLD)}")
+        print("\n" + color_text('3. After you start the server, you can access the admin frontend:', Colors.BOLD))
         print(color_text("   - 👉 Visit http://localhost:54790/  👈", Colors.BLUE))
         print("   - Default password: Pa55w0rd")
         print("   - You will be prompted to change this password on first login")
-        print(f"\n{color_text('🎯 Make sure all configuration files are properly set up before starting the server.', Colors.YELLOW)}")
+        print("\n" + color_text('🎯 Make sure all configuration files are properly set up before starting the server.', Colors.YELLOW))
 
     except KeyboardInterrupt:
         print_error("\n❌ Setup cancelled by user.")
