@@ -113,6 +113,7 @@ eval "$(pyenv init -)"
         print("Added pyenv initialization to shell configuration")
         print("Reloading shell configuration...")
         reload_shell_config(shell_rc)
+        restart_script("pyenv init block added")
 
     # Set up environment for current session
     pyenv_root = os.path.expanduser("~/.pyenv")
@@ -524,6 +525,18 @@ def reload_shell_config(shell_rc):
         print(f"Reloaded shell configuration from {shell_rc}")
     except Exception as e:
         print_warning(f"Could not reload shell configuration automatically: {e}")
+
+
+def restart_script(reason=None):
+    """Auto restart the script with updated environment variables."""
+    import sys, os
+    count = int(os.environ.get("AUTO_RESTART_COUNT", "0"))
+    if count >= 1:
+        print_warning("Auto restart already attempted. Continuing without further restart.")
+        return
+    os.environ["AUTO_RESTART_COUNT"] = str(count + 1)
+    print("Restarting the script. Reason: " + (reason if reason else ""))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 def main():
