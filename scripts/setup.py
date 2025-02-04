@@ -111,9 +111,8 @@ eval "$(pyenv init -)"
         with open(shell_rc, "a") as f:
             f.write(pyenv_init)
         print("Added pyenv initialization to shell configuration")
-        print_warning("Please run the following command and then run this script again:")
-        print(f"source {shell_rc}")
-        sys.exit(0)
+        print("Reloading shell configuration...")
+        reload_shell_config(shell_rc)
 
     # Set up environment for current session
     pyenv_root = os.path.expanduser("~/.pyenv")
@@ -300,14 +299,16 @@ def copy_env_file():
             # Get RECORDINGS_DIR
             print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
             recordings_dir = get_user_input("Enter the path to your recordings directory")
-            # Ensure the path is properly quoted
             recordings_dir = f'"{recordings_dir}"'
             update_env_value(".env", "RECORDINGS_DIR", recordings_dir)
             
             print("\nEnvironment file configured successfully!")
+            load_env_vars(".env")
         else:
             print("Environment file is required for the application to run.")
             sys.exit(1)
+    else:
+        load_env_vars(".env")
 
 
 def copy_plugin_yaml_files():
@@ -498,6 +499,31 @@ def setup_admin_frontend():
     
     os.chdir("..")
     print_success("Admin frontend setup completed successfully!")
+
+
+def load_env_vars(file_path):
+    """Load environment variables from a .env file into os.environ"""
+    with open(file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                key, _, value = line.partition('=')
+                os.environ[key.strip()] = value.strip()
+
+
+def reload_shell_config(shell_rc):
+    """Reload shell configuration from the given file and update os.environ"""
+    import subprocess
+    shell = "zsh" if os.environ.get("SHELL", "").endswith("zsh") else "bash"
+    try:
+        new_env_str = subprocess.check_output([shell, "-c", f"source {shell_rc} && env"], text=True)
+        for line in new_env_str.splitlines():
+            if '=' in line:
+                key, value = line.split('=', 1)
+                os.environ[key] = value
+        print(f"Reloaded shell configuration from {shell_rc}")
+    except Exception as e:
+        print_warning(f"Could not reload shell configuration automatically: {e}")
 
 
 def main():
