@@ -261,13 +261,8 @@ def setup_virtual_environment():
         print("Setting up virtual environment using venv...")
         subprocess.run([sys.executable, "-m", "venv", ".venv"], check=True)
         
-        # Get the path to the Python executable in the virtual environment
-        if platform.system() == "Windows":
-            venv_python = ".venv\\Scripts\\python.exe"
-            venv_pip = ".venv\\Scripts\\pip.exe"
-        else:
-            venv_python = ".venv/bin/python"
-            venv_pip = ".venv/bin/pip"
+        venv_python = ".venv/bin/python"
+        venv_pip = ".venv/bin/pip"
 
         # Upgrade pip in the virtual environment
         subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip"], check=True)
@@ -336,17 +331,17 @@ def download_whisper_model():
     """Download the Whisper model"""
     if get_user_confirmation("Would you like to download the Whisper model? This is required for audio transcription."):
         print_step("🎙️", "Downloading Whisper model (this may take a few minutes)...")
-        script_path = Path(
-            "app/plugins/audio_transcription_local/scripts/download_models.py"
-        )
+        script_path = Path("app/plugins/audio_transcription_local/scripts/download_models.py")
         if script_path.exists():
             try:
-                subprocess.run(
-                    [sys.executable, str(script_path), "--model", "base.en"], 
-                    check=True,
-                    capture_output=True,
-                    text=True
-                )
+                # Use the virtual environment's Python if available
+                python_exec = os.path.join(".venv", "bin", "python") if os.path.exists(".venv") else sys.executable
+                subprocess.run([
+                    python_exec,
+                    str(script_path),
+                    "--model",
+                    "base.en"
+                ], check=True, capture_output=True, text=True)
                 print_success("Whisper model downloaded successfully!")
             except subprocess.CalledProcessError as e:
                 print_error(f"Error downloading Whisper model: {e.stderr}")
