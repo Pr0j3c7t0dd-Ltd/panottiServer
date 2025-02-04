@@ -100,18 +100,24 @@ def check_python_version():
 
             # Install Python 3.12 using pyenv if not already installed
             try:
-                subprocess.run(["pyenv", "versions"], check=True, capture_output=True, text=True).stdout
-                print("Installing Python 3.12 via pyenv...")
-                subprocess.run(["pyenv", "install", "3.12"], check=True)
+                versions_output = subprocess.run(["pyenv", "versions"], check=True, capture_output=True, text=True).stdout
+                if "3.12" not in versions_output:
+                    print("Installing Python 3.12 via pyenv...")
+                    subprocess.run(["pyenv", "install", "3.12"], check=True)
             except subprocess.CalledProcessError:
                 print("Error checking Python versions or installing Python 3.12")
                 sys.exit(1)
             
-            # Set local Python version to 3.12
+            # Set local Python version to 3.12 and update shell
             print("Setting local Python version to 3.12...")
             try:
                 subprocess.run(["pyenv", "local", "3.12"], check=True)
-                print("Python 3.12 configured successfully. Please restart your terminal and run this script again.")
+                # Update shell environment
+                shell_rc = os.path.expanduser("~/.zshrc" if os.environ.get("SHELL", "").endswith("zsh") else "~/.bashrc")
+                with open(shell_rc, "a") as f:
+                    f.write("\n# pyenv initialization\neval \"$(pyenv init --path)\"\neval \"$(pyenv init -)\"\n")
+                print("Python 3.12 configured successfully.")
+                print("Please run: source ~/.zshrc (or ~/.bashrc) and run this script again.")
                 sys.exit(0)
             except subprocess.CalledProcessError:
                 print("Error setting local Python version")
@@ -119,16 +125,28 @@ def check_python_version():
         else:
             print("Please install Python 3.12.x manually and run this script again.")
             sys.exit(1)
-    else:
-        # Even if we're already on Python 3.12, ensure it's set as the local version
-        try:
-            subprocess.run(["pyenv", "--version"], check=True, capture_output=True)
-            print("Setting local Python version to 3.12...")
-            subprocess.run(["pyenv", "local", "3.12"], check=True)
-            print("Python 3.12 is properly configured.")
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            # If pyenv is not installed but we're on 3.12, that's fine
-            pass
+    
+    # Even if we're already on Python 3.12, ensure it's set as the local version
+    try:
+        subprocess.run(["pyenv", "--version"], check=True, capture_output=True)
+        print("Setting local Python version to 3.12...")
+        subprocess.run(["pyenv", "local", "3.12"], check=True)
+        
+        # Ensure pyenv is initialized in current shell
+        os.environ["PYENV_ROOT"] = os.path.expanduser("~/.pyenv")
+        os.environ["PATH"] = f"{os.environ['PYENV_ROOT']}/shims:{os.environ['PATH']}"
+        
+        # Verify we're using the correct version
+        python_path = subprocess.run(["which", "python"], capture_output=True, text=True).stdout.strip()
+        if ".pyenv" not in python_path:
+            print("Error: pyenv Python is not active in current shell.")
+            print("Please run: eval \"$(pyenv init -)\" and try again.")
+            sys.exit(1)
+            
+        print("Python 3.12 is properly configured and active.")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # If pyenv is not installed but we're on 3.12, that's fine
+        pass
 
 
 def check_brew_installation():
