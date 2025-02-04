@@ -95,6 +95,26 @@ def check_python_version():
             print_error("Error installing pyenv")
             sys.exit(1)
 
+    # Update shell configuration if needed
+    shell_rc = os.path.expanduser("~/.zshrc" if os.environ.get("SHELL", "").endswith("zsh") else "~/.bashrc")
+    with open(shell_rc, "r") as f:
+        rc_content = f.read()
+    
+    pyenv_init = '''
+# pyenv initialization
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init --path)"
+eval "$(pyenv init -)"
+'''
+    if "pyenv init" not in rc_content:
+        with open(shell_rc, "a") as f:
+            f.write(pyenv_init)
+        print("Added pyenv initialization to shell configuration")
+        print_warning("Please run the following command and then run this script again:")
+        print(f"source {shell_rc}")
+        sys.exit(0)
+
     # Set up environment for current session
     pyenv_root = os.path.expanduser("~/.pyenv")
     os.environ["PYENV_ROOT"] = pyenv_root
@@ -121,28 +141,16 @@ def check_python_version():
         print_error("Failed to set Python 3.12 as local version")
         sys.exit(1)
 
-    # Update shell configuration if needed
-    shell_rc = os.path.expanduser("~/.zshrc" if os.environ.get("SHELL", "").endswith("zsh") else "~/.bashrc")
-    with open(shell_rc, "r") as f:
-        rc_content = f.read()
-    
-    pyenv_init = '''
-# pyenv initialization
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init --path)"
-eval "$(pyenv init -)"
-'''
-    if "pyenv init" not in rc_content:
-        with open(shell_rc, "a") as f:
-            f.write(pyenv_init)
-        print("Added pyenv initialization to shell configuration")
-        print_warning("Please run the following command and then run this script again:")
-        print(f"source {shell_rc}")
+    # Verify we're using the correct version
+    try:
+        version_check = subprocess.run(["python", "--version"], capture_output=True, text=True, check=True)
+        if "3.12" not in version_check.stdout:
+            print_warning("Python 3.12 is not active. Please restart your shell and run this script again.")
+            sys.exit(0)
+        print_success("Python 3.12 is properly configured and active.")
+    except subprocess.CalledProcessError:
+        print_warning("Could not verify Python version. Please restart your shell and run this script again.")
         sys.exit(0)
-
-    print_success("Python 3.12 is configured. Please run this script again after restarting your shell.")
-    sys.exit(0)
 
 
 def check_brew_installation():
