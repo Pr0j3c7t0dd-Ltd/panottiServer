@@ -75,8 +75,15 @@ COPY README.md ./
 # Set up admin frontend
 WORKDIR /app/admin-frontend
 
-# Copy admin frontend files
+# Copy admin frontend files first
 COPY admin-frontend/package*.json ./
+
+# Install dependencies first to leverage Docker cache
+RUN npm ci && \
+    npm install -g next && \
+    npm install -g tailwindcss postcss autoprefixer
+
+# Copy the rest of the admin frontend files
 COPY admin-frontend/.env.local ./.env.production
 COPY admin-frontend/next.config.js ./
 COPY admin-frontend/tailwind.config.ts ./
@@ -87,9 +94,8 @@ COPY admin-frontend/public ./public
 COPY admin-frontend/scripts ./scripts
 COPY --from=admin-builder /app/admin-frontend/password-hash.txt ./password-hash.txt
 
-# Install dependencies and build Next.js
-RUN npm ci && \
-    npm run build && \
+# Build the admin frontend
+RUN npm run build && \
     npm prune --production
 
 # Back to app directory
