@@ -128,8 +128,11 @@ def configure_env_variables():
     
     # Update essential variables
     env_vars = {}
-    env_vars['ADMIN_PASSWORD'] = get_user_input("Enter admin password", "admin")
-    env_vars['ANTHROPIC_API_KEY'] = get_user_input("Enter Anthropic API key (required for meeting notes)")
+    print("\nThe API_KEY should match the one set in your Panotti desktop app.")
+    env_vars['API_KEY'] = get_user_input("Enter your API_KEY", "your_api_key_here")
+    print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
+    recordings_dir = get_user_input("Enter the path to your recordings directory")
+    env_vars['RECORDINGS_DIR'] = f'"{recordings_dir}"'
     
     # Update .env file
     with open(env_file, 'w') as f:
