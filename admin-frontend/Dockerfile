@@ -2,11 +2,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install ALL dependencies for build (including dev dependencies)
-COPY package.json package-lock.json ./
-RUN npm ci --include=dev
+# Install build essentials
+RUN apk add --no-cache python3 make g++
 
-# Copy configuration files
+# Install ALL dependencies (including dev dependencies)
+COPY package*.json ./
+COPY package-lock.json ./
+# Temporarily set NODE_ENV to development for full installation
+ENV NODE_ENV=development
+RUN npm ci
+ENV NODE_ENV=production
+
+# Copy configuration files first
 COPY postcss.config.js postcss.config.mjs tailwind.config.ts tsconfig.json next.config.js .eslintrc.json .prettierrc ./
 
 # Copy sensitive files
@@ -18,14 +25,13 @@ COPY . .
 
 # Set environment variables
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
 ENV PORT=54790
+
+# Ensure node_modules/.bin is in PATH
+ENV PATH /app/node_modules/.bin:$PATH
 
 # Build the application
 RUN npm run build
-
-# Remove dev dependencies after build
-RUN npm ci --omit=dev
 
 # Expose the port
 EXPOSE 54790
