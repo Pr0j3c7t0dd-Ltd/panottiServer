@@ -2,9 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies first (better caching)
+# Install ALL dependencies for build (including dev dependencies)
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 # Copy configuration files
 COPY postcss.config.js postcss.config.mjs tailwind.config.ts tsconfig.json next.config.js .eslintrc.json .prettierrc ./
@@ -23,6 +23,9 @@ ENV PORT=54790
 
 # Build the application
 RUN npm run build
+
+# Remove dev dependencies after build
+RUN npm ci --omit=dev
 
 # Expose the port
 EXPOSE 54790
