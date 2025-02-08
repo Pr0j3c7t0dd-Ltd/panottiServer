@@ -75,12 +75,18 @@ def setup_plugin_configs():
     """Copy plugin.yaml.example files to plugin.yaml for each plugin"""
     print_step("Setting up plugin configurations")
     
-    plugin_dir = Path("app/plugins")
+    root_dir = Path.cwd()
+    plugin_dir = root_dir / "app" / "plugins"
     for example_file in plugin_dir.rglob("plugin.yaml.example"):
         target_file = example_file.parent / "plugin.yaml"
         if not target_file.exists():
             shutil.copy2(example_file, target_file)
-            print_success(f"Created {target_file.relative_to(Path.cwd())}")
+            try:
+                rel_path = target_file.relative_to(root_dir)
+                print_success(f"Created {rel_path}")
+            except ValueError:
+                # Fallback to just the filename if relative_to fails
+                print_success(f"Created {target_file.name}")
 
 def setup_env_files():
     """Set up .env and admin frontend .env.local files"""
