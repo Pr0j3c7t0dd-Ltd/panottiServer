@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
     && apt-get update \
     && apt-get install -y nodejs \
+    && npm install -g next \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
