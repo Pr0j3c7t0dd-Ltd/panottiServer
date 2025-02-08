@@ -104,6 +104,8 @@ pydantic-core = "2.27.2"
 pylint = "3.3.3"
 pyparsing = "3.2.1"
 pytest-mock = "3.14.0"
+pyqt6 = "^6.8.0"
+pyinstaller = { version = "^6.11.1", python = ">=3.12,<3.14" }
 rsa = "4.9"
 setuptools = "75.8.0"
 six = "1.17.0"

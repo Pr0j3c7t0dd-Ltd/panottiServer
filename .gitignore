@@ -3,6 +3,9 @@
 # Then explicitly un-ignore everything in admin-frontend
 !/admin-frontend/**/*
 
+dmg_temp/
+panottiServer-Installer.dmg
+
 # Allow admin-frontend/src/lib directory
 !/admin-frontend/src/lib/
 !/admin-frontend/src/lib/**
