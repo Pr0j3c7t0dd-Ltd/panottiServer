@@ -12,7 +12,7 @@ fi
 # Start Next.js admin frontend in the background
 cd /app/admin-frontend
 npm run build
-PORT=54790 HOST=0.0.0.0 npm start &
+PORT=54790 HOST=0.0.0.0 npm run start &
 
 # Wait a moment to ensure Next.js starts properly
 sleep 5
