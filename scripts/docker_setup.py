@@ -71,6 +71,42 @@ def check_docker():
     except FileNotFoundError:
         print_error("Docker command not found. Please ensure Docker Desktop is properly installed.")
 
+def check_ollama_setup():
+    """Check if user wants to use local meeting note processing and setup Ollama"""
+    if get_user_confirmation("\nDo you plan to process meeting notes locally on your machine?"):
+        print("\n" + Colors.YELLOW + "⚠️  Important Note:" + Colors.END)
+        print("Local meeting note processing requires Ollama (https://ollama.com/download)")
+        if get_user_confirmation("\nHave you already installed Ollama on your machine?"):
+            try:
+                # Check if ollama is available
+                subprocess.run(["ollama", "--version"], check=True, capture_output=True)
+                
+                # Ask about default model
+                print("\nThe default model for local processing is 'llama3.1:8b'")
+                print("Note: You can use any other Ollama model, but you'll need to update")
+                print("      the model name in the plugin configuration files.")
+                if get_user_confirmation("Would you like to pull the default model now?"):
+                    print("\nPulling llama3.1:8b model (this may take a while)...")
+                    subprocess.run(["ollama", "pull", "llama3.1:8b"], check=True)
+                    print("Model downloaded successfully!")
+                else:
+                    print("\nSkipping model download.")
+                    print("Remember to update the model name in app/plugins/meeting_notes/plugin.yaml")
+                    print("if you plan to use a different model.")
+            except subprocess.CalledProcessError:
+                print("\nError: Ollama is not properly installed or not in PATH")
+                print("Please install Ollama from https://ollama.com/download")
+                if not get_user_confirmation("Would you like to continue with setup?"):
+                    sys.exit(1)
+        else:
+            print("\nPlease install Ollama from https://ollama.com/download")
+            print("You can continue with setup and install Ollama later.")
+            if not get_user_confirmation("Would you like to continue with setup?"):
+                sys.exit(1)
+    else:
+        print("\nSkipping Ollama setup. You'll need to configure remote processing")
+        print("in app/plugins/remote_meeting_notes/plugin.yaml")
+
 def setup_plugin_configs():
     """Copy plugin.yaml.example files to plugin.yaml for each plugin"""
     print_step("Setting up plugin configurations")
@@ -146,6 +182,39 @@ def configure_env_variables():
             else:
                 f.write(line)
 
+def create_ssl_directory():
+    """Create SSL directory and generate self-signed certificates"""
+    if get_user_confirmation("Would you like to create SSL certificates for HTTPS support?"):
+        ssl_dir = Path("ssl")
+        if not ssl_dir.exists():
+            ssl_dir.mkdir()
+            os.chdir(ssl_dir)
+            print("Generating self-signed SSL certificates...")
+            subprocess.run(
+                [
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:4096",
+                    "-nodes",
+                    "-out",
+                    "cert.pem",
+                    "-keyout",
+                    "key.pem",
+                    "-days",
+                    "365",
+                    "-subj",
+                    "/CN=localhost",
+                ],
+                check=True,
+            )
+            print("SSL certificates generated successfully")
+            os.chdir("..")
+    else:
+        print("SSL certificates are required for secure HTTPS connections.")
+        sys.exit(1)
+
 def start_docker():
     """Start Docker containers"""
     print_step("Starting Docker containers")
@@ -161,8 +230,9 @@ def start_docker():
         
         print(f"\n{Colors.GREEN}🎉 Setup complete! Your panottiServer is now running.{Colors.END}")
         print("\nAccess points:")
-        print("- Admin Interface: http://localhost:3000")
-        print("- API Endpoint: http://localhost:8000")
+        print(Colors.BLUE + "   - 👉 Visit http://localhost:54790/  👈" + Colors.END)
+        print("   - Default password: Pa55w0rd")
+        print(f"   - API Endpoint: http://localhost:54789")
         print("\nTo view logs: docker compose logs -f")
         print("To stop: docker compose down")
         
@@ -176,9 +246,11 @@ def main():
         print_error("Please run this script from the project root directory")
     
     check_docker()
+    check_ollama_setup()
     setup_plugin_configs()
     setup_env_files()
     configure_env_variables()
+    create_ssl_directory()
     start_docker()
 
 if __name__ == "__main__":
