@@ -181,9 +181,15 @@ def configure_env_variables():
     env_vars = {}
     print("\nThe API_KEY should match the one set in your Panotti desktop app.")
     env_vars['API_KEY'] = get_user_input("Enter your API_KEY", "your_api_key_here")
+    
     print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
-    recordings_dir = get_user_input("Enter the path to your recordings directory")
-    env_vars['RECORDINGS_DIR'] = f'"{recordings_dir}"'
+    host_recordings_dir = get_user_input("Enter the path to your recordings directory")
+    # Convert to absolute path for Docker mounting
+    host_recordings_dir = str(Path(host_recordings_dir).absolute())
+    
+    # Store both the host path (for Docker mount) and container path (for FastAPI)
+    env_vars['HOST_RECORDINGS_DIR'] = f'"{host_recordings_dir}"'
+    env_vars['RECORDINGS_DIR'] = '"/recordings"'  # This is the path inside the container
     
     # Update .env file
     with open(env_file, 'w') as f:
