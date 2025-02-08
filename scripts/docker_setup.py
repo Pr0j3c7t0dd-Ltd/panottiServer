@@ -150,6 +150,21 @@ def setup_env_files():
         shutil.copy2(admin_env_sample, admin_env_local)
         print_success("Created admin-frontend/.env.local file")
 
+def setup_admin_frontend():
+    """Setup the admin frontend application"""
+    admin_dir = Path("admin-frontend")
+    
+    if not admin_dir.exists():
+        print_error("Error: admin-frontend directory not found!")
+        sys.exit(1)
+        
+    # Copy .env.local if it doesn't exist
+    env_example = admin_dir / ".env.local.sample"
+    env_target = admin_dir / ".env.local"
+    if not env_target.exists() and env_example.exists():
+        shutil.copy(env_example, env_target)
+        print_success("Created admin frontend .env.local from sample file")
+
 def configure_env_variables():
     """Configure essential environment variables"""
     print_step("Configuring environment variables")
@@ -184,36 +199,34 @@ def configure_env_variables():
 
 def create_ssl_directory():
     """Create SSL directory and generate self-signed certificates"""
-    if get_user_confirmation("Would you like to create SSL certificates for HTTPS support?"):
-        ssl_dir = Path("ssl")
-        if not ssl_dir.exists():
-            ssl_dir.mkdir()
-            os.chdir(ssl_dir)
-            print("Generating self-signed SSL certificates...")
-            subprocess.run(
-                [
-                    "openssl",
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:4096",
-                    "-nodes",
-                    "-out",
-                    "cert.pem",
-                    "-keyout",
-                    "key.pem",
-                    "-days",
-                    "365",
-                    "-subj",
-                    "/CN=localhost",
-                ],
-                check=True,
-            )
-            print("SSL certificates generated successfully")
-            os.chdir("..")
-    else:
-        print("SSL certificates are required for secure HTTPS connections.")
-        sys.exit(1)
+    ssl_dir = Path("ssl")
+    if not ssl_dir.exists():
+        ssl_dir.mkdir()
+        
+    # Always regenerate certificates to ensure they exist
+    print("Generating self-signed SSL certificates...")
+    os.chdir(ssl_dir)
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:4096",
+            "-nodes",
+            "-out",
+            "cert.pem",
+            "-keyout",
+            "key.pem",
+            "-days",
+            "365",
+            "-subj",
+            "/CN=localhost",
+        ],
+        check=True,
+    )
+    print("SSL certificates generated successfully")
+    os.chdir("..")
 
 def start_docker():
     """Start Docker containers"""
@@ -241,14 +254,14 @@ def start_docker():
 
 def main():
     """Main setup function"""
-    # Ensure we're in the project root directory
-    if not Path("docker-compose.yml").exists():
+    if not os.path.isfile("docker-compose.yml"):
         print_error("Please run this script from the project root directory")
     
     check_docker()
     check_ollama_setup()
     setup_plugin_configs()
     setup_env_files()
+    setup_admin_frontend()
     configure_env_variables()
     create_ssl_directory()
     start_docker()

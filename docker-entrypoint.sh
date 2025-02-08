@@ -11,6 +11,7 @@ fi
 
 # Start Next.js admin frontend in the background
 cd /app/admin-frontend
+npm run build
 PORT=54790 HOST=0.0.0.0 npm start &
 
 # Wait a moment to ensure Next.js starts properly
@@ -24,4 +25,4 @@ exec poetry run uvicorn app.main:app \
   --ssl-keyfile ${SSL_KEY_FILE} \
   --ssl-certfile ${SSL_CERT_FILE} \
   --log-level debug \
-  --proxy-headers 
+  --proxy-headers
