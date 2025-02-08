@@ -92,7 +92,7 @@ RUN npm ci --only=production
 WORKDIR /app
 
 # Copy entrypoint script
-COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
+COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
