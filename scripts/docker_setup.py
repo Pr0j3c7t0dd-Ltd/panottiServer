@@ -133,18 +133,20 @@ def setup_env_files():
     env_file = Path(".env")
     
     if not env_example.exists():
-        print_error(".env.example file not found!")
+        print_error(".env.example file not found! Please ensure you're running this script from the project root.")
+        sys.exit(1)
     
     if not env_file.exists():
         shutil.copy2(env_example, env_file)
-        print_success("Created .env file")
+        print_success("Created .env file from .env.example")
     
     # Admin frontend .env.local
     admin_env_sample = Path("admin-frontend/.env.local.sample")
     admin_env_local = Path("admin-frontend/.env.local")
     
     if not admin_env_sample.exists():
-        print_error("admin-frontend/.env.local.sample file not found!")
+        print_warning("admin-frontend/.env.local.sample file not found - skipping admin frontend env setup")
+        return
     
     if not admin_env_local.exists():
         shutil.copy2(admin_env_sample, admin_env_local)
@@ -171,37 +173,43 @@ def configure_env_variables():
     
     env_file = Path(".env")
     if not env_file.exists():
-        print_error(".env file not found!")
+        print_error("No .env file found. Please run setup_env_files first.")
+        sys.exit(1)
     
-    # Read current env file
-    with open(env_file, 'r') as f:
-        env_lines = f.readlines()
-    
-    # Update essential variables
-    env_vars = {}
-    print("\nThe API_KEY should match the one set in your Panotti desktop app.")
-    env_vars['API_KEY'] = get_user_input("Enter your API_KEY", "your_api_key_here")
-    
-    print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
-    host_recordings_dir = get_user_input("Enter the path to your recordings directory")
-    # Convert to absolute path for Docker mounting
-    host_recordings_dir = str(Path(host_recordings_dir).absolute())
-    
-    # Store both the host path (for Docker mount) and container path (for FastAPI)
-    env_vars['HOST_RECORDINGS_DIR'] = f'"{host_recordings_dir}"'
-    env_vars['RECORDINGS_DIR'] = '"/recordings"'  # This is the path inside the container
-    
-    # Update .env file
-    with open(env_file, 'w') as f:
-        for line in env_lines:
-            if line.strip() and not line.startswith('#'):
-                key = line.split('=')[0].strip()
-                if key in env_vars:
-                    f.write(f"{key}={env_vars[key]}\n")
+    try:
+        # Read current env file
+        with open(env_file, 'r') as f:
+            env_lines = f.readlines()
+        
+        # Update essential variables
+        env_vars = {}
+        print("\nThe API_KEY should match the one set in your Panotti desktop app.")
+        env_vars['API_KEY'] = get_user_input("Enter your API_KEY", "your_api_key_here")
+        
+        print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
+        host_recordings_dir = get_user_input("Enter the path to your recordings directory")
+        # Convert to absolute path for Docker mounting
+        host_recordings_dir = str(Path(host_recordings_dir).absolute())
+        
+        # Store both the host path (for Docker mount) and container path (for FastAPI)
+        env_vars['HOST_RECORDINGS_DIR'] = f'"{host_recordings_dir}"'
+        env_vars['RECORDINGS_DIR'] = '"/recordings"'  # This is the path inside the container
+        
+        # Update .env file
+        with open(env_file, 'w') as f:
+            for line in env_lines:
+                if line.strip() and not line.startswith('#'):
+                    key = line.split('=')[0].strip()
+                    if key in env_vars:
+                        f.write(f"{key}={env_vars[key]}\n")
+                    else:
+                        f.write(line)
                 else:
                     f.write(line)
-            else:
-                f.write(line)
+        print_success("Environment variables updated successfully")
+    except Exception as e:
+        print_error(f"Failed to configure environment variables: {e}")
+        sys.exit(1)
 
 def create_ssl_directory():
     """Create SSL directory and generate self-signed certificates"""
