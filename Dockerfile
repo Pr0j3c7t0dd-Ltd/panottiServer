@@ -6,7 +6,8 @@ WORKDIR /app/admin-frontend
 
 # Install admin frontend dependencies
 COPY admin-frontend/package*.json ./
-RUN npm ci
+RUN npm ci && \
+    npm install tailwindcss postcss autoprefixer
 
 # Copy admin frontend files
 COPY admin-frontend/.env.local ./.env.production
@@ -14,10 +15,12 @@ COPY admin-frontend/next.config.js ./
 COPY admin-frontend/tailwind.config.ts ./
 COPY admin-frontend/tsconfig.json ./
 COPY admin-frontend/postcss.config.js ./
-COPY admin-frontend/package-lock.json ./
 COPY admin-frontend/src ./src
 COPY admin-frontend/public ./public
 COPY admin-frontend/scripts ./scripts
+
+# Build the admin frontend
+RUN npm run build
 
 # Generate password hash
 RUN npm run init-password
@@ -75,48 +78,21 @@ COPY README.md ./
 # Set up admin frontend
 WORKDIR /app/admin-frontend
 
-# Copy admin frontend files first
-COPY admin-frontend/package*.json ./
-
-# Install dependencies first to leverage Docker cache
-RUN npm ci && \
-    npm install -g next && \
-    npm install -g tailwindcss postcss autoprefixer
-
-# Copy the rest of the admin frontend files
-COPY admin-frontend/.env.local ./.env.production
-COPY admin-frontend/next.config.js ./
-COPY admin-frontend/tailwind.config.ts ./
-COPY admin-frontend/tsconfig.json ./
-COPY admin-frontend/postcss.config.js ./
-COPY admin-frontend/src ./src
-COPY admin-frontend/public ./public
-COPY admin-frontend/scripts ./scripts
+# Copy built admin frontend from builder stage
+COPY --from=admin-builder /app/admin-frontend/package*.json ./
+COPY --from=admin-builder /app/admin-frontend/.next ./.next
+COPY --from=admin-builder /app/admin-frontend/public ./public
 COPY --from=admin-builder /app/admin-frontend/password-hash.txt ./password-hash.txt
+COPY admin-frontend/.env.local ./.env.production
 
-# Build the admin frontend
-RUN npm run build && \
-    npm prune --production
+# Install only production dependencies
+RUN npm ci --only=production
 
 # Back to app directory
 WORKDIR /app
 
-# Install plugin dependencies
-RUN find /app/app/plugins -name "requirements.txt" -exec pip install -r {} \;
+# Copy entrypoint script
+COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-# Create and set up the entrypoint script
-COPY docker-entrypoint.sh /app/
-RUN chmod +x /app/docker-entrypoint.sh
-
-# Expose ports for both services
-EXPOSE ${API_PORT} 54790
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV WHISPER_MODEL_PATH=/app/models/whisper
-ENV POETRY_VIRTUALENVS_CREATE=false
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Start both services
-ENTRYPOINT ["/app/docker-entrypoint.sh"] 
+ENTRYPOINT ["/docker-entrypoint.sh"]
