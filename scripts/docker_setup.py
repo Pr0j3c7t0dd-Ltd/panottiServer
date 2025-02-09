@@ -227,8 +227,8 @@ def configure_env_variables():
             sys.exit(1)
         
         # Store both the host path (for Docker mount) and container path (for FastAPI)
-        env_vars['HOST_RECORDINGS_DIR'] = f'"{host_recordings_dir}"'  # Path on host machine
-        env_vars['RECORDINGS_DIR'] = '"/recordings"'  # Fixed path inside container
+        env_vars['HOST_RECORDINGS_DIR'] = host_recordings_dir  # Remove quotes - store raw path
+        env_vars['RECORDINGS_DIR'] = '/recordings'  # Remove quotes - store raw path
         
         # Update .env file
         with open(env_file, 'w') as f:
@@ -236,7 +236,7 @@ def configure_env_variables():
                 if line.strip() and not line.startswith('#'):
                     key = line.split('=')[0].strip()
                     if key in env_vars:
-                        f.write(f"{key}={env_vars[key]}\n")
+                        f.write(f"{key}={env_vars[key]}\n")  # Write without quotes
                     else:
                         f.write(line)
                 else:
