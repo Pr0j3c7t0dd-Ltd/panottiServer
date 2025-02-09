@@ -25,5 +25,4 @@ exec poetry run uvicorn app.main:app \
   --ssl-certfile ${SSL_CERT_FILE} \
   --log-level debug \
   --proxy-headers \
-  --reload=false \
   --workers 1
