@@ -25,7 +25,7 @@ services:
       - ./app/plugins/desktop_notifier/plugin.yaml:/app/app/plugins/desktop_notifier/plugin.yaml
       - ./app/plugins/audio_transcription_local/plugin.yaml:/app/app/plugins/audio_transcription_local/plugin.yaml
       - ./app/plugins/noise_reduction/plugin.yaml:/app/app/plugins/noise_reduction/plugin.yaml
-      - ${HOST_RECORDINGS_DIR}:/recordings
+      - ${HOST_RECORDINGS_DIR}:${HOST_RECORDINGS_DIR}
     env_file:
       - .env
     environment:

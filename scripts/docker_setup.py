@@ -226,9 +226,9 @@ def configure_env_variables():
             print_warning("Please share the directory with Docker and run this script again")
             sys.exit(1)
         
-        # Store both the host path (for Docker mount) and container path (for FastAPI)
-        env_vars['HOST_RECORDINGS_DIR'] = host_recordings_dir  # Remove quotes - store raw path
-        env_vars['RECORDINGS_DIR'] = '/recordings'  # Remove quotes - store raw path
+        # Store both paths with the same value - no more /recordings mapping
+        env_vars['HOST_RECORDINGS_DIR'] = host_recordings_dir
+        env_vars['RECORDINGS_DIR'] = host_recordings_dir
         
         # Debug: Print what we're about to write
         print("\nDebug: Environment variables to be written:")
