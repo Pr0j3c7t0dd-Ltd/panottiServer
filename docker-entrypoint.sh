@@ -35,8 +35,7 @@ poetry run uvicorn app.main:app \
   --proxy-headers \
   --workers 1 \
   --timeout-keep-alive 3600 \
-  --timeout-graceful-shutdown 3600 \
-  --limit-max-requests 0 &
+  --timeout-graceful-shutdown 3600 &
 
 # Wait forever
 while true; do
