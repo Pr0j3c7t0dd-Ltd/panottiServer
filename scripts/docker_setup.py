@@ -172,6 +172,8 @@ def configure_env_variables():
     print_step("Configuring environment variables")
     
     env_file = Path(".env")
+    admin_env_file = Path("admin-frontend/.env.local")
+    
     if not env_file.exists():
         print_error("No .env file found. Please run setup_env_files first.")
         sys.exit(1)
@@ -184,7 +186,8 @@ def configure_env_variables():
         # Update essential variables
         env_vars = {}
         print("\nThe API_KEY should match the one set in your Panotti desktop app.")
-        env_vars['API_KEY'] = get_user_input("Enter your API_KEY", "your_api_key_here")
+        api_key = get_user_input("Enter your API_KEY", "your_api_key_here")
+        env_vars['API_KEY'] = api_key
         
         print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
         while True:
@@ -230,16 +233,10 @@ def configure_env_variables():
         env_vars['HOST_RECORDINGS_DIR'] = host_recordings_dir
         env_vars['RECORDINGS_DIR'] = host_recordings_dir
         
-        # Debug: Print what we're about to write
-        # print("\nDebug: Environment variables to be written:")
-        # for key, value in env_vars.items():
-        #     print(f"{key}={value}")
-        
-        # Update .env file
+        # Update main .env file
         new_env_content = []
         existing_keys = set()
         
-        # First pass: keep existing variables and update ones we have new values for
         for line in env_lines:
             if line.strip() and not line.startswith('#'):
                 key = line.split('=')[0].strip()
@@ -251,25 +248,32 @@ def configure_env_variables():
             else:
                 new_env_content.append(line)
         
-        # Second pass: add any new variables that didn't exist
         for key, value in env_vars.items():
             if key not in existing_keys:
                 new_env_content.append(f"{key}={value}\n")
         
         with open(env_file, 'w') as f:
             f.writelines(new_env_content)
+
+        # Update admin frontend .env.local
+        if admin_env_file.exists():
+            with open(admin_env_file, 'r') as f:
+                admin_env_lines = f.readlines()
+
+            new_admin_env_content = []
+            for line in admin_env_lines:
+                if line.strip().startswith('NEXT_PUBLIC_API_KEY='):
+                    new_admin_env_content.append(f"NEXT_PUBLIC_API_KEY={api_key}\n")
+                else:
+                    new_admin_env_content.append(line)
+
+            with open(admin_env_file, 'w') as f:
+                f.writelines(new_admin_env_content)
             
-        # Debug: Print the actual .env file content
-        #  print("\nDebug: Actual .env file content:")
-        #  with open(env_file, 'r') as f:
-        #      print(f.read())
+            print_success("Environment variables updated in both .env and admin-frontend/.env.local")
+        else:
+            print_warning("admin-frontend/.env.local not found - skipping frontend env update")
             
-        print_success("Environment variables updated successfully")
-        
-        # Debug: Verify Docker can see the variables
-        #  print("\nDebug: Testing Docker environment:")
-        #  subprocess.run(["docker", "compose", "config"], check=True)
-        
     except Exception as e:
         print_error(f"Failed to configure environment variables: {e}")
         sys.exit(1)
