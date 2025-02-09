@@ -39,6 +39,17 @@ class AudioTranscriptionLocalPlugin(PluginBase):
         self._shutdown_event = asyncio.Event()
         self._transcript_cleaner = TranscriptCleaner()
 
+        # Default values
+        self.output_dir = Path("data/transcripts")
+        self.max_concurrent_tasks = 4
+        self.timeout = 3600  # Increased to 1 hour
+        
+        # Override with config values if available
+        if hasattr(config, "config") and isinstance(config.config, dict):
+            self.output_dir = Path(config.config.get("output_dir", "data/transcripts"))
+            self.max_concurrent_tasks = config.config.get("max_concurrent_tasks", 4)
+            self.timeout = config.config.get("timeout", 3600)  # Increased to 1 hour
+
     async def _initialize(self) -> None:
         """Initialize plugin."""
         if not self.event_bus:

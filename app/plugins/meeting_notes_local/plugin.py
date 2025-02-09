@@ -40,7 +40,7 @@ class MeetingNotesLocalPlugin(PluginBase):
         self.output_dir = Path("data/meeting_notes_local")
         self.num_ctx = 128000
         self.max_concurrent_tasks = 4
-        self.timeout = 300  # Default timeout of 5 minutes
+        self.timeout = 3600  # Increased to 1 hour
 
         # Override with config values if available
         if config and hasattr(config, "config"):
@@ -79,8 +79,11 @@ class MeetingNotesLocalPlugin(PluginBase):
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initialize thread pool with configured max tasks
-        self._executor = ThreadPoolExecutor(max_workers=self.max_concurrent_tasks)
+        # Initialize thread pool
+        self._executor = ThreadPoolExecutor(
+            max_workers=self.max_concurrent_tasks,
+            thread_name_prefix="meeting_notes"
+        )
         self._processing_lock = threading.Lock()
 
         logger.info(

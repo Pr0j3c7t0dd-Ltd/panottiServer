@@ -53,7 +53,12 @@ poetry run uvicorn app.main:app \
   --ssl-certfile ${SSL_CERT_FILE} \
   --log-level debug \
   --proxy-headers \
-  --workers 1 &
+  --workers 1 \
+  --timeout-keep-alive 3600 \
+  --timeout-graceful-shutdown 3600 \
+  --worker-max-requests 0 \
+  --timeout 3600 \
+  --backlog 2048 &
 UVICORN_PID=$!
 
 # Wait a moment for FastAPI to start

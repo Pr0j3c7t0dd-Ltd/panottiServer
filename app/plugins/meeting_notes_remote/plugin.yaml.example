@@ -7,7 +7,7 @@ config:
   output_directory: "data/meeting_notes_remote"
   provider: "anthropic"
   max_concurrent_tasks: 4
-  timeout: 600
+  timeout: 3600
   openai:
     api_key: "your-openai-api-key"
     model: "gpt-4o"

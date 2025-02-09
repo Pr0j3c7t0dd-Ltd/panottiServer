@@ -38,7 +38,7 @@ class MeetingNotesRemotePlugin(PluginBase):
         # Default values
         self.output_dir = Path("data/meeting_notes_remote")
         self.max_concurrent_tasks = 4
-        self.timeout = 600
+        self.timeout = 3600  # Increased to 1 hour
         self.provider: ProviderType = "openai"
 
         # Override with config values if available
@@ -56,15 +56,18 @@ class MeetingNotesRemotePlugin(PluginBase):
 
                 # Initialize provider-specific clients
                 if self.provider == "openai":
-                    self.client = AsyncOpenAI(
-                        api_key=config_dict["openai"]["api_key"],
-                        http_client=httpx.AsyncClient(verify=False),  # nosec B501 - Disabled SSL verification needed for Docker container environment
+                    self.client = httpx.AsyncClient(timeout=httpx.Timeout(timeout=self.timeout))
+                    self.openai_client = AsyncOpenAI(
+                        timeout=self.timeout,
+                        max_retries=3
                     )
                     self.model = config_dict["openai"]["model"]
                 elif self.provider == "anthropic":
                     # Anthropic SDK doesn't support custom http client configuration
-                    self.client = AsyncAnthropic(
-                        api_key=config_dict["anthropic"]["api_key"]
+                    self.anthropic_client = AsyncAnthropic(
+                        api_key=config_dict["anthropic"]["api_key"],
+                        timeout=self.timeout,
+                        max_retries=3
                     )
                     self.model = config_dict["anthropic"]["model"]
                 elif self.provider == "google":
@@ -114,6 +117,21 @@ class MeetingNotesRemotePlugin(PluginBase):
 
             # Create output directory
             self.output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Initialize clients with proper timeouts
+            timeout = httpx.Timeout(timeout=self.timeout)
+            self.client = httpx.AsyncClient(timeout=timeout)
+            
+            if self.provider == "openai":
+                self.openai_client = AsyncOpenAI(
+                    timeout=self.timeout,
+                    max_retries=3
+                )
+            elif self.provider == "anthropic":
+                self.anthropic_client = AsyncAnthropic(
+                    timeout=self.timeout,
+                    max_retries=3
+                )
 
             # Subscribe to transcription completed event
             await self.event_bus.subscribe(
@@ -602,7 +620,7 @@ Keep each bullet point concise but informative]
 
             try:
                 if self.provider == "openai":
-                    response = await self.client.chat.completions.create(  # type: ignore
+                    response = await self.openai_client.chat.completions.create(  # type: ignore
                         model=self.model,
                         messages=[
                             {"role": "system", "content": self.SYSTEM_PROMPT},
@@ -616,7 +634,7 @@ Keep each bullet point concise but informative]
                     return self._clean_llm_response(content)
 
                 elif self.provider == "anthropic":
-                    response = await self.client.messages.create(  # type: ignore
+                    response = await self.anthropic_client.messages.create(  # type: ignore
                         max_tokens=8192,
                         messages=[{"role": "user", "content": user_prompt}],
                         model=self.model,

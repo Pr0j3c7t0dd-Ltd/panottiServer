@@ -60,6 +60,7 @@ class NoiseReductionPlugin(PluginBase):
         self._spectral_floor = float(config_dict.get("spectral_floor", 0.04))
         self._smoothing_factor = int(config_dict.get("smoothing_factor", 2))
         self._max_workers = int(config_dict.get("max_concurrent_tasks", 4))
+        self._task_timeout = int(config_dict.get("task_timeout", 3600))  # 1 hour timeout
 
         # Existing toggles
         self._time_domain_subtraction = bool(
@@ -78,7 +79,10 @@ class NoiseReductionPlugin(PluginBase):
         )
 
         # Thread pool
-        self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._max_workers,
+            thread_name_prefix="noise_reduction"
+        )
         self._req_id = str(uuid.uuid4())
         self._db: Connection | None = None
 
