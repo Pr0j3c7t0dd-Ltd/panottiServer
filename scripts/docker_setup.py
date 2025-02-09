@@ -231,9 +231,9 @@ def configure_env_variables():
         env_vars['RECORDINGS_DIR'] = host_recordings_dir
         
         # Debug: Print what we're about to write
-        print("\nDebug: Environment variables to be written:")
-        for key, value in env_vars.items():
-            print(f"{key}={value}")
+        # print("\nDebug: Environment variables to be written:")
+        # for key, value in env_vars.items():
+        #     print(f"{key}={value}")
         
         # Update .env file
         new_env_content = []
@@ -260,15 +260,15 @@ def configure_env_variables():
             f.writelines(new_env_content)
             
         # Debug: Print the actual .env file content
-        print("\nDebug: Actual .env file content:")
-        with open(env_file, 'r') as f:
-            print(f.read())
+        #  print("\nDebug: Actual .env file content:")
+        #  with open(env_file, 'r') as f:
+        #      print(f.read())
             
         print_success("Environment variables updated successfully")
         
         # Debug: Verify Docker can see the variables
-        print("\nDebug: Testing Docker environment:")
-        subprocess.run(["docker", "compose", "config"], check=True)
+        #  print("\nDebug: Testing Docker environment:")
+        #  subprocess.run(["docker", "compose", "config"], check=True)
         
     except Exception as e:
         print_error(f"Failed to configure environment variables: {e}")
