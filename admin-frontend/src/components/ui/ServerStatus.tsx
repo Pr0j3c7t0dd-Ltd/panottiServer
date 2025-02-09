@@ -41,6 +41,9 @@ const ServerStatus = () => {
     },
     refetchInterval: 30000, // Poll every 30 seconds
     retry: 3, // Retry failed requests 3 times
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: false, // Don't refetch on mount
+    staleTime: 30000, // Consider data fresh for 30 seconds
   });
 
   return (
