@@ -12,22 +12,57 @@ fi
 # Function to cleanup processes on exit
 cleanup() {
     echo "Cleaning up processes..."
-    kill $(jobs -p) 2>/dev/null || true
-    exit 0
+    if [ -n "$NEXT_PID" ]; then
+        echo "Stopping Next.js (PID: $NEXT_PID)..."
+        kill -SIGTERM $NEXT_PID 2>/dev/null || true
+    fi
+    if [ -n "$UVICORN_PID" ]; then
+        echo "Stopping FastAPI (PID: $UVICORN_PID)..."
+        kill -SIGTERM $UVICORN_PID 2>/dev/null || true
+    fi
+    wait
 }
 
-# Function to check if a process is still running
+# Function to check if a process is running and restart if needed
 check_process() {
     local pid=$1
     local name=$2
+    local max_restarts=3
+    local restart_count=0
+
     if ! kill -0 $pid 2>/dev/null; then
         echo "Process $name (PID: $pid) has died"
+        
+        # Only attempt restart for FastAPI
+        if [ "$name" = "FastAPI" ] && [ $restart_count -lt $max_restarts ]; then
+            echo "Attempting to restart $name..."
+            cd /app
+            poetry run uvicorn app.main:app \
+                --host ${UVICORN_HOST:-0.0.0.0} \
+                --port ${API_PORT} \
+                --ssl-keyfile ${SSL_KEY_FILE} \
+                --ssl-certfile ${SSL_CERT_FILE} \
+                --log-level debug \
+                --proxy-headers \
+                --workers 1 \
+                --timeout-keep-alive 3600 \
+                --timeout-graceful-shutdown 3600 \
+                --limit-max-requests 0 \
+                --backlog 2048 &
+            UVICORN_PID=$!
+            restart_count=$((restart_count + 1))
+            sleep 5
+            return 0
+        fi
+        
+        # If Next.js dies or max restarts reached, initiate cleanup
         cleanup
         exit 1
     fi
+    return 0
 }
 
-# Trap SIGTERM and SIGINT
+# Trap SIGTERM and SIGINT for graceful shutdown
 trap cleanup SIGTERM SIGINT
 
 # Start Next.js admin frontend in the background
@@ -68,9 +103,13 @@ check_process $UVICORN_PID "FastAPI"
 
 echo "Both services started successfully"
 
-# Monitor both processes
+# Monitor processes with improved error handling
 while true; do
-    check_process $NEXT_PID "Next.js"
-    check_process $UVICORN_PID "FastAPI"
+    check_process $NEXT_PID "Next.js" || break
+    check_process $UVICORN_PID "FastAPI" || break
     sleep 10
 done
+
+# If we get here, both processes have died
+cleanup
+exit 1
