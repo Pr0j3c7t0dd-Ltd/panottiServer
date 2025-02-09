@@ -9,6 +9,10 @@ if [ ! -d "/app/models/whisper/models--Systran--faster-whisper-base.en" ]; then
   python3 -c "from huggingface_hub import snapshot_download; snapshot_download(\"Systran/faster-whisper-base.en\", local_dir=\"/app/models/whisper\", local_files_only=False)"
 fi
 
+# Initialize restart counters
+FASTAPI_RESTART_COUNT=0
+MAX_RESTARTS=3
+
 # Function to cleanup processes on exit
 cleanup() {
     echo "Cleaning up processes..."
@@ -27,15 +31,13 @@ cleanup() {
 check_process() {
     local pid=$1
     local name=$2
-    local max_restarts=3
-    local restart_count=0
 
     if ! kill -0 $pid 2>/dev/null; then
         echo "Process $name (PID: $pid) has died"
         
         # Only attempt restart for FastAPI
-        if [ "$name" = "FastAPI" ] && [ $restart_count -lt $max_restarts ]; then
-            echo "Attempting to restart $name..."
+        if [ "$name" = "FastAPI" ] && [ $FASTAPI_RESTART_COUNT -lt $MAX_RESTARTS ]; then
+            echo "Attempting to restart $name (Attempt $((FASTAPI_RESTART_COUNT + 1)) of $MAX_RESTARTS)..."
             cd /app
             poetry run uvicorn app.main:app \
                 --host ${UVICORN_HOST:-0.0.0.0} \
@@ -50,12 +52,15 @@ check_process() {
                 --limit-max-requests 0 \
                 --backlog 2048 &
             UVICORN_PID=$!
-            restart_count=$((restart_count + 1))
+            FASTAPI_RESTART_COUNT=$((FASTAPI_RESTART_COUNT + 1))
             sleep 5
             return 0
         fi
         
         # If Next.js dies or max restarts reached, initiate cleanup
+        if [ "$name" = "FastAPI" ]; then
+            echo "FastAPI failed to start after $FASTAPI_RESTART_COUNT attempts"
+        fi
         cleanup
         exit 1
     fi
