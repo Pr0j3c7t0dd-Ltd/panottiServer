@@ -227,8 +227,8 @@ def configure_env_variables():
             sys.exit(1)
         
         # Store both the host path (for Docker mount) and container path (for FastAPI)
-        env_vars['HOST_RECORDINGS_DIR'] = f'"{host_recordings_dir}"'
-        env_vars['RECORDINGS_DIR'] = '"/recordings"'  # This is the path inside the container
+        env_vars['HOST_RECORDINGS_DIR'] = f'"{host_recordings_dir}"'  # Path on host machine
+        env_vars['RECORDINGS_DIR'] = '"/recordings"'  # Fixed path inside container
         
         # Update .env file
         with open(env_file, 'w') as f:

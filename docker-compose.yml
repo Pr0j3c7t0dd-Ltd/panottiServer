@@ -25,8 +25,7 @@ services:
       - ./app/plugins/desktop_notifier/plugin.yaml:/app/app/plugins/desktop_notifier/plugin.yaml
       - ./app/plugins/audio_transcription_local/plugin.yaml:/app/app/plugins/audio_transcription_local/plugin.yaml
       - ./app/plugins/noise_reduction/plugin.yaml:/app/app/plugins/noise_reduction/plugin.yaml
-      - ${RECORDINGS_DIR}:${RECORDINGS_DIR}
-      - ./recordings:/app/recordings
+      - ${HOST_RECORDINGS_DIR}:/recordings
       - ./admin-frontend:/app/admin-frontend
     env_file:
       - .env
