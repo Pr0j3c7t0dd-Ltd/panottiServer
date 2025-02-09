@@ -187,9 +187,44 @@ def configure_env_variables():
         env_vars['API_KEY'] = get_user_input("Enter your API_KEY", "your_api_key_here")
         
         print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
-        host_recordings_dir = get_user_input("Enter the path to your recordings directory")
-        # Convert to absolute path for Docker mounting
-        host_recordings_dir = str(Path(host_recordings_dir).absolute())
+        while True:
+            host_recordings_dir = get_user_input("Enter the path to your recordings directory")
+            recordings_path = Path(host_recordings_dir)
+            
+            # Convert to absolute path for Docker mounting
+            try:
+                abs_path = recordings_path.resolve(strict=True)
+                if not abs_path.is_dir():
+                    print_warning(f"Path exists but is not a directory: {abs_path}")
+                    continue
+                    
+                # Check if directory is readable
+                try:
+                    next(abs_path.iterdir())
+                except (PermissionError, StopIteration):
+                    print_warning(f"Directory exists but may not be accessible: {abs_path}")
+                    if not get_user_confirmation("Continue anyway?"):
+                        continue
+                
+                host_recordings_dir = str(abs_path)
+                break
+            except FileNotFoundError:
+                print_warning(f"Directory does not exist: {host_recordings_dir}")
+                if get_user_confirmation("Create this directory?"):
+                    try:
+                        Path(host_recordings_dir).mkdir(parents=True)
+                        host_recordings_dir = str(Path(host_recordings_dir).resolve())
+                        break
+                    except Exception as e:
+                        print_warning(f"Failed to create directory: {e}")
+                        continue
+        
+        print(f"\nUsing recordings directory: {host_recordings_dir}")
+        print("Please ensure this path is shared with Docker:")
+        print("Docker Desktop -> Settings -> Resources -> File Sharing")
+        if not get_user_confirmation("Have you verified Docker has access to this directory?"):
+            print_warning("Please share the directory with Docker and run this script again")
+            sys.exit(1)
         
         # Store both the host path (for Docker mount) and container path (for FastAPI)
         env_vars['HOST_RECORDINGS_DIR'] = f'"{host_recordings_dir}"'
