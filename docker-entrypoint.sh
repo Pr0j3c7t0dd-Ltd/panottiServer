@@ -56,7 +56,7 @@ poetry run uvicorn app.main:app \
   --workers 1 \
   --timeout-keep-alive 3600 \
   --timeout-graceful-shutdown 3600 \
-  --worker-max-requests 0 \
+  --limit-max-requests 0 \
   --timeout 3600 \
   --backlog 2048 &
 UVICORN_PID=$!
