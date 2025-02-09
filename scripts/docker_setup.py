@@ -230,18 +230,37 @@ def configure_env_variables():
         env_vars['HOST_RECORDINGS_DIR'] = host_recordings_dir  # Remove quotes - store raw path
         env_vars['RECORDINGS_DIR'] = '/recordings'  # Remove quotes - store raw path
         
+        # Debug: Print what we're about to write
+        print("\nDebug: Environment variables to be written:")
+        for key, value in env_vars.items():
+            print(f"{key}={value}")
+        
         # Update .env file
-        with open(env_file, 'w') as f:
-            for line in env_lines:
-                if line.strip() and not line.startswith('#'):
-                    key = line.split('=')[0].strip()
-                    if key in env_vars:
-                        f.write(f"{key}={env_vars[key]}\n")  # Write without quotes
-                    else:
-                        f.write(line)
+        new_env_content = []
+        for line in env_lines:
+            if line.strip() and not line.startswith('#'):
+                key = line.split('=')[0].strip()
+                if key in env_vars:
+                    new_env_content.append(f"{key}={env_vars[key]}\n")
                 else:
-                    f.write(line)
+                    new_env_content.append(line)
+            else:
+                new_env_content.append(line)
+        
+        with open(env_file, 'w') as f:
+            f.writelines(new_env_content)
+            
+        # Debug: Print the actual .env file content
+        print("\nDebug: Actual .env file content:")
+        with open(env_file, 'r') as f:
+            print(f.read())
+            
         print_success("Environment variables updated successfully")
+        
+        # Debug: Verify Docker can see the variables
+        print("\nDebug: Testing Docker environment:")
+        subprocess.run(["docker", "compose", "config"], check=True)
+        
     except Exception as e:
         print_error(f"Failed to configure environment variables: {e}")
         sys.exit(1)
