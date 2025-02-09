@@ -1,37 +1,44 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Install build essentials
 RUN apk add --no-cache python3 make g++
 
-# Install dependencies first (better caching)
-COPY package.json package-lock.json ./
+# Install dependencies
+COPY package*.json ./
 RUN npm ci
 
-# Copy configuration files
-COPY postcss.config.js postcss.config.mjs tailwind.config.ts tsconfig.json next.config.js .eslintrc.json .prettierrc ./
-
-# Copy sensitive files
-COPY .env.local ./.env.local
-COPY password-hash.txt ./password-hash.txt
-
-# Copy the rest of the application
+# Copy all source files
 COPY . .
 
-# Set environment variables
+# Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-ENV PORT=54790
-
-# Ensure node_modules/.bin is in PATH
-ENV PATH /app/node_modules/.bin:$PATH
-
-# Build the application
 RUN npm run build
 
-# Expose the port
+# Production image
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Install production dependencies only
+COPY package*.json ./
+RUN npm ci --production
+
+# Copy built application
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/next.config.js ./next.config.js
+COPY --from=builder /app/postcss.config.js ./postcss.config.js
+COPY --from=builder /app/tailwind.config.ts ./tailwind.config.ts
+
+# Set runtime environment variables
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=54790
+
 EXPOSE 54790
 
-# Start the application
 CMD ["npm", "start"]
