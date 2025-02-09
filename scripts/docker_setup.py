@@ -237,15 +237,24 @@ def configure_env_variables():
         
         # Update .env file
         new_env_content = []
+        existing_keys = set()
+        
+        # First pass: keep existing variables and update ones we have new values for
         for line in env_lines:
             if line.strip() and not line.startswith('#'):
                 key = line.split('=')[0].strip()
+                existing_keys.add(key)
                 if key in env_vars:
                     new_env_content.append(f"{key}={env_vars[key]}\n")
                 else:
                     new_env_content.append(line)
             else:
                 new_env_content.append(line)
+        
+        # Second pass: add any new variables that didn't exist
+        for key, value in env_vars.items():
+            if key not in existing_keys:
+                new_env_content.append(f"{key}={value}\n")
         
         with open(env_file, 'w') as f:
             f.writelines(new_env_content)
