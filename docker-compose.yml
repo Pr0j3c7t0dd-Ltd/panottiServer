@@ -45,12 +45,12 @@ services:
     healthcheck:
       test: |
         /bin/sh -c '
-        curl -k -f "https://127.0.0.1:${API_PORT}/docs" &&
-        wget --spider http://localhost:54790
+        curl -k -f "https://127.0.0.1:${API_PORT}/docs" > /dev/null 2>&1 &&
+        wget -q --spider --no-check-certificate http://localhost:54790 > /dev/null 2>&1
         '
-      interval: 30s
-      timeout: 60s
-      retries: 10
+      interval: 60s
+      timeout: 10s
+      retries: 3
       start_period: 120s
 
 volumes:

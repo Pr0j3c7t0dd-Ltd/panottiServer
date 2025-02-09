@@ -12,8 +12,19 @@ fi
 # Function to cleanup processes on exit
 cleanup() {
     echo "Cleaning up processes..."
-    kill $(jobs -p)
+    kill $(jobs -p) 2>/dev/null || true
     exit 0
+}
+
+# Function to check if a process is still running
+check_process() {
+    local pid=$1
+    local name=$2
+    if ! kill -0 $pid 2>/dev/null; then
+        echo "Process $name (PID: $pid) has died"
+        cleanup
+        exit 1
+    fi
 }
 
 # Trap SIGTERM and SIGINT
@@ -21,14 +32,20 @@ trap cleanup SIGTERM SIGINT
 
 # Start Next.js admin frontend in the background
 cd /app/admin-frontend
+echo "Starting Next.js admin frontend..."
 PORT=54790 HOST=0.0.0.0 npm run start &
 NEXT_PID=$!
 
 # Wait a moment to ensure Next.js starts properly
+echo "Waiting for Next.js to start..."
 sleep 5
+
+# Verify Next.js is running
+check_process $NEXT_PID "Next.js"
 
 # Start FastAPI server in the background
 cd /app
+echo "Starting FastAPI server..."
 poetry run uvicorn app.main:app \
   --host ${UVICORN_HOST:-0.0.0.0} \
   --port ${API_PORT} \
@@ -39,8 +56,17 @@ poetry run uvicorn app.main:app \
   --workers 1 &
 UVICORN_PID=$!
 
-# Wait for either process to exit
-wait -n $NEXT_PID $UVICORN_PID
+# Wait a moment for FastAPI to start
+sleep 2
 
-# If we get here, one of the processes died, so exit with error
-exit 1
+# Verify FastAPI is running
+check_process $UVICORN_PID "FastAPI"
+
+echo "Both services started successfully"
+
+# Monitor both processes
+while true; do
+    check_process $NEXT_PID "Next.js"
+    check_process $UVICORN_PID "FastAPI"
+    sleep 10
+done
