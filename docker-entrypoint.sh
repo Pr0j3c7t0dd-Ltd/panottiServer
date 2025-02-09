@@ -16,7 +16,7 @@ PORT=54790 HOST=0.0.0.0 npm run start &
 # Wait a moment to ensure Next.js starts properly
 sleep 5
 
-# Start FastAPI server
+# Start FastAPI server with reload disabled
 cd /app
 exec poetry run uvicorn app.main:app \
   --host ${UVICORN_HOST:-0.0.0.0} \
@@ -24,4 +24,6 @@ exec poetry run uvicorn app.main:app \
   --ssl-keyfile ${SSL_KEY_FILE} \
   --ssl-certfile ${SSL_CERT_FILE} \
   --log-level debug \
-  --proxy-headers
+  --proxy-headers \
+  --reload=false \
+  --workers 1
