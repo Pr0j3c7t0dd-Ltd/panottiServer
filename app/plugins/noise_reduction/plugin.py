@@ -58,10 +58,10 @@ class NoiseReductionPlugin(PluginBase):
         self._noise_reduce_factor = float(config_dict.get("noise_reduce_factor", 1.0))
         self._wiener_alpha = float(config_dict.get("wiener_alpha", 2.5))
         self._highpass_cutoff = float(config_dict.get("highpass_cutoff", 95))
-        self._spectral_floor = float(config_dict.get("spectral_floor", 0.04))
+        self._spectral_floor = float(config_dict.get("spectral_floor", 0.02))
         self._smoothing_factor = int(config_dict.get("smoothing_factor", 2))
         self._max_workers = int(config_dict.get("max_concurrent_tasks", 4))
-        self._task_timeout = int(config_dict.get("task_timeout", 3600))  # 1 hour timeout
+        self._task_timeout = int(config_dict.get("task_timeout", 3600))
 
         # Existing toggles
         self._time_domain_subtraction = bool(
@@ -91,6 +91,16 @@ class NoiseReductionPlugin(PluginBase):
         self._recordings_dir = os.getenv("RECORDINGS_DIR", "/app/recordings")
         # Ensure the path exists
         os.makedirs(self._recordings_dir, exist_ok=True)
+
+        # STFT parameters
+        self._nperseg = 2048
+        self._noverlap = self._nperseg // 2
+        self._window = "hann"
+        
+        # Bleed removal parameters
+        self._alpha_max = 1.2  # Maximum bleed reduction factor
+        self._alpha_min = 0.0  # Minimum bleed reduction factor
+        self._chunk_duration = 30  # seconds for chunked processing
 
     async def _initialize(self) -> None:
         """Initialize the plugin."""
@@ -488,8 +498,20 @@ class NoiseReductionPlugin(PluginBase):
         mic_data, mic_sr = sf.read(mic_file)
         sys_data, sys_sr = sf.read(sys_file)
 
+        # Convert to float32 and normalize early
+        mic_data = np.asarray(mic_data, dtype=np.float32)
+        sys_data = np.asarray(sys_data, dtype=np.float32)
+        
+        # Normalize input audio
+        mic_max = np.max(np.abs(mic_data))
+        sys_max = np.max(np.abs(sys_data))
+        if mic_max > 0:
+            mic_data /= mic_max
+        if sys_max > 0:
+            sys_data /= sys_max
+
         logger.debug(
-            "Audio files loaded",
+            "Audio files loaded and normalized",
             extra={
                 "mic_samples": len(mic_data),
                 "sys_samples": len(sys_data),
@@ -499,51 +521,39 @@ class NoiseReductionPlugin(PluginBase):
                 "sys_channels": sys_data.shape[1] if len(sys_data.shape) > 1 else 1,
             }
         )
-        log_memory()
 
         # Convert stereo to mono immediately after loading
-        if isinstance(mic_data, np.ndarray) and mic_data.ndim > 1:
-            logger.debug("Converting mic audio from stereo to mono")
-            mic_data = mic_data.mean(axis=1)
-        if isinstance(sys_data, np.ndarray) and sys_data.ndim > 1:
-            logger.debug("Converting system audio from stereo to mono")
-            sys_data = sys_data.mean(axis=1)
-        log_memory()
+        def convert_to_mono(data: np.ndarray, source: str) -> np.ndarray:
+            if data.ndim > 1:
+                logger.debug(
+                    f"Converting {source} audio from stereo to mono",
+                    extra={"original_shape": data.shape}
+                )
+                # Handle different stereo channel arrangements
+                if data.shape[-1] == 2:  # Channels in last dimension
+                    return data.mean(axis=-1)
+                elif data.shape[1] == 2:  # Traditional [samples, channels]
+                    return data.mean(axis=1)
+                else:
+                    logger.warning(f"Unexpected {source} audio shape", extra={"shape": data.shape})
+                    return data.mean(axis=np.argmin(data.shape))
+            return data
 
-        # Ensure we have numpy arrays
-        mic_data = np.asarray(mic_data)
-        sys_data = np.asarray(sys_data)
-
-        original_length = len(mic_data)  # Store original length for final check
+        mic_data = convert_to_mono(mic_data, "microphone")
+        sys_data = convert_to_mono(sys_data, "system")
+        
+        original_length = len(mic_data)
 
         # If sample rates differ, resample system audio to match microphone
         if mic_sr != sys_sr:
-            logger.info(
-                f"Sample rates differ: mic={mic_sr}Hz, sys={sys_sr}Hz. Resampling system audio.",
-                extra={
-                    "mic_samples": len(mic_data),
-                    "sys_samples": len(sys_data),
-                    "memory_usage_mb": process.memory_info().rss / 1024 / 1024
-                }
-            )
+            logger.info(f"Sample rates differ: mic={mic_sr}Hz, sys={sys_sr}Hz. Resampling system audio.")
             try:
-                # Calculate target length and validate
                 target_length = int(len(sys_data) * mic_sr / sys_sr)
-                logger.debug(
-                    "Calculated resampling parameters",
-                    extra={
-                        "original_length": len(sys_data),
-                        "target_length": target_length,
-                        "ratio": mic_sr / sys_sr
-                    }
-                )
-
+                
                 # Use chunked processing for large files
                 MAX_CHUNK_SIZE = 1_000_000  # 1M samples per chunk
                 if len(sys_data) > MAX_CHUNK_SIZE:
                     logger.info("Using chunked resampling for large file")
-                    
-                    # Calculate chunk sizes
                     num_chunks = (len(sys_data) + MAX_CHUNK_SIZE - 1) // MAX_CHUNK_SIZE
                     resampled_data = np.zeros(target_length, dtype=np.float32)
                     
@@ -552,258 +562,153 @@ class NoiseReductionPlugin(PluginBase):
                         end_idx = min(start_idx + MAX_CHUNK_SIZE, len(sys_data))
                         chunk = sys_data[start_idx:end_idx]
                         
-                        # Calculate target chunk length
-                        chunk_target_length = int(len(chunk) * mic_sr / sys_sr)
-                        
-                        start_time = datetime.now()
-                        logger.debug(
-                            f"Processing chunk {i+1}/{num_chunks}",
-                            extra={
-                                "chunk_start": start_idx,
-                                "chunk_end": end_idx,
-                                "chunk_size": len(chunk),
-                                "target_chunk_size": chunk_target_length,
-                                "memory_usage_mb": process.memory_info().rss / 1024 / 1024
-                            }
-                        )
+                        # Add overlap for smoother transitions
+                        overlap = 1000 if i > 0 else 0
+                        if overlap > 0:
+                            chunk = np.concatenate([sys_data[start_idx-overlap:start_idx], chunk])
                         
                         # Resample chunk
+                        chunk_target_length = int(len(chunk) * mic_sr / sys_sr)
                         resampled_chunk = signal.resample(chunk, chunk_target_length)
                         
-                        # Calculate output indices
+                        # Remove overlap
+                        if overlap > 0:
+                            overlap_resampled = int(overlap * mic_sr / sys_sr)
+                            resampled_chunk = resampled_chunk[overlap_resampled:]
+                        
+                        # Store in output array
                         out_start = int(start_idx * mic_sr / sys_sr)
                         out_end = out_start + len(resampled_chunk)
                         out_end = min(out_end, len(resampled_data))
-                        
-                        # Store chunk
                         resampled_data[out_start:out_end] = resampled_chunk[:out_end-out_start]
                         
-                        chunk_time = (datetime.now() - start_time).total_seconds()
-                        logger.debug(
-                            f"Chunk {i+1}/{num_chunks} completed",
-                            extra={
-                                "processing_time": chunk_time,
-                                "memory_usage_mb": process.memory_info().rss / 1024 / 1024
-                            }
-                        )
                 else:
-                    logger.info("Using direct resampling for small file")
-                    start_time = datetime.now()
                     resampled_data = signal.resample(sys_data, target_length)
-                    processing_time = (datetime.now() - start_time).total_seconds()
-                    logger.debug(
-                        "Direct resampling completed",
-                        extra={
-                            "processing_time": processing_time,
-                            "memory_usage_mb": process.memory_info().rss / 1024 / 1024
-                        }
-                    )
-
+                
                 sys_data = resampled_data
                 sys_sr = mic_sr
-                
-                logger.info(
-                    "Resampling completed successfully",
-                    extra={
-                        "final_length": len(sys_data),
-                        "expected_length": target_length,
-                        "memory_usage_mb": process.memory_info().rss / 1024 / 1024
-                    }
-                )
                 
             except Exception as e:
                 logger.error(
                     "Resampling failed",
                     extra={
                         "error": str(e),
-                        "error_type": type(e).__name__,
                         "mic_sr": mic_sr,
                         "sys_sr": sys_sr,
                         "mic_length": len(mic_data),
-                        "sys_length": len(sys_data),
-                        "memory_usage_mb": process.memory_info().rss / 1024 / 1024
+                        "sys_length": len(sys_data)
                     },
                     exc_info=True
                 )
                 raise
 
+        # Align signals if requested
         lag_seconds = 0
-        cleaned_audio = None
+        if do_alignment:
+            logger.debug("Starting FFT alignment")
+            mic_data, sys_data, lag_seconds = self._align_signals_by_fft(
+                mic_data, sys_data, mic_sr
+            )
+            logger.debug(f"FFT alignment completed with lag of {lag_seconds:.4f} seconds")
 
         try:
-            if do_alignment:
-                logger.debug("Starting FFT alignment")
-                mic_data, sys_data, lag_seconds = self._align_signals_by_fft(
-                    mic_data, sys_data, mic_sr
-                )
-                logger.debug(f"FFT alignment completed with lag of {lag_seconds:.4f} seconds")
-            log_memory()
-
-            # STFT parameters
-            nperseg = 2048
-            noverlap = nperseg // 2
-            window = "hann"
-
-            # Process in chunks of 30 seconds, ensuring chunk size is multiple of nperseg
-            CHUNK_DURATION = 30
-            chunk_samples = int(CHUNK_DURATION * mic_sr)
-            # Round up to nearest multiple of nperseg
-            chunk_samples = ((chunk_samples + nperseg - 1) // nperseg) * nperseg
-            num_chunks = (len(mic_data) + chunk_samples - 1) // chunk_samples
-
-            logger.debug(
-                "Starting chunked STFT processing",
-                extra={
-                    "total_samples": len(mic_data),
-                    "chunk_samples": chunk_samples,
-                    "num_chunks": num_chunks,
-                    "nperseg": nperseg,
-                    "noverlap": noverlap,
-                }
+            # Perform STFT on full signals
+            logger.debug("Starting STFT processing")
+            f_mic, t_mic, mic_stft = signal.stft(
+                mic_data, fs=mic_sr, nperseg=self._nperseg,
+                noverlap=self._noverlap, window=self._window
+            )
+            _, _, sys_stft = signal.stft(
+                sys_data, fs=mic_sr, nperseg=self._nperseg,
+                noverlap=self._noverlap, window=self._window
             )
 
-            # Pre-allocate output array
-            cleaned_audio = np.zeros(len(mic_data), dtype=mic_data.dtype)
+            # Ensure both STFTs have the same shape
+            min_time_frames = min(mic_stft.shape[1], sys_stft.shape[1])
+            mic_stft = mic_stft[:, :min_time_frames]
+            sys_stft = sys_stft[:, :min_time_frames]
 
-            # Process each chunk
-            for i in range(0, len(mic_data), chunk_samples):
-                chunk_end = min(i + chunk_samples, len(mic_data))
-                mic_chunk = mic_data[i:chunk_end]
-                sys_chunk = sys_data[i:chunk_end]
+            # Calculate magnitudes and phases
+            mic_mag = np.abs(mic_stft)
+            sys_mag = np.abs(sys_stft)
+            mic_phase = np.angle(mic_stft)
 
-                # Add overlap for chunk boundaries
-                if i > 0:
-                    overlap = nperseg
-                    mic_chunk = np.concatenate([mic_data[i-overlap:i], mic_chunk])
-                    sys_chunk = np.concatenate([sys_data[i-overlap:i], sys_chunk])
+            # Improved alpha calculation with smoothing
+            epsilon = 1e-9
+            alpha = (mic_mag * sys_mag) / (sys_mag**2 + epsilon)
+            alpha = np.clip(alpha, self._alpha_min, self._alpha_max)
+            
+            # Apply smoothing to alpha
+            if self._smoothing_factor > 1:
+                from scipy.ndimage import uniform_filter
+                alpha = uniform_filter(alpha, size=(3, self._smoothing_factor))
 
-                logger.debug(
-                    f"Processing chunk {i//chunk_samples + 1}/{num_chunks}",
-                    extra={
-                        "chunk_start": i,
-                        "chunk_end": chunk_end,
-                        "chunk_length": len(mic_chunk),
-                    }
-                )
-                
-                try:
-                    # Compute STFTs
-                    f_mic, t_mic, mic_stft = self._process_stft_chunk(mic_chunk, mic_sr, nperseg, noverlap, window)
-                    _, _, sys_stft = self._process_stft_chunk(sys_chunk, mic_sr, nperseg, noverlap, window)
+            # Calculate bleed removal with adaptive floor
+            bleed_removed_mag = mic_mag - alpha * sys_mag
+            spectral_floor = self._spectral_floor * mic_mag
+            bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
 
-                    # Ensure both STFTs have the same shape
-                    min_time_frames = min(mic_stft.shape[1], sys_stft.shape[1])
-                    if mic_stft.shape[1] != sys_stft.shape[1]:
-                        logger.warning(
-                            "STFT shapes differ, truncating to shorter length",
-                            extra={
-                                "mic_frames": mic_stft.shape[1],
-                                "sys_frames": sys_stft.shape[1],
-                                "using_frames": min_time_frames,
-                            }
-                        )
-                        mic_stft = mic_stft[:, :min_time_frames]
-                        sys_stft = sys_stft[:, :min_time_frames]
+            # Phase handling
+            if randomize_phase:
+                # Only randomize phase where system audio is dominant
+                dominant_mask = sys_mag > mic_mag * 1.2  # Added 20% threshold
+                rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
+                final_phase = np.where(dominant_mask, rand_phase, mic_phase)
+            else:
+                final_phase = mic_phase
 
-                    log_memory()
+            # Reconstruct complex STFT
+            bleed_removed_stft = bleed_removed_mag * np.exp(1j * final_phase)
 
-                    # Calculate bleed removal for this chunk
-                    mic_mag = np.abs(mic_stft)
-                    sys_mag = np.abs(sys_stft)
-                    mic_phase = np.angle(mic_stft)
+            # Inverse STFT
+            logger.debug("Starting inverse STFT")
+            _, cleaned_audio = signal.istft(
+                bleed_removed_stft, fs=mic_sr,
+                nperseg=self._nperseg, noverlap=self._noverlap,
+                window=self._window
+            )
 
-                    epsilon = 1e-9
-                    alpha = (mic_mag * sys_mag) / (sys_mag**2 + epsilon)
-                    alpha = np.clip(alpha, 0.0, 1.2)
-
-                    bleed_removed_mag = mic_mag - alpha * sys_mag
-                    spectral_floor = 0.02 * mic_mag
-                    bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
-
-                    if randomize_phase:
-                        dominant_mask = sys_mag > mic_mag
-                        rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
-                        final_phase = np.where(dominant_mask, rand_phase, mic_phase)
-                    else:
-                        final_phase = mic_phase
-
-                    bleed_removed_stft = bleed_removed_mag * np.exp(1j * final_phase)
-                    log_memory()
-
-                    # Inverse STFT for this chunk
-                    logger.debug(f"Starting inverse STFT for chunk {i//chunk_samples + 1}/{num_chunks}")
-                    _, chunk_cleaned = self._process_istft_chunk(bleed_removed_stft, mic_sr, nperseg, noverlap, window)
-                    log_memory()
-
-                    # Remove overlap if not the first chunk
-                    if i > 0:
-                        chunk_cleaned = chunk_cleaned[overlap:]
-
-                    # Store the cleaned chunk
-                    end_idx = min(i + len(chunk_cleaned), len(cleaned_audio))
-                    cleaned_audio[i:end_idx] = chunk_cleaned[:end_idx-i]
-
-                    logger.debug(
-                        f"Completed chunk {i//chunk_samples + 1}/{num_chunks}",
-                        extra={"progress_percent": (i + chunk_samples) / len(mic_data) * 100}
-                    )
-                    log_memory()
-
-                except Exception as e:
-                    logger.error(
-                        "Error during STFT processing",
-                        extra={
-                            "error": str(e),
-                            "chunk_start": i,
-                            "chunk_end": chunk_end,
-                        },
-                        exc_info=True
-                    )
-                    raise
-
-            # Optional highpass filter
+            # Apply highpass filter if configured
             if self._highpass_cutoff > 0:
                 nyq = mic_sr / 2
                 cutoff = self._highpass_cutoff / nyq
                 b, a = butter(2, cutoff, btype="high")
                 cleaned_audio = filtfilt(b, a, cleaned_audio)
 
-            # Normalize
-            max_val = np.max(np.abs(cleaned_audio)) or 1e-9
-            cleaned_audio /= max_val
+            # Normalize output
+            max_val = np.max(np.abs(cleaned_audio))
+            if max_val > 0:
+                cleaned_audio /= max_val
 
-            # Only apply minimal trimming based on alignment lag
+            # Handle lag adjustment
             lag_samples = int(lag_seconds * mic_sr)
             if lag_samples > 0:
                 logger.debug(
                     f"Trimming {lag_seconds:.4f} seconds ({lag_samples} samples) based on alignment lag."
                 )
                 cleaned_audio = cleaned_audio[lag_samples:]
-            else:
-                logger.debug("No lag detected; skipping trimming.")
 
-            # Final length check and adjustment
-            length_diff = len(cleaned_audio) - original_length
-            if length_diff > 0:
-                logger.debug(
-                    f"Trimming {length_diff} excess samples from start of cleaned audio to match original length"
-                )
-                cleaned_audio = cleaned_audio[length_diff:]
-            elif length_diff < 0:
-                logger.warning(
-                    f"Cleaned audio is {-length_diff} samples shorter than original"
-                )
+            # Final length adjustment
+            if len(cleaned_audio) > original_length:
+                cleaned_audio = cleaned_audio[:original_length]
+            elif len(cleaned_audio) < original_length:
+                cleaned_audio = np.pad(cleaned_audio, (0, original_length - len(cleaned_audio)))
 
-            # Save the cleaned audio
+            # Save output
             cleaned_audio = (cleaned_audio * 32767).astype(np.int16)
             sf.write(output_file, cleaned_audio, mic_sr)
 
-            logger.info("Frequency-domain bleed removal completed and saved.")
+            logger.info("Frequency-domain bleed removal completed successfully")
 
         except Exception as e:
             logger.error(
-                "Error during frequency-domain bleed removal",
-                extra={"error": str(e), "mic_file": mic_file, "sys_file": sys_file},
+                "Error during frequency-domain processing",
+                extra={
+                    "error": str(e),
+                    "mic_file": mic_file,
+                    "sys_file": sys_file,
+                    "lag_seconds": lag_seconds
+                },
                 exc_info=True
             )
             raise
@@ -866,13 +771,6 @@ class NoiseReductionPlugin(PluginBase):
         """
         Ensures cleaned audio preserves all original content and matches original length exactly.
         No silent padding is added, and all original content is preserved.
-
-        Args:
-            input_file (str): Path to the original input audio file.
-            output_file (str): Path to the cleaned audio file to adjust.
-            lag_samples (int): Number of samples to account for alignment (used for logging).
-            sample_rate (int): Sampling rate of the audio.
-            stft_padding (int): Additional padding samples (used for logging).
         """
         # Read both audio files
         original_audio, original_sr = sf.read(input_file)
@@ -1054,8 +952,8 @@ class NoiseReductionPlugin(PluginBase):
                     self._db = db
 
             # Retry database operations with exponential backoff
-            max_retries = 5  # Increased from 3
-            retry_delay = 2.0  # Increased from 1.0
+            max_retries = 5
+            retry_delay = 2.0
 
             try:
                 for attempt in range(max_retries):
@@ -1075,7 +973,7 @@ class NoiseReductionPlugin(PluginBase):
                     except sqlite3.OperationalError as e:
                         if "database is locked" in str(e) and attempt < max_retries - 1:
                             await asyncio.sleep(retry_delay)
-                            retry_delay *= 2  # Exponential backoff
+                            retry_delay *= 2
                         else:
                             raise
                     except sqlite3.IntegrityError as e:
@@ -1089,7 +987,6 @@ class NoiseReductionPlugin(PluginBase):
                                     "attempt": attempt + 1,
                                     "max_retries": max_retries,
                                     "retry_delay": retry_delay,
-                                    "total_delay": retry_delay * (2**attempt),
                                 },
                             )
                             await asyncio.sleep(retry_delay)
@@ -1097,29 +994,17 @@ class NoiseReductionPlugin(PluginBase):
                         else:
                             raise
                         continue
-            except asyncio.CancelledError:
-                logger.info(
-                    "Task cancelled during database operation",
-                    extra={"recording_id": recording_id, "plugin": self.name},
+            except Exception as e:
+                logger.error(
+                    "Database operation failed",
+                    extra={
+                        "req_id": event_id,
+                        "plugin_name": self.name,
+                        "recording_id": recording_id,
+                        "error": str(e),
+                    },
+                    exc_info=True
                 )
-                raise  # Re-raise to allow proper cleanup
-            except sqlite3.IntegrityError as e:
-                if "FOREIGN KEY constraint failed" in str(e):
-                    logger.warning(
-                        "Recording not yet in database, retrying...",
-                        extra={
-                            "req_id": event_id,
-                            "plugin_name": self.name,
-                            "recording_id": recording_id,
-                            "attempt": attempt + 1,
-                            "max_retries": max_retries,
-                            "retry_delay": retry_delay,
-                            "total_delay": retry_delay * (2**attempt),
-                        },
-                    )
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2
-                    pass
                 raise
 
             await self._process_audio_files(
@@ -1490,7 +1375,6 @@ class NoiseReductionPlugin(PluginBase):
                 self._executor = None
 
             # Database connection is managed by the get_db_async context manager
-            # No need to manually close it here
             self._db = None
 
             logger.info(
