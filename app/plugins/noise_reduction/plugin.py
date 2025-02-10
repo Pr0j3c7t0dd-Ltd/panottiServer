@@ -484,6 +484,15 @@ class NoiseReductionPlugin(PluginBase):
         )
         log_memory()
 
+        # Convert stereo to mono immediately after loading
+        if isinstance(mic_data, np.ndarray) and mic_data.ndim > 1:
+            logger.debug("Converting mic audio from stereo to mono")
+            mic_data = mic_data.mean(axis=1)
+        if isinstance(sys_data, np.ndarray) and sys_data.ndim > 1:
+            logger.debug("Converting system audio from stereo to mono")
+            sys_data = sys_data.mean(axis=1)
+        log_memory()
+
         # Ensure we have numpy arrays
         mic_data = np.asarray(mic_data)
         sys_data = np.asarray(sys_data)
@@ -496,7 +505,9 @@ class NoiseReductionPlugin(PluginBase):
                 f"Sample rates differ: mic={mic_sr}Hz, sys={sys_sr}Hz. Resampling system audio."
             )
             try:
-                sys_data = self._resample_if_needed(sys_data, sys_sr, mic_sr)
+                # No need to handle stereo in resampling anymore since we're already mono
+                target_length = int(len(sys_data) * mic_sr / sys_sr)
+                sys_data = signal.resample(sys_data, target_length)
                 logger.debug(
                     "Resampling completed",
                     extra={
@@ -512,15 +523,6 @@ class NoiseReductionPlugin(PluginBase):
                 )
                 raise
             sys_sr = mic_sr  # Update system sample rate to match mic
-        log_memory()
-
-        # Convert stereo to mono if needed
-        if isinstance(mic_data, np.ndarray) and mic_data.ndim > 1:
-            logger.debug("Converting mic audio from stereo to mono")
-            mic_data = mic_data.mean(axis=1)
-        if isinstance(sys_data, np.ndarray) and sys_data.ndim > 1:
-            logger.debug("Converting system audio from stereo to mono")
-            sys_data = sys_data.mean(axis=1)
         log_memory()
 
         lag_seconds = 0
@@ -1223,13 +1225,9 @@ class NoiseReductionPlugin(PluginBase):
             # Emit completed event
             if self.event_bus:
                 # Get correlation ID from original event or create new one
-                correlation_id = (
-                    original_event.get("context", {}).get(
-                        "correlation_id", str(uuid.uuid4())
-                    )
-                    if isinstance(original_event, dict)
-                    else getattr(original_event, "correlation_id", str(uuid.uuid4()))
-                )
+                correlation_id = str(
+                    event_metadata.get("correlation_id", uuid.uuid4())
+                ) if event_metadata else str(uuid.uuid4())
 
                 # Combine metadata from original event and current metadata
                 combined_metadata = {}
