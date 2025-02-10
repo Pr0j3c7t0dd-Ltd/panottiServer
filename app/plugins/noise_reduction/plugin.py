@@ -16,6 +16,7 @@ import numpy as np
 import soundfile as sf
 from scipy import signal
 from scipy.signal import butter, filtfilt
+import psutil
 
 from app.core.events import ConcreteEventBus as EventBus
 from app.core.events import Event, EventContext, EventPriority
@@ -294,9 +295,37 @@ class NoiseReductionPlugin(PluginBase):
         Preserves all original timing including silence for translation alignment.
         Ensures exact length matching with original file.
         """
+        process = psutil.Process()
+        
+        def log_memory():
+            memory = process.memory_info()
+            logger.debug(
+                "Memory usage",
+                extra={
+                    "rss_gb": memory.rss / 1024**3,
+                    "vms_gb": memory.vms / 1024**3,
+                }
+            )
+
         # Read original files and get initial length
+        logger.debug("Loading audio files", extra={"mic_file": mic_file, "sys_file": sys_file})
+        log_memory()
+        
         mic_data, mic_sr = sf.read(mic_file)
         sys_data, sys_sr = sf.read(sys_file)
+
+        logger.debug(
+            "Audio files loaded",
+            extra={
+                "mic_samples": len(mic_data),
+                "sys_samples": len(sys_data),
+                "mic_sr": mic_sr,
+                "sys_sr": sys_sr,
+                "mic_channels": mic_data.shape[1] if len(mic_data.shape) > 1 else 1,
+                "sys_channels": sys_data.shape[1] if len(sys_data.shape) > 1 else 1,
+            }
+        )
+        log_memory()
 
         # Ensure we have numpy arrays
         mic_data = np.asarray(mic_data)
@@ -309,47 +338,100 @@ class NoiseReductionPlugin(PluginBase):
             logger.info(
                 f"Sample rates differ: mic={mic_sr}Hz, sys={sys_sr}Hz. Resampling system audio."
             )
-            sys_data = self._resample_if_needed(sys_data, sys_sr, mic_sr)
+            try:
+                sys_data = self._resample_if_needed(sys_data, sys_sr, mic_sr)
+                logger.debug(
+                    "Resampling completed",
+                    extra={
+                        "original_length": len(sys_data),
+                        "new_length": len(sys_data),
+                    }
+                )
+            except Exception as e:
+                logger.error(
+                    "Resampling failed",
+                    extra={"error": str(e)},
+                    exc_info=True
+                )
+                raise
             sys_sr = mic_sr  # Update system sample rate to match mic
+        log_memory()
 
         # Convert stereo to mono if needed
         if isinstance(mic_data, np.ndarray) and mic_data.ndim > 1:
+            logger.debug("Converting mic audio from stereo to mono")
             mic_data = mic_data.mean(axis=1)
         if isinstance(sys_data, np.ndarray) and sys_data.ndim > 1:
+            logger.debug("Converting system audio from stereo to mono")
             sys_data = sys_data.mean(axis=1)
+        log_memory()
 
         lag_seconds = 0
         cleaned_audio = None
 
         try:
             if do_alignment:
+                logger.debug("Starting FFT alignment")
                 mic_data, sys_data, lag_seconds = self._align_signals_by_fft(
                     mic_data, sys_data, mic_sr
                 )
+                logger.debug(f"FFT alignment completed with lag of {lag_seconds:.4f} seconds")
+            log_memory()
 
             # STFT parameters
             nperseg = 2048
             noverlap = nperseg // 2
             window = "hann"
 
+            logger.debug(
+                "Starting STFT processing",
+                extra={
+                    "nperseg": nperseg,
+                    "noverlap": noverlap,
+                    "window": window,
+                    "mic_length": len(mic_data),
+                    "sys_length": len(sys_data),
+                }
+            )
+
             # Perform STFT
-            f_mic, t_mic, mic_stft = signal.stft(
-                mic_data, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
-            )
-            _, _, sys_stft = signal.stft(
-                sys_data, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
-            )
+            try:
+                f_mic, t_mic, mic_stft = signal.stft(
+                    mic_data, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
+                )
+                logger.debug("Mic STFT completed", extra={"stft_shape": mic_stft.shape})
+                log_memory()
+
+                _, _, sys_stft = signal.stft(
+                    sys_data, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
+                )
+                logger.debug("System STFT completed", extra={"stft_shape": sys_stft.shape})
+                log_memory()
+
+            except Exception as e:
+                logger.error(
+                    "STFT processing failed",
+                    extra={"error": str(e)},
+                    exc_info=True
+                )
+                raise
 
             # Ensure both STFT have the same shape
             min_time_frames = min(mic_stft.shape[1], sys_stft.shape[1])
             mic_stft = mic_stft[:, :min_time_frames]
             sys_stft = sys_stft[:, :min_time_frames]
 
+            logger.debug(
+                "Starting bleed removal calculations",
+                extra={"time_frames": min_time_frames}
+            )
+
             # Calculate bleed removal
             mic_mag = np.abs(mic_stft)
             sys_mag = np.abs(sys_stft)
             mic_phase = np.angle(mic_stft)
             sys_phase = np.angle(sys_stft)
+            log_memory()
 
             epsilon = 1e-9
             alpha = (mic_mag * sys_mag) / (sys_mag**2 + epsilon)
@@ -358,8 +440,10 @@ class NoiseReductionPlugin(PluginBase):
             bleed_removed_mag = mic_mag - alpha * sys_mag
             spectral_floor = 0.02 * mic_mag
             bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
+            log_memory()
 
             if randomize_phase:
+                logger.debug("Applying randomized phase")
                 dominant_mask = sys_mag > mic_mag
                 rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
                 final_phase = np.where(dominant_mask, rand_phase, mic_phase)
@@ -367,15 +451,30 @@ class NoiseReductionPlugin(PluginBase):
                 final_phase = mic_phase
 
             bleed_removed_stft = bleed_removed_mag * np.exp(1j * final_phase)
+            log_memory()
 
             # Perform ISTFT
-            _, cleaned_audio = signal.istft(
-                bleed_removed_stft,
-                fs=mic_sr,
-                nperseg=nperseg,
-                noverlap=noverlap,
-                window=window,
-            )
+            logger.debug("Starting inverse STFT")
+            try:
+                _, cleaned_audio = signal.istft(
+                    bleed_removed_stft,
+                    fs=mic_sr,
+                    nperseg=nperseg,
+                    noverlap=noverlap,
+                    window=window,
+                )
+                logger.debug(
+                    "Inverse STFT completed",
+                    extra={"output_length": len(cleaned_audio)}
+                )
+            except Exception as e:
+                logger.error(
+                    "Inverse STFT failed",
+                    extra={"error": str(e)},
+                    exc_info=True
+                )
+                raise
+            log_memory()
 
             # Optional highpass filter
             if self._highpass_cutoff > 0:
