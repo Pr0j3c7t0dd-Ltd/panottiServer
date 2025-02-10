@@ -45,8 +45,10 @@ services:
     healthcheck:
       test: |
         /bin/sh -c '
-        curl -k -f "https://127.0.0.1:${API_PORT}/docs" > /dev/null 2>&1 &&
-        wget -q --spider --no-check-certificate http://localhost:54790 > /dev/null 2>&1
+        echo "[$(date)] Running healthcheck..." &&
+        curl -k -f -v "https://127.0.0.1:${API_PORT}/docs" > /dev/null 2>&1 &&
+        wget -q --spider --no-check-certificate http://localhost:54790 > /dev/null 2>&1 &&
+        echo "[$(date)] Healthcheck successful"
         '
       interval: 300s
       timeout: 10s
