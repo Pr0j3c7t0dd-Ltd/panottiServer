@@ -592,17 +592,14 @@ Create meeting notes with the following sections:
 
 ## Key Discussion Points
 [For each main topic discussed:
-1. Topic Headings: Create a clear heading for each main topic discussed during the meeting.
-2. Primary Bullet Points: Under each topic, provide 5-7 detailed bullet points that include:
-   - A summary of the key points made.
-   - Specific examples, anecdotes, or direct quotes (with timestamps) to illustrate the discussion.
-   - An explanation of any concerns or challenges raised.
-   - Discussion of decisions or recommendations related to the topic.
-   - Notable follow-up questions or additional context.
-3. Sub Bullet Points: For each primary bullet point, if there is more context or supporting information available, include 2-3 sub bullet points that:
-   - Elaborate on the details or provide additional examples.
-   - Offer further clarification or context behind the point.
-   - Include any supporting evidence or data mentioned in the transcript.]
+- Topic Headings: Create clear, descriptive headings for each major topic discussed during the meeting.
+- Detailed Bullet Points: Under each topic, provide 5–7 bullet points that capture the essence of the discussion. Each bullet point should:
+  - Clearly state the main idea or point.
+  - Include any essential context or background that makes the point understandable.
+  - Incorporate specific examples, direct quotes (with timestamps if available), or anecdotes from the transcript that illustrate the discussion.
+  - Note any concerns raised, recommendations given, or decisions discussed.
+  - Include additional details or nuances where relevant (for example, if a topic involves a detailed explanation of when to use a specific approach, ensure that the conditions, examples, and rationale are captured).
+- Avoid using nested sub-bullets. Instead, integrate all additional detail directly into each bullet point so that each point remains comprehensive and readable.]
 
 ## Action Items
 [Bulleted list of action items with owner and deadline formated EXACTLY as: `(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED]`. Identify the owner from the context of the meeting transcript]
