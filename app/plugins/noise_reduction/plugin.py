@@ -633,25 +633,14 @@ class NoiseReductionPlugin(PluginBase):
             sys_mag = np.abs(sys_stft)
             mic_phase = np.angle(mic_stft)
 
-            # Improved alpha calculation with smoothing
             epsilon = 1e-9
             alpha = (mic_mag * sys_mag) / (sys_mag**2 + epsilon)
-            alpha = np.clip(alpha, self._alpha_min, self._alpha_max)
-            
-            # Apply smoothing to alpha
-            if self._smoothing_factor > 1:
-                from scipy.ndimage import uniform_filter
-                alpha = uniform_filter(alpha, size=(3, self._smoothing_factor))
-
-            # Calculate bleed removal with adaptive floor
+            alpha = np.clip(alpha, 0.0, 1.2)
             bleed_removed_mag = mic_mag - alpha * sys_mag
-            spectral_floor = self._spectral_floor * mic_mag
+            spectral_floor = 0.02 * mic_mag
             bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
-
-            # Phase handling
             if randomize_phase:
-                # Only randomize phase where system audio is dominant
-                dominant_mask = sys_mag > mic_mag * 1.2  # Added 20% threshold
+                dominant_mask = sys_mag > mic_mag
                 rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
                 final_phase = np.where(dominant_mask, rand_phase, mic_phase)
             else:
