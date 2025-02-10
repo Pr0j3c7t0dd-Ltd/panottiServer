@@ -278,9 +278,82 @@ class NoiseReductionPlugin(PluginBase):
         if src_sr == target_sr:
             return audio_data
 
-        # Calculate number of samples for target length
-        target_length = int(len(audio_data) * target_sr / src_sr)
-        return signal.resample(audio_data, target_length)
+        logger.debug(
+            "Starting resampling",
+            extra={
+                "input_length": len(audio_data),
+                "src_sr": src_sr,
+                "target_sr": target_sr,
+                "input_shape": audio_data.shape,
+            }
+        )
+
+        # For very large files, use chunked processing
+        CHUNK_DURATION = 30  # Process 30 seconds at a time
+        chunk_samples = int(CHUNK_DURATION * src_sr)
+        
+        if len(audio_data) > chunk_samples:
+            logger.info(
+                "Large file detected, using chunked processing for resampling",
+                extra={
+                    "total_samples": len(audio_data),
+                    "chunk_samples": chunk_samples,
+                    "num_chunks": len(audio_data) // chunk_samples + 1
+                }
+            )
+            
+            # Pre-allocate output array
+            target_length = int(len(audio_data) * target_sr / src_sr)
+            resampled = np.zeros(target_length, dtype=audio_data.dtype)
+            
+            # Process in chunks
+            for i in range(0, len(audio_data), chunk_samples):
+                chunk = audio_data[i:i + chunk_samples]
+                target_chunk_len = int(len(chunk) * target_sr / src_sr)
+                
+                # Add small overlap to avoid boundary artifacts
+                if i > 0:
+                    overlap_samples = 100
+                    chunk = audio_data[i-overlap_samples:i + chunk_samples]
+                
+                # Resample chunk
+                resampled_chunk = signal.resample(chunk, target_chunk_len)
+                
+                # Remove overlap if present
+                if i > 0:
+                    overlap_resampled = int(overlap_samples * target_sr / src_sr)
+                    resampled_chunk = resampled_chunk[overlap_resampled:]
+                
+                # Calculate output indices
+                start_idx = int(i * target_sr / src_sr)
+                end_idx = start_idx + len(resampled_chunk)
+                end_idx = min(end_idx, len(resampled))
+                
+                # Store chunk
+                resampled[start_idx:end_idx] = resampled_chunk[:end_idx-start_idx]
+                
+                logger.debug(
+                    f"Resampled chunk {i//chunk_samples + 1}/{len(audio_data)//chunk_samples + 1}",
+                    extra={
+                        "chunk_start": i,
+                        "chunk_end": i + chunk_samples,
+                        "progress_percent": (i + chunk_samples) / len(audio_data) * 100
+                    }
+                )
+            
+            logger.debug(
+                "Chunked resampling completed",
+                extra={
+                    "output_length": len(resampled),
+                    "expected_length": target_length
+                }
+            )
+            return resampled
+            
+        else:
+            # For smaller files, use standard resampling
+            target_length = int(len(audio_data) * target_sr / src_sr)
+            return signal.resample(audio_data, target_length)
 
     def _remove_bleed_frequency_domain(
         self,
