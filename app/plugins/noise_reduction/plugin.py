@@ -377,6 +377,68 @@ class NoiseReductionPlugin(PluginBase):
         else:
             return resample_channel(audio_data)
 
+    def _process_stft_chunk(
+        self,
+        audio_chunk: np.ndarray,
+        sample_rate: int,
+        nperseg: int = 2048,
+        noverlap: int | None = None,
+        window: str = "hann",
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Process a single chunk with STFT."""
+        if noverlap is None:
+            noverlap = nperseg // 2
+        try:
+            return signal.stft(
+                audio_chunk,
+                fs=sample_rate,
+                nperseg=nperseg,
+                noverlap=noverlap,
+                window=window,
+            )
+        except Exception as e:
+            logger.error(
+                "STFT processing failed",
+                extra={
+                    "error": str(e),
+                    "chunk_length": len(audio_chunk),
+                    "nperseg": nperseg,
+                },
+                exc_info=True
+            )
+            raise
+
+    def _process_istft_chunk(
+        self,
+        stft_chunk: np.ndarray,
+        sample_rate: int,
+        nperseg: int = 2048,
+        noverlap: int | None = None,
+        window: str = "hann",
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Process a single chunk with ISTFT."""
+        if noverlap is None:
+            noverlap = nperseg // 2
+        try:
+            return signal.istft(
+                stft_chunk,
+                fs=sample_rate,
+                nperseg=nperseg,
+                noverlap=noverlap,
+                window=window,
+            )
+        except Exception as e:
+            logger.error(
+                "ISTFT processing failed",
+                extra={
+                    "error": str(e),
+                    "stft_shape": stft_chunk.shape,
+                    "nperseg": nperseg,
+                },
+                exc_info=True
+            )
+            raise
+
     def _remove_bleed_frequency_domain(
         self,
         mic_file: str,
@@ -478,98 +540,122 @@ class NoiseReductionPlugin(PluginBase):
             noverlap = nperseg // 2
             window = "hann"
 
+            # Process in chunks of 30 seconds, ensuring chunk size is multiple of nperseg
+            CHUNK_DURATION = 30
+            chunk_samples = int(CHUNK_DURATION * mic_sr)
+            # Round up to nearest multiple of nperseg
+            chunk_samples = ((chunk_samples + nperseg - 1) // nperseg) * nperseg
+            num_chunks = (len(mic_data) + chunk_samples - 1) // chunk_samples
+
             logger.debug(
-                "Starting STFT processing",
+                "Starting chunked STFT processing",
                 extra={
+                    "total_samples": len(mic_data),
+                    "chunk_samples": chunk_samples,
+                    "num_chunks": num_chunks,
                     "nperseg": nperseg,
                     "noverlap": noverlap,
-                    "window": window,
-                    "mic_length": len(mic_data),
-                    "sys_length": len(sys_data),
                 }
             )
 
-            # Perform STFT
-            try:
-                f_mic, t_mic, mic_stft = signal.stft(
-                    mic_data, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
-                )
-                logger.debug("Mic STFT completed", extra={"stft_shape": mic_stft.shape})
-                log_memory()
+            # Pre-allocate output array
+            cleaned_audio = np.zeros(len(mic_data), dtype=mic_data.dtype)
 
-                _, _, sys_stft = signal.stft(
-                    sys_data, fs=mic_sr, nperseg=nperseg, noverlap=noverlap, window=window
-                )
-                logger.debug("System STFT completed", extra={"stft_shape": sys_stft.shape})
-                log_memory()
+            # Process each chunk
+            for i in range(0, len(mic_data), chunk_samples):
+                chunk_end = min(i + chunk_samples, len(mic_data))
+                mic_chunk = mic_data[i:chunk_end]
+                sys_chunk = sys_data[i:chunk_end]
 
-            except Exception as e:
-                logger.error(
-                    "STFT processing failed",
-                    extra={"error": str(e)},
-                    exc_info=True
-                )
-                raise
+                # Add overlap for chunk boundaries
+                if i > 0:
+                    overlap = nperseg
+                    mic_chunk = np.concatenate([mic_data[i-overlap:i], mic_chunk])
+                    sys_chunk = np.concatenate([sys_data[i-overlap:i], sys_chunk])
 
-            # Ensure both STFT have the same shape
-            min_time_frames = min(mic_stft.shape[1], sys_stft.shape[1])
-            mic_stft = mic_stft[:, :min_time_frames]
-            sys_stft = sys_stft[:, :min_time_frames]
-
-            logger.debug(
-                "Starting bleed removal calculations",
-                extra={"time_frames": min_time_frames}
-            )
-
-            # Calculate bleed removal
-            mic_mag = np.abs(mic_stft)
-            sys_mag = np.abs(sys_stft)
-            mic_phase = np.angle(mic_stft)
-            sys_phase = np.angle(sys_stft)
-            log_memory()
-
-            epsilon = 1e-9
-            alpha = (mic_mag * sys_mag) / (sys_mag**2 + epsilon)
-            alpha = np.clip(alpha, 0.0, 1.2)
-
-            bleed_removed_mag = mic_mag - alpha * sys_mag
-            spectral_floor = 0.02 * mic_mag
-            bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
-            log_memory()
-
-            if randomize_phase:
-                logger.debug("Applying randomized phase")
-                dominant_mask = sys_mag > mic_mag
-                rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
-                final_phase = np.where(dominant_mask, rand_phase, mic_phase)
-            else:
-                final_phase = mic_phase
-
-            bleed_removed_stft = bleed_removed_mag * np.exp(1j * final_phase)
-            log_memory()
-
-            # Perform ISTFT
-            logger.debug("Starting inverse STFT")
-            try:
-                _, cleaned_audio = signal.istft(
-                    bleed_removed_stft,
-                    fs=mic_sr,
-                    nperseg=nperseg,
-                    noverlap=noverlap,
-                    window=window,
-                )
                 logger.debug(
-                    "Inverse STFT completed",
-                    extra={"output_length": len(cleaned_audio)}
+                    f"Processing chunk {i//chunk_samples + 1}/{num_chunks}",
+                    extra={
+                        "chunk_start": i,
+                        "chunk_end": chunk_end,
+                        "chunk_length": len(mic_chunk),
+                    }
                 )
-            except Exception as e:
-                logger.error(
-                    "Inverse STFT failed",
-                    extra={"error": str(e)},
-                    exc_info=True
-                )
-                raise
-            log_memory()
+                
+                try:
+                    # Compute STFTs
+                    f_mic, t_mic, mic_stft = self._process_stft_chunk(mic_chunk, mic_sr, nperseg, noverlap, window)
+                    _, _, sys_stft = self._process_stft_chunk(sys_chunk, mic_sr, nperseg, noverlap, window)
+
+                    # Ensure both STFTs have the same shape
+                    min_time_frames = min(mic_stft.shape[1], sys_stft.shape[1])
+                    if mic_stft.shape[1] != sys_stft.shape[1]:
+                        logger.warning(
+                            "STFT shapes differ, truncating to shorter length",
+                            extra={
+                                "mic_frames": mic_stft.shape[1],
+                                "sys_frames": sys_stft.shape[1],
+                                "using_frames": min_time_frames,
+                            }
+                        )
+                        mic_stft = mic_stft[:, :min_time_frames]
+                        sys_stft = sys_stft[:, :min_time_frames]
+
+                    log_memory()
+
+                    # Calculate bleed removal for this chunk
+                    mic_mag = np.abs(mic_stft)
+                    sys_mag = np.abs(sys_stft)
+                    mic_phase = np.angle(mic_stft)
+
+                    epsilon = 1e-9
+                    alpha = (mic_mag * sys_mag) / (sys_mag**2 + epsilon)
+                    alpha = np.clip(alpha, 0.0, 1.2)
+
+                    bleed_removed_mag = mic_mag - alpha * sys_mag
+                    spectral_floor = 0.02 * mic_mag
+                    bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
+
+                    if randomize_phase:
+                        dominant_mask = sys_mag > mic_mag
+                        rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
+                        final_phase = np.where(dominant_mask, rand_phase, mic_phase)
+                    else:
+                        final_phase = mic_phase
+
+                    bleed_removed_stft = bleed_removed_mag * np.exp(1j * final_phase)
+                    log_memory()
+
+                    # Inverse STFT for this chunk
+                    logger.debug(f"Starting inverse STFT for chunk {i//chunk_samples + 1}/{num_chunks}")
+                    _, chunk_cleaned = self._process_istft_chunk(bleed_removed_stft, mic_sr, nperseg, noverlap, window)
+                    log_memory()
+
+                    # Remove overlap if not the first chunk
+                    if i > 0:
+                        chunk_cleaned = chunk_cleaned[overlap:]
+
+                    # Store the cleaned chunk
+                    end_idx = min(i + len(chunk_cleaned), len(cleaned_audio))
+                    cleaned_audio[i:end_idx] = chunk_cleaned[:end_idx-i]
+
+                    logger.debug(
+                        f"Completed chunk {i//chunk_samples + 1}/{num_chunks}",
+                        extra={"progress_percent": (i + chunk_samples) / len(mic_data) * 100}
+                    )
+                    log_memory()
+
+                except Exception as e:
+                    logger.error(
+                        "Error during STFT processing",
+                        extra={
+                            "error": str(e),
+                            "chunk_start": i,
+                            "chunk_end": chunk_end,
+                        },
+                        exc_info=True
+                    )
+                    raise
 
             # Optional highpass filter
             if self._highpass_cutoff > 0:
@@ -595,13 +681,11 @@ class NoiseReductionPlugin(PluginBase):
             # Final length check and adjustment
             length_diff = len(cleaned_audio) - original_length
             if length_diff > 0:
-                # If cleaned audio is longer than original, trim the excess from the start
                 logger.debug(
                     f"Trimming {length_diff} excess samples from start of cleaned audio to match original length"
                 )
                 cleaned_audio = cleaned_audio[length_diff:]
             elif length_diff < 0:
-                # This should not happen, but log if it does
                 logger.warning(
                     f"Cleaned audio is {-length_diff} samples shorter than original"
                 )
@@ -616,6 +700,7 @@ class NoiseReductionPlugin(PluginBase):
             logger.error(
                 "Error during frequency-domain bleed removal",
                 extra={"error": str(e), "mic_file": mic_file, "sys_file": sys_file},
+                exc_info=True
             )
             raise
 
