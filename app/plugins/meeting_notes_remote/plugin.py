@@ -592,13 +592,14 @@ Create meeting notes with the following sections:
 
 ## Key Discussion Points
 [For each main topic discussed:
-1. Create a clear heading for the topic
-2. Under each topic, provide 3-5 bullet points that:
-   - Summarize key points made
-   - Highlight important details
-   - Note any concerns raised
-   - Mention specific examples or cases discussed
-Keep each bullet point concise but informative]
+- Topic Headings: Create clear, descriptive headings for each major topic discussed during the meeting.
+- Detailed Bullet Points: Under each topic, provide 5–7 bullet points that capture the essence of the discussion. Each bullet point should:
+  - Clearly state the main idea or point.
+  - Include any essential context or background that makes the point understandable.
+  - Incorporate specific examples, direct quotes (with timestamps if available), or anecdotes from the transcript that illustrate the discussion.
+  - Note any concerns raised, recommendations given, or decisions discussed.
+  - Include additional details or nuances where relevant (for example, if a topic involves a detailed explanation of when to use a specific approach, ensure that the conditions, examples, and rationale are captured).
+- Avoid using nested sub-bullets. Instead, integrate all additional detail directly into each bullet point so that each point remains comprehensive and readable.]
 
 ## Action Items
 [Bulleted list of action items with owner and deadline formated EXACTLY as: `(OWNER) ACTION ITEM DESCRIPTION [DEADLINE IF MENTIONED]`. Identify the owner from the context of the meeting transcript]
