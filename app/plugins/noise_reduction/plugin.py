@@ -288,72 +288,94 @@ class NoiseReductionPlugin(PluginBase):
             }
         )
 
+        # Handle stereo audio
+        is_stereo = len(audio_data.shape) > 1 and audio_data.shape[1] == 2
+        if is_stereo:
+            logger.debug("Processing stereo audio")
+            # Split into channels
+            left_channel = audio_data[:, 0]
+            right_channel = audio_data[:, 1]
+        else:
+            audio_data = audio_data.reshape(-1)  # Ensure 1D for mono
+
         # For very large files, use chunked processing
         CHUNK_DURATION = 30  # Process 30 seconds at a time
         chunk_samples = int(CHUNK_DURATION * src_sr)
         
-        if len(audio_data) > chunk_samples:
-            logger.info(
-                "Large file detected, using chunked processing for resampling",
-                extra={
-                    "total_samples": len(audio_data),
-                    "chunk_samples": chunk_samples,
-                    "num_chunks": len(audio_data) // chunk_samples + 1
-                }
-            )
-            
-            # Pre-allocate output array
-            target_length = int(len(audio_data) * target_sr / src_sr)
-            resampled = np.zeros(target_length, dtype=audio_data.dtype)
-            
-            # Process in chunks
-            for i in range(0, len(audio_data), chunk_samples):
-                chunk = audio_data[i:i + chunk_samples]
-                target_chunk_len = int(len(chunk) * target_sr / src_sr)
-                
-                # Add small overlap to avoid boundary artifacts
-                if i > 0:
-                    overlap_samples = 100
-                    chunk = audio_data[i-overlap_samples:i + chunk_samples]
-                
-                # Resample chunk
-                resampled_chunk = signal.resample(chunk, target_chunk_len)
-                
-                # Remove overlap if present
-                if i > 0:
-                    overlap_resampled = int(overlap_samples * target_sr / src_sr)
-                    resampled_chunk = resampled_chunk[overlap_resampled:]
-                
-                # Calculate output indices
-                start_idx = int(i * target_sr / src_sr)
-                end_idx = start_idx + len(resampled_chunk)
-                end_idx = min(end_idx, len(resampled))
-                
-                # Store chunk
-                resampled[start_idx:end_idx] = resampled_chunk[:end_idx-start_idx]
-                
-                logger.debug(
-                    f"Resampled chunk {i//chunk_samples + 1}/{len(audio_data)//chunk_samples + 1}",
+        def resample_channel(channel_data):
+            if len(channel_data) > chunk_samples:
+                logger.info(
+                    "Large file detected, using chunked processing for resampling",
                     extra={
-                        "chunk_start": i,
-                        "chunk_end": i + chunk_samples,
-                        "progress_percent": (i + chunk_samples) / len(audio_data) * 100
+                        "total_samples": len(channel_data),
+                        "chunk_samples": chunk_samples,
+                        "num_chunks": len(channel_data) // chunk_samples + 1
                     }
                 )
+                
+                # Pre-allocate output array
+                target_length = int(len(channel_data) * target_sr / src_sr)
+                resampled = np.zeros(target_length, dtype=channel_data.dtype)
+                
+                # Process in chunks
+                for i in range(0, len(channel_data), chunk_samples):
+                    chunk = channel_data[i:i + chunk_samples]
+                    target_chunk_len = int(len(chunk) * target_sr / src_sr)
+                    
+                    # Add small overlap to avoid boundary artifacts
+                    if i > 0:
+                        overlap_samples = 100
+                        chunk = channel_data[i-overlap_samples:i + chunk_samples]
+                    
+                    # Resample chunk
+                    resampled_chunk = signal.resample(chunk, target_chunk_len)
+                    
+                    # Remove overlap if present
+                    if i > 0:
+                        overlap_resampled = int(overlap_samples * target_sr / src_sr)
+                        resampled_chunk = resampled_chunk[overlap_resampled:]
+                    
+                    # Calculate output indices
+                    start_idx = int(i * target_sr / src_sr)
+                    end_idx = start_idx + len(resampled_chunk)
+                    end_idx = min(end_idx, len(resampled))
+                    
+                    # Store chunk
+                    resampled[start_idx:end_idx] = resampled_chunk[:end_idx-start_idx]
+                    
+                    logger.debug(
+                        f"Resampled chunk {i//chunk_samples + 1}/{len(channel_data)//chunk_samples + 1}",
+                        extra={
+                            "chunk_start": i,
+                            "chunk_end": i + chunk_samples,
+                            "progress_percent": (i + chunk_samples) / len(channel_data) * 100
+                        }
+                    )
+                
+                return resampled
+            else:
+                # For smaller files, use standard resampling
+                target_length = int(len(channel_data) * target_sr / src_sr)
+                return signal.resample(channel_data, target_length)
+
+        if is_stereo:
+            # Process each channel separately
+            logger.debug("Resampling left channel")
+            resampled_left = resample_channel(left_channel)
+            logger.debug("Resampling right channel")
+            resampled_right = resample_channel(right_channel)
             
+            # Recombine channels
             logger.debug(
-                "Chunked resampling completed",
+                "Recombining stereo channels",
                 extra={
-                    "output_length": len(resampled),
-                    "expected_length": target_length
+                    "left_length": len(resampled_left),
+                    "right_length": len(resampled_right)
                 }
             )
-            return resampled
-            
+            return np.column_stack((resampled_left, resampled_right))
         else:
-            # For smaller files, use standard resampling
-            target_length = int(len(audio_data) * target_sr / src_sr)
-            return signal.resample(audio_data, target_length)
+            return resample_channel(audio_data)
 
     def _remove_bleed_frequency_domain(
         self,
