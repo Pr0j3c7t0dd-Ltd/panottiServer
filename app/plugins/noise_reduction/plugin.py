@@ -279,7 +279,7 @@ class NoiseReductionPlugin(PluginBase):
             return audio_data
 
         logger.info(
-            "Starting resampling",
+            f"Sample rates differ: src={src_sr}Hz, target={target_sr}Hz. Resampling audio.",
             extra={
                 "input_length": len(audio_data),
                 "src_sr": src_sr,
@@ -296,10 +296,11 @@ class NoiseReductionPlugin(PluginBase):
             left_channel = audio_data[:, 0]
             right_channel = audio_data[:, 1]
         else:
-            audio_data = audio_data.reshape(-1)  # Ensure 1D for mono
+            # Ensure 1D for mono
+            audio_data = np.ascontiguousarray(audio_data.reshape(-1))
 
         # For very large files, use chunked processing with smaller chunks
-        CHUNK_DURATION = 10  # Process 10 seconds at a time (reduced from 30)
+        CHUNK_DURATION = 10  # Process 10 seconds at a time
         chunk_samples = int(CHUNK_DURATION * src_sr)
         
         def resample_channel(channel_data):
@@ -316,13 +317,13 @@ class NoiseReductionPlugin(PluginBase):
                 
                 # Pre-allocate output array
                 target_length = int(len(channel_data) * target_sr / src_sr)
-                resampled = np.zeros(target_length, dtype=channel_data.dtype)
+                resampled = np.zeros(target_length, dtype=np.float32)
                 
                 # Process in chunks with progress logging
                 total_chunks = len(channel_data) // chunk_samples + 1
                 for i in range(0, len(channel_data), chunk_samples):
                     current_chunk = i // chunk_samples + 1
-                    logger.info(
+                    logger.debug(
                         f"Resampling progress: {current_chunk}/{total_chunks} chunks",
                         extra={
                             "progress_percent": (current_chunk / total_chunks) * 100,
@@ -335,57 +336,63 @@ class NoiseReductionPlugin(PluginBase):
                     target_chunk_len = int(len(chunk) * target_sr / src_sr)
                     
                     # Add small overlap to avoid boundary artifacts
+                    overlap_samples = 0
                     if i > 0:
                         overlap_samples = min(100, len(chunk) // 10)  # Adaptive overlap
                         chunk = channel_data[i-overlap_samples:i + chunk_samples]
                     
                     # Resample chunk
-                    resampled_chunk = signal.resample(chunk, target_chunk_len)
-                    
-                    # Remove overlap if present
-                    if i > 0:
-                        overlap_resampled = int(overlap_samples * target_sr / src_sr)
-                        resampled_chunk = resampled_chunk[overlap_resampled:]
-                    
-                    # Calculate output indices
-                    start_idx = int(i * target_sr / src_sr)
-                    end_idx = start_idx + len(resampled_chunk)
-                    end_idx = min(end_idx, len(resampled))
-                    
-                    # Store chunk
-                    resampled[start_idx:end_idx] = resampled_chunk[:end_idx-start_idx]
+                    try:
+                        resampled_chunk = signal.resample(chunk, int(len(chunk) * target_sr / src_sr))
+                        
+                        # Remove overlap if present
+                        if overlap_samples > 0:
+                            overlap_resampled = int(overlap_samples * target_sr / src_sr)
+                            resampled_chunk = resampled_chunk[overlap_resampled:]
+                        
+                        # Calculate output indices
+                        start_idx = int(i * target_sr / src_sr)
+                        end_idx = start_idx + len(resampled_chunk)
+                        end_idx = min(end_idx, len(resampled))
+                        
+                        # Store chunk
+                        resampled[start_idx:end_idx] = resampled_chunk[:end_idx-start_idx]
+                    except Exception as e:
+                        logger.error(f"Error resampling chunk: {e}", extra={
+                            "chunk_size": len(chunk),
+                            "target_size": target_chunk_len,
+                            "chunk_number": current_chunk
+                        })
+                        raise
                 
                 logger.info(
                     "Resampling completed",
                     extra={
-                        "final_length": len(resampled),
-                        "target_sr": target_sr
+                        "output_length": len(resampled),
+                        "input_length": len(channel_data)
                     }
                 )
                 return resampled
             else:
-                # For smaller files, use standard resampling
+                # For small files, resample all at once
                 target_length = int(len(channel_data) * target_sr / src_sr)
                 return signal.resample(channel_data, target_length)
 
-        if is_stereo:
-            # Process each channel separately
-            logger.info("Resampling left channel")
-            resampled_left = resample_channel(left_channel)
-            logger.info("Resampling right channel")
-            resampled_right = resample_channel(right_channel)
-            
-            # Recombine channels
-            logger.info(
-                "Recombining stereo channels",
-                extra={
-                    "left_length": len(resampled_left),
-                    "right_length": len(resampled_right)
-                }
-            )
-            return np.column_stack((resampled_left, resampled_right))
-        else:
-            return resample_channel(audio_data)
+        try:
+            if is_stereo:
+                left_resampled = resample_channel(left_channel)
+                right_resampled = resample_channel(right_channel)
+                return np.column_stack((left_resampled, right_resampled))
+            else:
+                return resample_channel(audio_data)
+        except Exception as e:
+            logger.error(f"Resampling failed: {e}", extra={
+                "is_stereo": is_stereo,
+                "input_shape": audio_data.shape,
+                "src_sr": src_sr,
+                "target_sr": target_sr
+            })
+            raise
 
     def _process_stft_chunk(
         self,
