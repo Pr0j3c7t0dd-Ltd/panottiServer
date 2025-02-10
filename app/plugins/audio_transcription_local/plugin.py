@@ -267,14 +267,7 @@ class AudioTranscriptionLocalPlugin(PluginBase):
                 if processed_mic_audio
                 else None
             )
-            sys_transcript = (
-                await self._process_audio(
-                    original_sys_audio, sys_label, combined_metadata
-                )
-                if original_sys_audio
-                else None
-            )
-
+            sys_transcript = None
             if original_sys_audio:
                 if os.path.exists(original_sys_audio):
                     logger.info(
