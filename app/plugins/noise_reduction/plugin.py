@@ -278,7 +278,7 @@ class NoiseReductionPlugin(PluginBase):
         if src_sr == target_sr:
             return audio_data
 
-        logger.debug(
+        logger.info(
             "Starting resampling",
             extra={
                 "input_length": len(audio_data),
@@ -298,8 +298,8 @@ class NoiseReductionPlugin(PluginBase):
         else:
             audio_data = audio_data.reshape(-1)  # Ensure 1D for mono
 
-        # For very large files, use chunked processing
-        CHUNK_DURATION = 30  # Process 30 seconds at a time
+        # For very large files, use chunked processing with smaller chunks
+        CHUNK_DURATION = 10  # Process 10 seconds at a time (reduced from 30)
         chunk_samples = int(CHUNK_DURATION * src_sr)
         
         def resample_channel(channel_data):
@@ -309,7 +309,8 @@ class NoiseReductionPlugin(PluginBase):
                     extra={
                         "total_samples": len(channel_data),
                         "chunk_samples": chunk_samples,
-                        "num_chunks": len(channel_data) // chunk_samples + 1
+                        "num_chunks": len(channel_data) // chunk_samples + 1,
+                        "estimated_duration_seconds": len(channel_data) / src_sr
                     }
                 )
                 
@@ -317,14 +318,25 @@ class NoiseReductionPlugin(PluginBase):
                 target_length = int(len(channel_data) * target_sr / src_sr)
                 resampled = np.zeros(target_length, dtype=channel_data.dtype)
                 
-                # Process in chunks
+                # Process in chunks with progress logging
+                total_chunks = len(channel_data) // chunk_samples + 1
                 for i in range(0, len(channel_data), chunk_samples):
+                    current_chunk = i // chunk_samples + 1
+                    logger.info(
+                        f"Resampling progress: {current_chunk}/{total_chunks} chunks",
+                        extra={
+                            "progress_percent": (current_chunk / total_chunks) * 100,
+                            "chunk_number": current_chunk,
+                            "total_chunks": total_chunks
+                        }
+                    )
+                    
                     chunk = channel_data[i:i + chunk_samples]
                     target_chunk_len = int(len(chunk) * target_sr / src_sr)
                     
                     # Add small overlap to avoid boundary artifacts
                     if i > 0:
-                        overlap_samples = 100
+                        overlap_samples = min(100, len(chunk) // 10)  # Adaptive overlap
                         chunk = channel_data[i-overlap_samples:i + chunk_samples]
                     
                     # Resample chunk
@@ -342,16 +354,14 @@ class NoiseReductionPlugin(PluginBase):
                     
                     # Store chunk
                     resampled[start_idx:end_idx] = resampled_chunk[:end_idx-start_idx]
-                    
-                    logger.debug(
-                        f"Resampled chunk {i//chunk_samples + 1}/{len(channel_data)//chunk_samples + 1}",
-                        extra={
-                            "chunk_start": i,
-                            "chunk_end": i + chunk_samples,
-                            "progress_percent": (i + chunk_samples) / len(channel_data) * 100
-                        }
-                    )
                 
+                logger.info(
+                    "Resampling completed",
+                    extra={
+                        "final_length": len(resampled),
+                        "target_sr": target_sr
+                    }
+                )
                 return resampled
             else:
                 # For smaller files, use standard resampling
@@ -360,13 +370,13 @@ class NoiseReductionPlugin(PluginBase):
 
         if is_stereo:
             # Process each channel separately
-            logger.debug("Resampling left channel")
+            logger.info("Resampling left channel")
             resampled_left = resample_channel(left_channel)
-            logger.debug("Resampling right channel")
+            logger.info("Resampling right channel")
             resampled_right = resample_channel(right_channel)
             
             # Recombine channels
-            logger.debug(
+            logger.info(
                 "Recombining stereo channels",
                 extra={
                     "left_length": len(resampled_left),
