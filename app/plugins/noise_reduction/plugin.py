@@ -519,28 +519,113 @@ class NoiseReductionPlugin(PluginBase):
         # If sample rates differ, resample system audio to match microphone
         if mic_sr != sys_sr:
             logger.info(
-                f"Sample rates differ: mic={mic_sr}Hz, sys={sys_sr}Hz. Resampling system audio."
+                f"Sample rates differ: mic={mic_sr}Hz, sys={sys_sr}Hz. Resampling system audio.",
+                extra={
+                    "mic_samples": len(mic_data),
+                    "sys_samples": len(sys_data),
+                    "memory_usage_mb": process.memory_info().rss / 1024 / 1024
+                }
             )
             try:
-                # No need to handle stereo in resampling anymore since we're already mono
+                # Calculate target length and validate
                 target_length = int(len(sys_data) * mic_sr / sys_sr)
-                sys_data = signal.resample(sys_data, target_length)
                 logger.debug(
-                    "Resampling completed",
+                    "Calculated resampling parameters",
                     extra={
                         "original_length": len(sys_data),
-                        "new_length": len(sys_data),
+                        "target_length": target_length,
+                        "ratio": mic_sr / sys_sr
                     }
                 )
+
+                # Use chunked processing for large files
+                MAX_CHUNK_SIZE = 1_000_000  # 1M samples per chunk
+                if len(sys_data) > MAX_CHUNK_SIZE:
+                    logger.info("Using chunked resampling for large file")
+                    
+                    # Calculate chunk sizes
+                    num_chunks = (len(sys_data) + MAX_CHUNK_SIZE - 1) // MAX_CHUNK_SIZE
+                    resampled_data = np.zeros(target_length, dtype=np.float32)
+                    
+                    for i in range(num_chunks):
+                        start_idx = i * MAX_CHUNK_SIZE
+                        end_idx = min(start_idx + MAX_CHUNK_SIZE, len(sys_data))
+                        chunk = sys_data[start_idx:end_idx]
+                        
+                        # Calculate target chunk length
+                        chunk_target_length = int(len(chunk) * mic_sr / sys_sr)
+                        
+                        start_time = datetime.now()
+                        logger.debug(
+                            f"Processing chunk {i+1}/{num_chunks}",
+                            extra={
+                                "chunk_start": start_idx,
+                                "chunk_end": end_idx,
+                                "chunk_size": len(chunk),
+                                "target_chunk_size": chunk_target_length,
+                                "memory_usage_mb": process.memory_info().rss / 1024 / 1024
+                            }
+                        )
+                        
+                        # Resample chunk
+                        resampled_chunk = signal.resample(chunk, chunk_target_length)
+                        
+                        # Calculate output indices
+                        out_start = int(start_idx * mic_sr / sys_sr)
+                        out_end = out_start + len(resampled_chunk)
+                        out_end = min(out_end, len(resampled_data))
+                        
+                        # Store chunk
+                        resampled_data[out_start:out_end] = resampled_chunk[:out_end-out_start]
+                        
+                        chunk_time = (datetime.now() - start_time).total_seconds()
+                        logger.debug(
+                            f"Chunk {i+1}/{num_chunks} completed",
+                            extra={
+                                "processing_time": chunk_time,
+                                "memory_usage_mb": process.memory_info().rss / 1024 / 1024
+                            }
+                        )
+                else:
+                    logger.info("Using direct resampling for small file")
+                    start_time = datetime.now()
+                    resampled_data = signal.resample(sys_data, target_length)
+                    processing_time = (datetime.now() - start_time).total_seconds()
+                    logger.debug(
+                        "Direct resampling completed",
+                        extra={
+                            "processing_time": processing_time,
+                            "memory_usage_mb": process.memory_info().rss / 1024 / 1024
+                        }
+                    )
+
+                sys_data = resampled_data
+                sys_sr = mic_sr
+                
+                logger.info(
+                    "Resampling completed successfully",
+                    extra={
+                        "final_length": len(sys_data),
+                        "expected_length": target_length,
+                        "memory_usage_mb": process.memory_info().rss / 1024 / 1024
+                    }
+                )
+                
             except Exception as e:
                 logger.error(
                     "Resampling failed",
-                    extra={"error": str(e)},
+                    extra={
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "mic_sr": mic_sr,
+                        "sys_sr": sys_sr,
+                        "mic_length": len(mic_data),
+                        "sys_length": len(sys_data),
+                        "memory_usage_mb": process.memory_info().rss / 1024 / 1024
+                    },
                     exc_info=True
                 )
                 raise
-            sys_sr = mic_sr  # Update system sample rate to match mic
-        log_memory()
 
         lag_seconds = 0
         cleaned_audio = None
