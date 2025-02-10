@@ -639,7 +639,7 @@ class NoiseReductionPlugin(PluginBase):
             bleed_removed_mag = mic_mag - alpha * sys_mag
             spectral_floor = 0.02 * mic_mag
             bleed_removed_mag = np.maximum(bleed_removed_mag, spectral_floor)
-            if randomize_phase:
+            if randomize_phase and np.max(mic_mag) > 1e-3:
                 dominant_mask = sys_mag > mic_mag
                 rand_phase = 2.0 * np.pi * np.random.rand(*dominant_mask.shape)
                 final_phase = np.where(dominant_mask, rand_phase, mic_phase)
