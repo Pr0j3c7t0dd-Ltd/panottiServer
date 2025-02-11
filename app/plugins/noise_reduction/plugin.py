@@ -25,7 +25,6 @@ from app.models.database import DatabaseManager, get_db_async
 from app.utils.logging_config import get_logger
 
 logger = get_logger("app.plugins.noise_reduction.plugin")
-logger.setLevel(logging.DEBUG)
 
 
 class AudioPaths:
