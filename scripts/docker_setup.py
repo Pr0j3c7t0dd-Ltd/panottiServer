@@ -324,7 +324,7 @@ def start_docker():
         
         print(f"\n{Colors.GREEN}🎉 Setup complete! Your panottiServer is now running.{Colors.END}")
         print("\nAccess points:")
-        print(Colors.BLUE + "   - 👉 Visit http://localhost:54790/  👈" + Colors.END)
+        print("   - 👉 Visit http://localhost:54790/  👈")
         print("   - Default password: Pa55w0rd")
         print(f"   - API Endpoint: http://localhost:54789")
         print("\nTo view logs: docker compose logs -f")
