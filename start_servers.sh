@@ -44,8 +44,14 @@ if [ -d "$ADMIN_DIR" ]; then
         cp "$ADMIN_DIR/.env.local.sample" "$ADMIN_DIR/.env.local"
     fi
     
-    # Start Next.js from the admin-frontend directory
-    (cd "$ADMIN_DIR" && npx cross-env PORT="$ADMIN_PORT" npm run dev) &
+    # Build and start Next.js from the admin-frontend directory
+    if [ "${DEV_MODE:-false}" = "true" ]; then
+        echo "Starting in development mode..."
+        (cd "$ADMIN_DIR" && npx cross-env PORT="$ADMIN_PORT" npm run dev) &
+    else
+        echo "Building and starting in production mode..."
+        (cd "$ADMIN_DIR" && npm run build && npx cross-env PORT="$ADMIN_PORT" npm start) &
+    fi
 else
     echo "Admin frontend directory not found. Exiting..."
     exit 1
