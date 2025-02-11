@@ -78,12 +78,17 @@ System Dependencies (installed via setup script):
    - This step must be completed before running the setup script
    - Do not use Homebrew for Ollama installation unless you specifically prefer it
 
-2. **macOS Users**: You need Homebrew installed. If you don't have it, install it with:
+2. **Install Docker Desktop** (preferred method)
+   - Download and install Docker Desktop from: [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/)
+   - Docker Desktop provides the easiest way to run containers on your machine
+   - Ensure Docker Desktop is running before proceeding with setup
+
+3. **macOS Users**: You need Homebrew installed. If you don't have it, install it with (local setup only):
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-3. Ensure Python 3.12 is installed on your system:
+4. Ensure Python 3.12 is installed on your system (local setup only):
 ```bash
 python --version  # Should show Python 3.12.x
 ```
