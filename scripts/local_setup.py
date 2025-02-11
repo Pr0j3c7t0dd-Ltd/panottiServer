@@ -608,7 +608,7 @@ def main():
         print("   b. Using Docker Compose:")
         print(color_text("      docker-compose up", Colors.GREEN))
         print("\n" + color_text('3. After you start the server, you can access the admin frontend:', Colors.BOLD))
-        print(color_text("   - 👉 Visit http://localhost:54790/  👈", Colors.BLUE))
+        print("   - 👉 Visit http://localhost:54790/  👈")
         print("   - Default password: Pa55w0rd")
         print("   - You will be prompted to change this password on first login")
         print("\n" + color_text('🎯 Make sure all configuration files are properly set up before starting the server.', Colors.YELLOW))
