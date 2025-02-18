@@ -63,10 +63,12 @@ fi
 
 # Get required information upfront
 print_step "Required Information"
+echo -e "\nThe API_KEY should match the one set in your Panotti desktop app  ('Calllbacks' -> X-API-Key setup for each callback)."
 
 # Get API Key
 while true; do
-    read -p "Enter your Panotti API Key: " API_KEY
+    read -p "Enter your Panotti API Key (default: your_api_key_here): " API_KEY
+    API_KEY=${API_KEY:-your_api_key_here}
     if [[ -n "$API_KEY" ]]; then
         break
     else
@@ -75,6 +77,7 @@ while true; do
 done
 
 # Get Recordings Directory
+echo -e "\nThe recordings directory should match the one configured in your Panotti desktop app ('Settings' -> 'Recordings Location')."
 while true; do
     read -p "Enter the full path to your recordings directory: " RECORDINGS_DIR
     if [[ -n "$RECORDINGS_DIR" ]]; then
