@@ -213,14 +213,19 @@ def configure_env_variables(unattended=False, api_key=None, recordings_dir=None)
                 if not abs_path.is_dir():
                     print_error(f"Recordings directory is not a valid directory: {abs_path}")
                     sys.exit(1)
-                recordings_dir = str(abs_path)
+                host_recordings_dir = str(abs_path)
             except FileNotFoundError:
                 try:
                     Path(recordings_dir).mkdir(parents=True)
-                    recordings_dir = str(Path(recordings_dir).resolve())
+                    host_recordings_dir = str(Path(recordings_dir).resolve())
                 except Exception as e:
                     print_error(f"Failed to create recordings directory: {e}")
                     sys.exit(1)
+
+            # Store both paths with the same value
+            env_vars['HOST_RECORDINGS_DIR'] = host_recordings_dir
+            env_vars['RECORDINGS_DIR'] = host_recordings_dir
+        
         else:
             print("\nThe API_KEY should match the one set in your Panotti desktop app.")
             api_key = get_user_input("Enter your API_KEY", "your_api_key_here")
@@ -261,15 +266,12 @@ def configure_env_variables(unattended=False, api_key=None, recordings_dir=None)
                             continue
         
         print(f"\nUsing recordings directory: {host_recordings_dir}")
-        print("Please ensure this path is shared with Docker:")
-        print("Docker Desktop -> Settings -> Resources -> File Sharing")
-        if not get_user_confirmation("Have you verified Docker has access to this directory?"):
-            print_warning("Please share the directory with Docker and run this script again")
-            sys.exit(1)
-        
-        # Store both paths with the same value
-        env_vars['HOST_RECORDINGS_DIR'] = host_recordings_dir
-        env_vars['RECORDINGS_DIR'] = host_recordings_dir
+        if not unattended:
+            print("Please ensure this path is shared with Docker:")
+            print("Docker Desktop -> Settings -> Resources -> File Sharing")
+            if not get_user_confirmation("Have you verified Docker has access to this directory?"):
+                print_warning("Please share the directory with Docker and run this script again")
+                sys.exit(1)
         
         # Update main .env file
         new_env_content = []
