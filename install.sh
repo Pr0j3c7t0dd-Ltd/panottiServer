@@ -219,8 +219,5 @@ print_step "Running Docker setup"
 python3 scripts/docker_setup.py --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 
 print_success "Installation complete!"
-echo -e "\nYou can access your Panotti Server at: http://localhost:54790"
-echo "Default password: Pa55w0rd"
-echo -e "API Endpoint: http://localhost:54789\n"
 echo -e "Installation directory: ${INSTALL_DIR}\n" 
 echo -e "Type 'exit' to quit this terminal\n" 
