@@ -38,6 +38,54 @@ While this server is open source and compatible with any client that implements 
 - Callbacks to any server(s) (not just PanottiServer)
 - Optional Google Calendar integration
 
+## Installation
+
+### Quick Setup (Recommended)
+
+The easiest way to install panottiServer is using our automated install script:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Pr0j3c7t0dd-Ltd/panottiServer/refs/heads/main/install.sh)"
+```
+
+### Docker Setup (Preferred for Manual Installation)
+
+For those who prefer to manually set up the server, the recommended method is to use our Docker setup script:
+
+```bash
+./scripts/docker_setup.py
+```
+
+This script will guide you through:
+- Setting up Docker configuration
+- Configuring environment variables
+- Setting up SSL certificates
+- Starting the Docker containers
+
+### Local Setup (Advanced)
+
+If you need to run the server directly on your machine without Docker, you can use the local setup script:
+
+```bash
+./scripts/local_setup.py
+```
+
+> ⚠️ **IMPORTANT**: Before running the setup script, please carefully review its contents at `scripts/local_setup.py`. This script will make changes to your system including installing dependencies and configuring your environment. Understanding these changes beforehand will help avoid any potential issues during installation.
+
+The local setup script will automatically:
+- Verify/install Rust (required for Pydantic V2)
+- Verify/install Poetry for dependency management
+- Install system dependencies via Homebrew (macOS):
+  - openai-whisper (for audio transcription)
+  - terminal-notifier (for desktop notifications)
+  - ollama (for local LLM processing)
+- Set up the Python virtual environment
+- Install all dependencies
+- Configure environment files
+- Set up plugin configurations
+- Download required ML models
+- Generate SSL certificates
+
 ## Plugin Architecture
 
 panottiServer features an extensible plugin architecture that allows you to create custom plugins to support your specific workflows. The server includes several built-in plugins:
@@ -69,124 +117,7 @@ System Dependencies (installed via setup script):
 - `terminal-notifier`: Desktop notifications (macOS)
 - `ollama`: Local LLM processing
 
-## Installation
-
-### Prerequisites
-
-1. **Install Ollama** (for local meeting notes generation)
-   - Download and install Ollama from the official website: [https://ollama.com/download](https://ollama.com/download)
-   - This step must be completed before running the setup script
-   - Do not use Homebrew for Ollama installation unless you specifically prefer it
-
-2. **Install Docker Desktop** (preferred method)
-   - Download and install Docker Desktop from: [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/)
-   - Docker Desktop provides the easiest way to run containers on your machine
-   - Ensure Docker Desktop is running before proceeding with setup
-
-3. **macOS Users**: You need Homebrew installed. If you don't have it, install it with (local setup only):
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-4. Ensure Python 3.12 is installed on your system (local setup only):
-```bash
-python --version  # Should show Python 3.12.x
-```
-
-### Quick Setup (Recommended)
-
-> ⚠️ **IMPORTANT**: Before running the setup script, please carefully review its contents at `scripts/setup.py`. This script will make changes to your system including installing dependencies and configuring your environment. Understanding these changes beforehand will help avoid any potential issues during installation.
-
-The easiest way to set up the application is to use the provided setup script. 
-
-#### Running the Setup
-
-1. Run the setup script:
-```bash
-./scripts/setup.py
-```
-
-The setup script will automatically:
-- Verify/install Rust (required for Pydantic V2)
-- Verify/install Poetry for dependency management
-- Install system dependencies via Homebrew (macOS):
-  - openai-whisper (for audio transcription)
-  - terminal-notifier (for desktop notifications)
-  - ollama (for local LLM processing)
-- Set up the Python virtual environment
-- Install all dependencies
-- Configure environment files
-- Set up plugin configurations
-- Download required ML models
-- Generate SSL certificates
-
-### Manual Setup (Advanced)
-
-If you prefer to set up components manually, follow these steps:
-
-1. Install Rust (required for Pydantic V2's performance optimizations):
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source $HOME/.cargo/env  # Add Rust to your current shell session
-```
-
-2. Install OpenAI Whisper (required for audio transcription):
-```bash
-brew install openai-whisper
-```
-
-3. Clone the repository:
-```bash
-git clone https://github.com/yourusername/panottiServer.git
-cd panottiServer
-```
-
-4. Install Poetry (if not already installed):
-```bash
-curl -sSL https://install.python-poetry.org | python3 -
-```
-
-5. Set up Python 3.12 using pyenv:
-```bash
-# Install pyenv
-brew install pyenv
-
-# Install Python 3.12 using pyenv
-pyenv install 3.12
-
-# Set local Python version for this project
-pyenv local 3.12
-```
-
-6. Install dependencies using Poetry:
-```bash
-# Install dependencies
-poetry install
-
-# Activate the virtual environment
-poetry shell
-```
-
-7. Create a `.env` file based on `.env.example`:
-```bash
-cp .env.example .env
-```
-Then edit `.env` with your actual configuration values.
-
-8. Set up HTTPS (optional):
-```bash
-# Create SSL directory
-mkdir -p ssl
-
-# Generate self-signed certificates
-cd ssl
-openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365 -subj "/CN=localhost"
-cd ..
-```
-
-Note: When using self-signed certificates in development, your browser will show a security warning. This is normal. For production, use certificates from a trusted certificate authority.
-
-### Docker Deployment
+## Docker Deployment
 
 The application consists of two main services:
 1. Backend API server (FastAPI)
