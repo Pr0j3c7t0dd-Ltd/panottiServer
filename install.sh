@@ -93,7 +93,7 @@ while true; do
 done
 
 # Get Recordings Directory
-echo -e "\nThe recordings directory should match the one configured in your Panotti desktop app ('Settings' -> 'Recordings Location')."
+echo -e "\nThe recordings directory should match the one configured in your Panotti desktop app ('Settings' -> 'Recordings Location' -> click 'Copy Path' button)."
 while true; do
     read -p "Enter the full path to your recordings directory: " RECORDINGS_DIR
     if [[ -n "$RECORDINGS_DIR" ]]; then
