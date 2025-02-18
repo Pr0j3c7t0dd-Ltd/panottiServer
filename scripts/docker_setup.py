@@ -84,7 +84,15 @@ def check_docker(unattended=False):
 def check_ollama_setup(unattended=False):
     """Check if user wants to use local meeting note processing and setup Ollama"""
     if unattended:
-        # In unattended mode, skip Ollama setup
+        try:
+            # Check if ollama is available
+            subprocess.run(["ollama", "--version"], check=True, capture_output=True)
+            # Pull the default model in unattended mode
+            print("\nPulling default Ollama model (llama3.1:8b)...")
+            subprocess.run(["ollama", "pull", "llama3.1:8b"], check=True)
+            print("Model downloaded successfully!")
+        except subprocess.CalledProcessError:
+            print_warning("Ollama is not installed. Local meeting note processing will not be available.")
         return
 
     if get_user_confirmation("\nDo you plan to process meeting notes locally on your machine?"):
@@ -205,6 +213,7 @@ def configure_env_variables(unattended=False, api_key=None, recordings_dir=None)
                 print_error("API key and recordings directory are required in unattended mode")
                 sys.exit(1)
             env_vars['API_KEY'] = api_key
+            env_vars['API_PORT'] = "54789"  # Set default API port
             
             # Verify recordings directory
             recordings_path = Path(recordings_dir)
