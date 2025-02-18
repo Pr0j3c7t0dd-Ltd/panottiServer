@@ -47,6 +47,11 @@ echo -e "${BLUE}================================================${NC}"
 echo -e "${BLUE}     Welcome to Panotti Server Installation      ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
+echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
+echo -e "It is your responsibility to review and understand the changes this installer will make to your system."
+echo -e "Please inspect the installation files and server setup before proceeding to ensure it matches your expectations."
+echo -e "This installer will modify system configurations, install software, and create directories.\n"
+
 # Installation overview and consent
 echo -e "\nThis installation will:"
 echo "1. Install Homebrew (package manager)"
