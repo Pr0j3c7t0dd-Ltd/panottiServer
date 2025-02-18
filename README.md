@@ -37,7 +37,7 @@ For comprehensive documentation, tutorials, and best practices, visit our offici
 To quickly set up the application, run:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/path/to/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Pr0j3c7t0dd-Ltd/panottiServer/refs/heads/main/install.sh)"
 ```
 
 ## Documentation
