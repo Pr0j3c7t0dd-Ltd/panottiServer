@@ -42,6 +42,26 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Parse command line arguments
+API_KEY=""
+RECORDINGS_DIR=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --api-key=*)
+            API_KEY="${1#*=}"
+            shift
+            ;;
+        --recordings-dir=*)
+            RECORDINGS_DIR="${1#*=}"
+            shift
+            ;;
+        *)
+            print_error "Unknown parameter: $1"
+            ;;
+    esac
+done
+
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
 echo -e "${BLUE}     Welcome to Panotti Server Installation      ${NC}"
@@ -79,35 +99,45 @@ fi
 
 # Get required information upfront
 print_step "Required Information"
-echo -e "\nThe API_KEY should match the one set in your Panotti desktop app  ('Calllbacks' -> X-API-Key setup for each callback)."
 
-# Get API Key
-while true; do
-    read -p "Enter your Panotti API Key (default: your_api_key_here): " API_KEY
-    API_KEY=${API_KEY:-your_api_key_here}
-    if [[ -n "$API_KEY" ]]; then
-        break
-    else
-        echo "API Key cannot be empty. Please try again."
-    fi
-done
-
-# Get Recordings Directory
-echo -e "\nThe recordings directory should match the one configured in your Panotti desktop app ('Settings' -> 'Recordings Location' -> click 'Copy Path' button)."
-while true; do
-    read -p "Enter the full path to your recordings directory: " RECORDINGS_DIR
-    if [[ -n "$RECORDINGS_DIR" ]]; then
-        # Create directory if it doesn't exist
-        mkdir -p "$RECORDINGS_DIR" 2>/dev/null
-        if [[ -d "$RECORDINGS_DIR" ]]; then
+# Get API Key only if not provided via command line
+if [[ -z "$API_KEY" ]]; then
+    echo -e "\nThe API_KEY should match the one set in your Panotti desktop app  ('Calllbacks' -> X-API-Key setup for each callback)."
+    while true; do
+        read -p "Enter your Panotti API Key (default: your_api_key_here): " API_KEY
+        API_KEY=${API_KEY:-your_api_key_here}
+        if [[ -n "$API_KEY" ]]; then
             break
         else
-            echo "Unable to create or access directory. Please check permissions and try again."
+            echo "API Key cannot be empty. Please try again."
         fi
-    else
-        echo "Directory path cannot be empty. Please try again."
+    done
+fi
+
+# Get Recordings Directory only if not provided via command line
+if [[ -z "$RECORDINGS_DIR" ]]; then
+    echo -e "\nThe recordings directory should match the one configured in your Panotti desktop app ('Settings' -> 'Recordings Location' -> click 'Copy Path' button)."
+    while true; do
+        read -p "Enter the full path to your recordings directory: " RECORDINGS_DIR
+        if [[ -n "$RECORDINGS_DIR" ]]; then
+            # Create directory if it doesn't exist
+            mkdir -p "$RECORDINGS_DIR" 2>/dev/null
+            if [[ -d "$RECORDINGS_DIR" ]]; then
+                break
+            else
+                echo "Unable to create or access directory. Please check permissions and try again."
+            fi
+        else
+            echo "Directory path cannot be empty. Please try again."
+        fi
+    done
+else
+    # Create directory if it doesn't exist when provided via command line
+    mkdir -p "$RECORDINGS_DIR" 2>/dev/null
+    if [[ ! -d "$RECORDINGS_DIR" ]]; then
+        print_error "Unable to create or access recordings directory: $RECORDINGS_DIR"
     fi
-done
+fi
 
 # Install Homebrew if not present
 print_step "Checking for Homebrew installation"
