@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import argparse
 from pathlib import Path
 
 # ANSI Color codes for pretty output
@@ -50,17 +51,26 @@ def get_user_confirmation(message):
             return response == 'y'
         print("Please enter 'y' for yes or 'n' for no.")
 
-def check_docker():
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Setup panottiServer Docker environment')
+    parser.add_argument('--unattended', action='store_true', help='Run in unattended mode')
+    parser.add_argument('--api-key', help='Panotti API Key')
+    parser.add_argument('--recordings-dir', help='Path to recordings directory')
+    return parser.parse_args()
+
+def check_docker(unattended=False):
     """Check if Docker is installed and running"""
     print_step("Checking Docker installation")
 
-    # First ask if Docker Desktop is installed
-    if not get_user_confirmation("Have you installed Docker Desktop?"):
-        print_warning("\nDocker Desktop is required to run this application.")
-        print("Please download and install Docker Desktop from:")
-        print(f"{Colors.BLUE}https://www.docker.com/products/docker-desktop/{Colors.END}")
-        print("\nAfter installing Docker Desktop, please run this script again.")
-        sys.exit(0)
+    if not unattended:
+        # First ask if Docker Desktop is installed
+        if not get_user_confirmation("Have you installed Docker Desktop?"):
+            print_warning("\nDocker Desktop is required to run this application.")
+            print("Please download and install Docker Desktop from:")
+            print(f"{Colors.BLUE}https://www.docker.com/products/docker-desktop/{Colors.END}")
+            print("\nAfter installing Docker Desktop, please run this script again.")
+            sys.exit(0)
     
     try:
         subprocess.run(["docker", "--version"], check=True, capture_output=True)
@@ -71,8 +81,12 @@ def check_docker():
     except FileNotFoundError:
         print_error("Docker command not found. Please ensure Docker Desktop is properly installed.")
 
-def check_ollama_setup():
+def check_ollama_setup(unattended=False):
     """Check if user wants to use local meeting note processing and setup Ollama"""
+    if unattended:
+        # In unattended mode, skip Ollama setup
+        return
+
     if get_user_confirmation("\nDo you plan to process meeting notes locally on your machine?"):
         print("\n" + Colors.YELLOW + "⚠️  Important Note:" + Colors.END)
         print("Local meeting note processing requires Ollama (https://ollama.com/download)")
@@ -167,7 +181,7 @@ def setup_admin_frontend():
         shutil.copy(env_example, env_target)
         print_success("Created admin frontend .env.local from sample file")
 
-def configure_env_variables():
+def configure_env_variables(unattended=False, api_key=None, recordings_dir=None):
     """Configure essential environment variables"""
     print_step("Configuring environment variables")
     
@@ -185,42 +199,66 @@ def configure_env_variables():
         
         # Update essential variables
         env_vars = {}
-        print("\nThe API_KEY should match the one set in your Panotti desktop app.")
-        api_key = get_user_input("Enter your API_KEY", "your_api_key_here")
-        env_vars['API_KEY'] = api_key
         
-        print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
-        while True:
-            host_recordings_dir = get_user_input("Enter the path to your recordings directory")
-            recordings_path = Path(host_recordings_dir)
+        if unattended:
+            if not api_key or not recordings_dir:
+                print_error("API key and recordings directory are required in unattended mode")
+                sys.exit(1)
+            env_vars['API_KEY'] = api_key
             
-            # Convert to absolute path for Docker mounting
+            # Verify recordings directory
+            recordings_path = Path(recordings_dir)
             try:
                 abs_path = recordings_path.resolve(strict=True)
                 if not abs_path.is_dir():
-                    print_warning(f"Path exists but is not a directory: {abs_path}")
-                    continue
-                    
-                # Check if directory is readable
-                try:
-                    next(abs_path.iterdir())
-                except (PermissionError, StopIteration):
-                    print_warning(f"Directory exists but may not be accessible: {abs_path}")
-                    if not get_user_confirmation("Continue anyway?"):
-                        continue
-                
-                host_recordings_dir = str(abs_path)
-                break
+                    print_error(f"Recordings directory is not a valid directory: {abs_path}")
+                    sys.exit(1)
+                recordings_dir = str(abs_path)
             except FileNotFoundError:
-                print_warning(f"Directory does not exist: {host_recordings_dir}")
-                if get_user_confirmation("Create this directory?"):
-                    try:
-                        Path(host_recordings_dir).mkdir(parents=True)
-                        host_recordings_dir = str(Path(host_recordings_dir).resolve())
-                        break
-                    except Exception as e:
-                        print_warning(f"Failed to create directory: {e}")
+                try:
+                    Path(recordings_dir).mkdir(parents=True)
+                    recordings_dir = str(Path(recordings_dir).resolve())
+                except Exception as e:
+                    print_error(f"Failed to create recordings directory: {e}")
+                    sys.exit(1)
+        else:
+            print("\nThe API_KEY should match the one set in your Panotti desktop app.")
+            api_key = get_user_input("Enter your API_KEY", "your_api_key_here")
+            env_vars['API_KEY'] = api_key
+            
+            # Interactive recordings directory setup
+            print("\nThe RECORDINGS_DIR should point to the same recordings directory set in your Panotti desktop app.")
+            while True:
+                host_recordings_dir = get_user_input("Enter the path to your recordings directory")
+                recordings_path = Path(host_recordings_dir)
+                
+                # Convert to absolute path for Docker mounting
+                try:
+                    abs_path = recordings_path.resolve(strict=True)
+                    if not abs_path.is_dir():
+                        print_warning(f"Path exists but is not a directory: {abs_path}")
                         continue
+                        
+                    # Check if directory is readable
+                    try:
+                        next(abs_path.iterdir())
+                    except (PermissionError, StopIteration):
+                        print_warning(f"Directory exists but may not be accessible: {abs_path}")
+                        if not get_user_confirmation("Continue anyway?"):
+                            continue
+                    
+                    host_recordings_dir = str(abs_path)
+                    break
+                except FileNotFoundError:
+                    print_warning(f"Directory does not exist: {host_recordings_dir}")
+                    if get_user_confirmation("Create this directory?"):
+                        try:
+                            Path(host_recordings_dir).mkdir(parents=True)
+                            host_recordings_dir = str(Path(host_recordings_dir).resolve())
+                            break
+                        except Exception as e:
+                            print_warning(f"Failed to create directory: {e}")
+                            continue
         
         print(f"\nUsing recordings directory: {host_recordings_dir}")
         print("Please ensure this path is shared with Docker:")
@@ -229,7 +267,7 @@ def configure_env_variables():
             print_warning("Please share the directory with Docker and run this script again")
             sys.exit(1)
         
-        # Store both paths with the same value - no more /recordings mapping
+        # Store both paths with the same value
         env_vars['HOST_RECORDINGS_DIR'] = host_recordings_dir
         env_vars['RECORDINGS_DIR'] = host_recordings_dir
         
@@ -338,12 +376,14 @@ def main():
     if not os.path.isfile("docker-compose.yml"):
         print_error("Please run this script from the project root directory")
     
-    check_docker()
-    check_ollama_setup()
+    args = parse_args()
+    
+    check_docker(args.unattended)
+    check_ollama_setup(args.unattended)
     setup_plugin_configs()
     setup_env_files()
     setup_admin_frontend()
-    configure_env_variables()
+    configure_env_variables(args.unattended, args.api_key, args.recordings_dir)
     create_ssl_directory()
     start_docker()
 

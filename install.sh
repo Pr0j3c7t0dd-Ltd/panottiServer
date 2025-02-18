@@ -42,12 +42,18 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Welcome and information
-echo -e "${BLUE}Welcome to the Panotti Server Installation Script${NC}"
-echo -e "\nThis script will:"
-echo "1. Install Homebrew (package manager) if not present"
+# Welcome banner
+echo -e "${BLUE}================================================${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation      ${NC}"
+echo -e "${BLUE}================================================${NC}"
+
+# Installation overview and consent
+echo -e "\nThis installation will:"
+echo "1. Install Homebrew (package manager)"
 echo "2. Install Ollama (for local meeting notes generation)"
-echo "3. Install Docker Desktop (to run the server)"
+echo "3. Install Docker Desktop (for running the server)"
+echo "4. Clone and set up the Panotti Server"
+
 echo -e "\n${YELLOW}Note: You may be prompted for your password during installation${NC}"
 
 if ! confirm "Would you like to proceed with the installation?"; then
@@ -57,7 +63,6 @@ fi
 
 # Get required information upfront
 print_step "Required Information"
-echo -e "\nPlease provide the following information:"
 
 # Get API Key
 while true; do
@@ -97,6 +102,13 @@ if ! command_exists brew; then
     print_success "Homebrew installed successfully"
 else
     print_success "Homebrew is already installed"
+fi
+
+# Install git if not present
+if ! command_exists git; then
+    print_step "Installing Git"
+    brew install git
+    print_success "Git installed successfully"
 fi
 
 # Install Ollama if not present
@@ -139,6 +151,21 @@ while ! docker info >/dev/null 2>&1; do
 done
 print_success "Docker is running"
 
+# Clone the repository
+print_step "Cloning Panotti Server repository"
+INSTALL_DIR="$HOME/panotti-server"
+if [ -d "$INSTALL_DIR" ]; then
+    print_warning "Directory $INSTALL_DIR already exists"
+    if ! confirm "Would you like to remove it and clone again?"; then
+        print_error "Installation cancelled. Please remove or rename the existing directory and try again."
+    fi
+    rm -rf "$INSTALL_DIR"
+fi
+
+git clone https://github.com/Pr0j3c7t0dd-Ltd/panottiServer.git "$INSTALL_DIR"
+cd "$INSTALL_DIR" || print_error "Failed to enter installation directory"
+print_success "Repository cloned successfully"
+
 # Create and populate .env file
 print_step "Configuring environment"
 cat > .env << EOL
@@ -147,11 +174,12 @@ HOST_RECORDINGS_DIR=${RECORDINGS_DIR}
 RECORDINGS_DIR=${RECORDINGS_DIR}
 EOL
 
-# Run the rest of the setup
+# Run the Docker setup script
 print_step "Running Docker setup"
-python3 scripts/docker_setup.py
+python3 scripts/docker_setup.py --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 
 print_success "Installation complete!"
 echo -e "\nYou can access your Panotti Server at: http://localhost:54790"
 echo "Default password: Pa55w0rd"
-echo -e "API Endpoint: http://localhost:54789\n" 
+echo -e "API Endpoint: http://localhost:54789\n"
+echo -e "Installation directory: ${INSTALL_DIR}\n" 
