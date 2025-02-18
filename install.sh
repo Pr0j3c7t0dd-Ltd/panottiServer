@@ -66,6 +66,17 @@ if ! confirm "Would you like to proceed with the installation?"; then
     exit 0
 fi
 
+# Check if installation directory already exists
+INSTALL_DIR="$HOME/panotti-server"
+if [ -d "$INSTALL_DIR" ]; then
+    print_warning "Directory $INSTALL_DIR already exists"
+    if ! confirm "Would you like to remove it and proceed with a fresh installation?"; then
+        print_error "Installation cancelled. Please remove or rename the existing directory and try again."
+    fi
+    rm -rf "$INSTALL_DIR"
+    print_success "Existing installation directory removed"
+fi
+
 # Get required information upfront
 print_step "Required Information"
 echo -e "\nThe API_KEY should match the one set in your Panotti desktop app  ('Calllbacks' -> X-API-Key setup for each callback)."
@@ -161,15 +172,6 @@ print_success "Docker is running"
 
 # Clone the repository
 print_step "Cloning Panotti Server repository"
-INSTALL_DIR="$HOME/panotti-server"
-if [ -d "$INSTALL_DIR" ]; then
-    print_warning "Directory $INSTALL_DIR already exists"
-    if ! confirm "Would you like to remove it and clone again?"; then
-        print_error "Installation cancelled. Please remove or rename the existing directory and try again."
-    fi
-    rm -rf "$INSTALL_DIR"
-fi
-
 git clone https://github.com/Pr0j3c7t0dd-Ltd/panottiServer.git "$INSTALL_DIR"
 cd "$INSTALL_DIR" || print_error "Failed to enter installation directory"
 print_success "Repository cloned successfully"
