@@ -34,7 +34,7 @@ For comprehensive documentation, tutorials, and best practices, visit our offici
 
 ## Quick Setup
 
-To quickly set up the application, run:
+First, navigate to the directory where you want to install the server. Then run:
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Pr0j3c7t0dd-Ltd/panottiServer/refs/heads/main/install.sh)"
