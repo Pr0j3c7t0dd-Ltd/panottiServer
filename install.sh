@@ -72,6 +72,13 @@ echo -e "It is your responsibility to review and understand the changes this ins
 echo -e "Please inspect the installation files and server setup before proceeding to ensure it matches your expectations."
 echo -e "This installer will modify system configurations, install software, and create directories.\n"
 
+echo -e "\n${YELLOW}⚠ WARRANTY DISCLAIMER${NC}"
+echo -e "THIS SOFTWARE IS PROVIDED \"AS IS\" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU. SHOULD THE SOFTWARE PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR, OR CORRECTION."
+echo -e "\nIN NO EVENT SHALL PR0J3CTTODD LTD BE LIABLE FOR ANY SPECIAL, INCIDENTAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER (INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF BUSINESS PROFITS, BUSINESS INTERRUPTION, LOSS OF BUSINESS INFORMATION, OR ANY OTHER PECUNIARY LOSS) ARISING OUT OF THE USE OF OR INABILITY TO USE THE SOFTWARE.\n"
+echo -e "For complete terms of use and privacy policy, please visit:"
+echo -e "- Terms and Conditions: https://www.panotti.io/terms-and-conditions"
+echo -e "- Privacy Policy: https://www.panotti.io/privacy-policy\n"
+
 # Installation overview and consent
 echo -e "\nThis installation will:"
 echo "1. Install Homebrew (package manager)"
