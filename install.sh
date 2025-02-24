@@ -80,7 +80,7 @@ echo -e "- Terms and Conditions: https://www.panotti.io/terms-and-conditions"
 echo -e "- Privacy Policy: https://www.panotti.io/privacy-policy\n"
 
 # Installation overview and consent
-echo -e "\nThis installation will:"
+echo -e "This installation will:"
 echo "1. Install Homebrew (package manager)"
 echo "2. Install Ollama (for local meeting notes generation)"
 echo "3. Install Docker Desktop (for running the server)"
