@@ -155,8 +155,24 @@ if ! command_exists brew; then
     # Add Homebrew to PATH for the current session
     eval "$(/opt/homebrew/bin/brew shellenv)"
     
-    print_success "Homebrew installed successfully"
+    # Add Homebrew to .zshrc if not already present
+    if ! grep -q "eval \"\$(/opt/homebrew/bin/brew shellenv)\"" "$HOME/.zshrc"; then
+        echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zshrc"
+    fi
+    
+    print_success "Homebrew installed and configured successfully"
 else
+    # Ensure Homebrew is in PATH for current session
+    if ! command -v brew >/dev/null 2>&1; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
+    
+    # Ensure Homebrew is in .zshrc
+    if ! grep -q "eval \"\$(/opt/homebrew/bin/brew shellenv)\"" "$HOME/.zshrc"; then
+        echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zshrc"
+        print_success "Added Homebrew to .zshrc"
+    fi
+    
     print_success "Homebrew is already installed"
 fi
 
