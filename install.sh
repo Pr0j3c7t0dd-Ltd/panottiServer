@@ -189,16 +189,36 @@ if ! command_exists ollama; then
     echo "Installing Ollama..."
     brew install ollama
     
-    # Start Ollama service
+    # Configure Ollama service for startup
+    print_step "Configuring Ollama service"
+    brew services stop ollama 2>/dev/null  # Stop if running
     brew services start ollama
     
-    print_success "Ollama installed successfully"
+    # Verify service is running
+    if brew services list | grep ollama | grep started >/dev/null; then
+        print_success "Ollama service started successfully"
+    else
+        print_error "Failed to start Ollama service"
+    fi
     
     # Pull the default model
     print_step "Pulling default Ollama model (llama3.1:8b)"
     ollama pull llama3.1:8b
 else
     print_success "Ollama is already installed"
+    
+    # Ensure service is running and configured for startup
+    if ! brew services list | grep ollama | grep started >/dev/null; then
+        print_step "Starting Ollama service"
+        brew services restart ollama
+        
+        # Verify service started successfully
+        if brew services list | grep ollama | grep started >/dev/null; then
+            print_success "Ollama service started successfully"
+        else
+            print_error "Failed to start Ollama service"
+        fi
+    fi
 fi
 
 # Install Docker if not present
