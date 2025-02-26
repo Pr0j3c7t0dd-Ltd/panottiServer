@@ -192,19 +192,48 @@ if ! command_exists docker; then
     brew install --cask docker
     
     print_success "Docker Desktop installed successfully"
-    echo "Please start Docker Desktop from your Applications folder"
-    echo "After starting Docker Desktop, press any key to continue..."
-    read -n 1 -s
+    
+    # Start Docker Desktop
+    print_step "Starting Docker Desktop"
+    open -a Docker
+    
+    echo "Waiting for Docker Desktop to initialize..."
+    echo "Note: You may need to accept the Docker Desktop license agreement if this is your first time."
+    echo "Please check for any Docker Desktop windows that may have opened."
+    
+    # Wait for Docker to be running with a timeout
+    TIMEOUT=180  # 3 minutes timeout
+    COUNTER=0
+    while ! docker info >/dev/null 2>&1; do
+        if [ $COUNTER -ge $TIMEOUT ]; then
+            print_error "Docker failed to start within ${TIMEOUT} seconds. Please start Docker Desktop manually and try again."
+        fi
+        echo "Waiting for Docker to start... ($COUNTER seconds)"
+        sleep 5
+        COUNTER=$((COUNTER + 5))
+    done
 else
     print_success "Docker Desktop is already installed"
 fi
 
-# Wait for Docker to be running
+# Ensure Docker is running
 print_step "Checking Docker status"
-while ! docker info >/dev/null 2>&1; do
-    echo "Waiting for Docker to start..."
-    sleep 5
-done
+if ! docker info >/dev/null 2>&1; then
+    echo "Docker is not running. Starting Docker Desktop..."
+    open -a Docker
+    
+    # Wait for Docker to be running with a timeout
+    TIMEOUT=60  # 1 minute timeout for existing installation
+    COUNTER=0
+    while ! docker info >/dev/null 2>&1; do
+        if [ $COUNTER -ge $TIMEOUT ]; then
+            print_error "Docker failed to start within ${TIMEOUT} seconds. Please start Docker Desktop manually and try again."
+        fi
+        echo "Waiting for Docker to start... ($COUNTER seconds)"
+        sleep 5
+        COUNTER=$((COUNTER + 5))
+    done
+fi
 print_success "Docker is running"
 
 # Clone the repository
