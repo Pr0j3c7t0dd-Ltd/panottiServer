@@ -37,6 +37,45 @@ confirm() {
     done
 }
 
+# Check system requirements using Swift
+check_system_requirements() {
+    print_step "Checking system requirements"
+    
+    # Create temporary Swift script
+    cat > /tmp/CheckMaxBufferLength.swift << 'EOL'
+import Metal
+
+if let device = MTLCreateSystemDefaultDevice() {
+    let maxBufferGB = Double(device.maxBufferLength) / (1024.0 * 1024.0 * 1024.0)
+    print(String(format: "%.2f", maxBufferGB))
+} else {
+    print("0")
+}
+EOL
+
+    # Run Swift script - this will trigger Xcode Command Line Tools installation if needed
+    print_step "Checking GPU capabilities"
+    echo "Note: If Swift is not installed, you may be prompted to install Xcode Command Line Tools"
+    
+    local max_buffer_gb=$(swift /tmp/CheckMaxBufferLength.swift)
+    if [ $? -ne 0 ]; then
+        print_warning "Swift command failed. Waiting for potential Xcode Command Line Tools installation..."
+        sleep 30  # Give time for the installation prompt and potential quick installation
+        max_buffer_gb=$(swift /tmp/CheckMaxBufferLength.swift)
+        if [ $? -ne 0 ]; then
+            print_error "Failed to run Swift check. Please ensure Xcode Command Line Tools are installed and try again."
+        fi
+    fi
+    
+    rm /tmp/CheckMaxBufferLength.swift
+    
+    if (( $(echo "$max_buffer_gb < 8.5" | bc -l) )); then
+        print_error "Your system's GPU buffer (${max_buffer_gb}GB) is insufficient for local meeting notes generation.\nMinimum requirement is 8.5GB.\nInstallation cancelled."
+    fi
+    
+    print_success "System requirements met - GPU buffer: ${max_buffer_gb}GB"
+}
+
 # Check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -81,10 +120,11 @@ echo -e "- Privacy Policy: https://www.panotti.io/privacy-policy\n"
 
 # Installation overview and consent
 echo -e "This installation will:"
-echo "1. Install Homebrew (package manager)"
-echo "2. Install Ollama (for local meeting notes generation)"
-echo "3. Install Docker Desktop (for running the server)"
-echo "4. Clone and set up the Panotti Server"
+echo "1. Check your system's requirements"
+echo "2. Install Homebrew (package manager)"
+echo "3. Install Ollama (for local meeting notes generation)"
+echo "4. Install Docker Desktop (for running the server)"
+echo "5. Clone and set up the Panotti Server"
 
 echo -e "\n${YELLOW}Note: You may be prompted for your password during installation${NC}"
 
@@ -92,6 +132,9 @@ if ! confirm "Would you like to proceed with the installation?"; then
     echo "Installation cancelled."
     exit 0
 fi
+
+# Check system requirements
+check_system_requirements
 
 # Check if installation directory already exists
 INSTALL_DIR="$HOME/panotti-server"
