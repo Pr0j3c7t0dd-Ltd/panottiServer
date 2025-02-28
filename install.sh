@@ -25,6 +25,10 @@ print_error() {
     exit 1
 }
 
+print_info() {
+    echo -e "${BLUE}ℹ $1${NC}"
+}
+
 # Get user confirmation
 confirm() {
     while true; do
@@ -70,7 +74,13 @@ EOL
     rm /tmp/CheckMaxBufferLength.swift
     
     if (( $(echo "$max_buffer_gb < 8.5" | bc -l) )); then
-        print_error "Your system's GPU buffer (${max_buffer_gb}GB) is insufficient for local meeting notes generation.\nMinimum requirement is 8.5GB.\nInstallation cancelled."
+        print_warning "Your system's GPU buffer (${max_buffer_gb}GB) is insufficient for local meeting notes generation.\nMinimum requirement is 8.5GB."
+        print_info "However, you can still proceed with installation and use remote meeting notes generation via OpenAI, Anthropic, or Google.\nFor remote meeting notes setup details, visit: https://panotti.io/docs/server after you setup the server."
+        read -p "Would you like to proceed with installation? (y/n): " proceed
+        if [[ $proceed != "y" && $proceed != "Y" ]]; then
+            print_error "Installation cancelled by user."
+            exit 1
+        fi
     fi
     
     print_success "System requirements met - GPU buffer: ${max_buffer_gb}GB"
