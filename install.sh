@@ -113,7 +113,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v0.1)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.0)     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
