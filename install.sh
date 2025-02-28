@@ -7,6 +7,9 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# Global variables
+HAS_SUFFICIENT_GPU_BUFFER=true
+
 # Print functions
 print_step() {
     echo -e "\n${BLUE}🔧 $1${NC}"
@@ -74,8 +77,10 @@ EOL
     rm /tmp/CheckMaxBufferLength.swift
     
     if (( $(echo "$max_buffer_gb < 8.5" | bc -l) )); then
+        HAS_SUFFICIENT_GPU_BUFFER=false
         print_warning "Your system's GPU buffer (${max_buffer_gb}GB) is insufficient for local meeting notes generation.\nMinimum requirement is 8.5GB."
         print_info "However, you can still proceed with installation and use remote meeting notes generation via OpenAI, Anthropic, or Google.\nFor remote meeting notes setup details, visit: https://panotti.io/docs/server after you setup the server."
+        print_warning "PRIVACY NOTICE: When using remote meeting notes, your meeting data will be transmitted to the LLM provider (OpenAI, Anthropic, or Google). While we ensure secure transmission, please be aware that this data leaves your local machine and should be considered when handling sensitive information."
         read -p "Would you like to proceed with installation? (y/n): " proceed
         if [[ $proceed != "y" && $proceed != "Y" ]]; then
             print_error "Installation cancelled by user."
@@ -113,7 +118,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.0)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.1)     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
@@ -361,15 +366,98 @@ print_success "Repository cloned successfully"
 
 # Create and populate .env file
 print_step "Configuring environment"
-cat > .env << EOL
+cat > "$INSTALL_DIR/.env" << EOL
 API_KEY=${API_KEY}
 HOST_RECORDINGS_DIR=${RECORDINGS_DIR}
 RECORDINGS_DIR=${RECORDINGS_DIR}
 EOL
 
+# Configure meeting notes based on GPU check
+if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
+    # Disable local meeting notes plugin
+    if [ -f "$INSTALL_DIR/app/plugins/meeting_notes_local/plugin.yaml" ]; then
+        sed -i '' 's/enabled: true/enabled: false/' "$INSTALL_DIR/app/plugins/meeting_notes_local/plugin.yaml"
+        print_success "Disabled local meeting notes plugin"
+    fi
+    
+    # Setup remote meeting notes
+    print_step "Setting up remote meeting notes"
+    echo "Please select your preferred meeting notes model provider:"
+    echo "1) OpenAI (GPT-4o)"
+    echo "2) Anthropic (Claude 3.5 Sonnet)"
+    echo "3) Google (Gemini 1.5 Flash)"
+    
+    while true; do
+        read -p "Enter your choice (1-3): " provider_choice
+        case $provider_choice in
+            1)
+                provider="openai"
+                print_info "To obtain an OpenAI API key:"
+                echo "1. Go to https://platform.openai.com/account/api-keys"
+                echo "2. Sign up or log in to your OpenAI account"
+                echo "3. Click on 'Create new secret key'"
+                echo "4. Copy the generated API key"
+                break
+                ;;
+            2)
+                provider="anthropic"
+                print_info "To obtain an Anthropic API key:"
+                echo "1. Go to https://console.anthropic.com/account/keys"
+                echo "2. Sign up or log in to your Anthropic account"
+                echo "3. Click on 'Create Key'"
+                echo "4. Copy the generated API key"
+                break
+                ;;
+            3)
+                provider="google"
+                print_info "To obtain a Google API key:"
+                echo "1. Go to https://makersuite.google.com/app/apikey"
+                echo "2. Sign up or log in to your Google Cloud account"
+                echo "3. Click on 'Create API Key'"
+                echo "4. Copy the generated API key"
+                break
+                ;;
+            *)
+                echo "Invalid choice. Please enter 1, 2, or 3."
+                ;;
+        esac
+    done
+    
+    # Get API key
+    while true; do
+        read -p "Please enter your $provider API key: " api_key
+        if [[ -n "$api_key" ]]; then
+            break
+        else
+            echo "API key cannot be empty. Please try again."
+        fi
+    done
+    
+    # Update remote meeting notes plugin configuration
+    if [ -f "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml" ]; then
+        # Enable plugin and set provider
+        sed -i '' "s/enabled: .*/enabled: true/" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+        sed -i '' "s/provider: .*/provider: $provider/" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+        
+        # Update API key for the selected provider
+        case $provider in
+            "openai")
+                sed -i '' "/openai:/,/model:/{s/api_key: .*/api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                ;;
+            "anthropic")
+                sed -i '' "/anthropic:/,/model:/{s/api_key: .*/api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                ;;
+            "google")
+                sed -i '' "/google:/,/model:/{s/api_key: .*/api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                ;;
+        esac
+        print_success "Remote meeting notes plugin configured successfully"
+    fi
+fi
+
 # Run the Docker setup script
 print_step "Running Docker setup"
-python3 scripts/docker_setup.py --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
+python3 "$INSTALL_DIR/scripts/docker_setup.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 
 print_success "Installation complete!"
 echo -e "Installation directory: ${INSTALL_DIR}\n" 
