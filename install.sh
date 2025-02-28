@@ -81,11 +81,28 @@ EOL
         print_warning "Your system's GPU buffer (${max_buffer_gb}GB) is insufficient for local meeting notes generation.\nMinimum requirement is 8.5GB."
         print_info "However, you can still proceed with installation and use remote meeting notes generation via OpenAI, Anthropic, or Google.\nFor remote meeting notes setup details, visit: https://panotti.io/docs/server after you setup the server."
         print_warning "PRIVACY NOTICE: When using remote meeting notes, your meeting data will be transmitted to the LLM provider (OpenAI, Anthropic, or Google). While we ensure secure transmission, please be aware that this data leaves your local machine and should be considered when handling sensitive information."
+        
         read -p "Would you like to proceed with installation? (y/n): " proceed
         if [[ $proceed != "y" && $proceed != "Y" ]]; then
             print_error "Installation cancelled by user."
             exit 1
         fi
+        
+        # Display warning about API charges
+        echo -e "\n⚠️  WARNING: Using remote meeting notes will incur API charges ⚠️"
+        echo "You will be responsible for all API charges associated with using this feature."
+        echo "These charges will be billed directly by the provider you select."
+
+        # Get user confirmation
+        while true; do
+            read -p "Do you understand and accept responsibility for all API charges? (yes/no) " yn
+            case $yn in
+                [Yy]* ) break;;
+                [Nn]* ) echo "Setup cannot continue without accepting the charges."; exit 1;;
+                * ) echo "Please answer yes or no.";;
+            esac
+        done
+
     fi
     
     print_success "System requirements met - GPU buffer: ${max_buffer_gb}GB"
@@ -118,7 +135,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.1)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.2)     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
@@ -382,6 +399,7 @@ if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
     
     # Setup remote meeting notes
     print_step "Setting up remote meeting notes"
+
     echo "Please select your preferred meeting notes model provider:"
     echo "1) OpenAI (GPT-4o)"
     echo "2) Anthropic (Claude 3.5 Sonnet)"
