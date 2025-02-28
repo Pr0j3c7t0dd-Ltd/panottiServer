@@ -250,16 +250,44 @@ if ! command_exists ollama; then
 else
     print_success "Ollama is already installed"
     
-    # Ensure service is running and configured for startup
-    if ! brew services list | grep ollama | grep started >/dev/null; then
-        print_step "Starting Ollama service"
-        brew services restart ollama
-        
-        # Verify service started successfully
-        if brew services list | grep ollama | grep started >/dev/null; then
-            print_success "Ollama service started successfully"
+    # Check if Ollama is running through Homebrew services
+    if brew services list | grep ollama >/dev/null 2>&1; then
+        # Ollama is managed by Homebrew
+        if ! brew services list | grep ollama | grep started >/dev/null; then
+            print_step "Starting Ollama service via Homebrew"
+            brew services restart ollama
+            
+            # Verify service started successfully
+            if brew services list | grep ollama | grep started >/dev/null; then
+                print_success "Ollama service started successfully"
+            else
+                print_error "Failed to start Ollama service via Homebrew"
+            fi
+        fi
+    else
+        # Ollama is installed via official installer
+        print_step "Starting Ollama service via systemctl"
+        if ! pgrep -x "ollama" >/dev/null; then
+            # Try starting Ollama using the official method
+            if [ -f "/Applications/Ollama.app/Contents/MacOS/ollama" ]; then
+                open -a Ollama
+                
+                # Wait for Ollama to start
+                COUNTER=0
+                while ! curl -s http://localhost:11434/api/version >/dev/null 2>&1; do
+                    if [ $COUNTER -ge 30 ]; then
+                        print_error "Failed to start Ollama service. Please start Ollama manually and try again."
+                    fi
+                    echo "Waiting for Ollama to start... ($COUNTER seconds)"
+                    sleep 2
+                    COUNTER=$((COUNTER + 2))
+                done
+                print_success "Ollama service started successfully"
+            else
+                print_error "Could not find Ollama application. Please start Ollama manually and try again."
+            fi
         else
-            print_error "Failed to start Ollama service"
+            print_success "Ollama service is already running"
         fi
     fi
 fi
