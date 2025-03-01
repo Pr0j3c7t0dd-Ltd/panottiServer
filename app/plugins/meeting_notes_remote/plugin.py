@@ -58,6 +58,7 @@ class MeetingNotesRemotePlugin(PluginBase):
                 if self.provider == "openai":
                     self.client = httpx.AsyncClient(timeout=httpx.Timeout(timeout=self.timeout))
                     self.openai_client = AsyncOpenAI(
+                        api_key=config_dict["openai"]["api_key"],
                         timeout=self.timeout,
                         max_retries=3
                     )
