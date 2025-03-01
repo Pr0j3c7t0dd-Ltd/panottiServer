@@ -1,4 +1,5 @@
 import asyncio
+import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -57,8 +58,11 @@ class MeetingNotesRemotePlugin(PluginBase):
                 # Initialize provider-specific clients
                 if self.provider == "openai":
                     self.client = httpx.AsyncClient(timeout=httpx.Timeout(timeout=self.timeout))
+                    openai_api_key = os.getenv("OPENAI_API_KEY")
+                    if not openai_api_key:
+                        raise ValueError("OPENAI_API_KEY environment variable is not set")
                     self.openai_client = AsyncOpenAI(
-                        api_key=config_dict["openai"]["api_key"],
+                        api_key=openai_api_key,
                         timeout=self.timeout,
                         max_retries=3
                     )
