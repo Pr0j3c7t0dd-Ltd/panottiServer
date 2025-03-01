@@ -2,7 +2,7 @@ name: "meeting_notes_local"
 version: "1.0.0"
 enabled: true
 dependencies:
-  - "audio_transcription"
+  - "audio_transcription_local"
 config:
   output_directory: "data/meeting_notes_local"
   ollama_url: "http://localhost:11434/api/generate"

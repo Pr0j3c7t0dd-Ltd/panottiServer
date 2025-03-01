@@ -2,7 +2,7 @@ name: "meeting_notes_remote"
 version: "1.0.0"
 enabled: false
 dependencies:
-  - "audio_transcription"
+  - "audio_transcription_local"
 config:
   output_directory: "data/meeting_notes_remote"
   provider: "anthropic"
