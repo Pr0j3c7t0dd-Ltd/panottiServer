@@ -95,7 +95,7 @@ EOL
 
         # Get user confirmation
         while true; do
-            read -p "Do you understand and accept responsibility for all API charges? (yes/no) " yn
+            read -p "Do you understand and accept responsibility for all API charges? (y/n) " yn
             case $yn in
                 [Yy]* ) break;;
                 [Nn]* ) echo "Setup cannot continue without accepting the charges."; exit 1;;
