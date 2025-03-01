@@ -44,22 +44,20 @@ confirm() {
     done
 }
 
-def setup_plugin_configs():
-    """Copy plugin.yaml.example files to plugin.yaml for each plugin"""
-    print_step("Setting up plugin configurations")
+# Setup plugin configurations
+setup_plugin_configs() {
+    print_step "Setting up plugin configurations"
     
-    root_dir = Path.cwd()
-    plugin_dir = root_dir / "app" / "plugins"
-    for example_file in plugin_dir.rglob("plugin.yaml.example"):
-        target_file = example_file.parent / "plugin.yaml"
-        if not target_file.exists():
-            shutil.copy2(example_file, target_file)
-            try:
-                rel_path = target_file.relative_to(root_dir)
-                print_success(f"Created {rel_path}")
-            except ValueError:
-                # Fallback to just the filename if relative_to fails
-                print_success(f"Created {target_file.name}")
+    # Find and copy all plugin.yaml.example files to plugin.yaml
+    find "$INSTALL_DIR/app/plugins" -name "plugin.yaml.example" | while read -r example_file; do
+        target_file="${example_file%.example}"
+        if [ ! -f "$target_file" ]; then
+            cp "$example_file" "$target_file"
+            rel_path="${target_file#$INSTALL_DIR/}"
+            print_success "Created ${rel_path}"
+        fi
+    done
+}
 
 # Check system requirements using Swift
 check_system_requirements() {
@@ -152,7 +150,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.5)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.6)     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
