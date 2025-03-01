@@ -150,7 +150,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v2.0)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v2.1)     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
@@ -477,18 +477,18 @@ if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
     if [ -f "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml" ]; then
         # Enable plugin and set provider
         sed -i '' "s/enabled: .*/enabled: true/" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
-        sed -i '' "s/^  provider: .*/  provider: $provider/" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+        sed -i '' "s/^  provider: .*/  provider: \"$provider\"/" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
         
         # Update API key for the selected provider
         case $provider in
             "openai")
-                sed -i '' "/^  openai:/,/^  [a-z]/{ s/^    api_key: .*/    api_key: $api_key/; }" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                sed -i '' "/^  openai:/,/^  [a-z]/{ s/^    api_key: .*/    api_key: \"$api_key\"/; }" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
                 ;;
             "anthropic")
-                sed -i '' "/^  anthropic:/,/^  [a-z]/{ s/^    api_key: .*/    api_key: $api_key/; }" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                sed -i '' "/^  anthropic:/,/^  [a-z]/{ s/^    api_key: .*/    api_key: \"$api_key\"/; }" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
                 ;;
             "google")
-                sed -i '' "/^  google:/,/^  [a-z]/{ s/^    api_key: .*/    api_key: $api_key/; }" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                sed -i '' "/^  google:/,/^  [a-z]/{ s/^    api_key: .*/    api_key: \"$api_key\"/; }" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
                 ;;
         esac
         print_success "Remote meeting notes plugin configured successfully"
