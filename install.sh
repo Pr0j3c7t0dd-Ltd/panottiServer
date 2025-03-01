@@ -150,7 +150,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.7)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.8)     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
@@ -410,11 +410,6 @@ EOL
 
 # Configure meeting notes based on GPU check
 if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
-    # Disable local meeting notes plugin
-    if [ -f "$INSTALL_DIR/app/plugins/meeting_notes_local/plugin.yaml" ]; then
-        sed -i '' 's/enabled: true/enabled: false/' "$INSTALL_DIR/app/plugins/meeting_notes_local/plugin.yaml"
-        print_success "Disabled local meeting notes plugin"
-    fi
     
     # Setup remote meeting notes
     print_step "Setting up remote meeting notes"
@@ -471,23 +466,29 @@ if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
     done
 
     setup_plugin_configs
+
+    # Disable local meeting notes plugin
+    if [ -f "$INSTALL_DIR/app/plugins/meeting_notes_local/plugin.yaml" ]; then
+        sed -i '' 's/enabled: true/enabled: false/' "$INSTALL_DIR/app/plugins/meeting_notes_local/plugin.yaml"
+        print_success "Disabled local meeting notes plugin"
+    fi
     
     # Update remote meeting notes plugin configuration
     if [ -f "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml" ]; then
         # Enable plugin and set provider
         sed -i '' "s/enabled: .*/enabled: true/" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
-        sed -i '' "s/provider: .*/provider: $provider/" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+        sed -i '' "s/^  provider: .*/  provider: $provider/" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
         
         # Update API key for the selected provider
         case $provider in
             "openai")
-                sed -i '' "/openai:/,/model:/{s/api_key: .*/api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                sed -i '' "/^  openai:/,/^  [a-z]/{s/^    api_key: .*/    api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
                 ;;
             "anthropic")
-                sed -i '' "/anthropic:/,/model:/{s/api_key: .*/api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                sed -i '' "/^  anthropic:/,/^  [a-z]/{s/^    api_key: .*/    api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
                 ;;
             "google")
-                sed -i '' "/google:/,/model:/{s/api_key: .*/api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
+                sed -i '' "/^  google:/,/^  [a-z]/{s/^    api_key: .*/    api_key: $api_key/}" "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml"
                 ;;
         esac
         print_success "Remote meeting notes plugin configured successfully"
@@ -497,9 +498,9 @@ fi
 # Run the Docker setup script
 print_step "Running Docker setup"
 if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
-    # python3 "$INSTALL_DIR/scripts/docker_setup_no_ollama.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
+    python3 "$INSTALL_DIR/scripts/docker_setup_no_ollama.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 else
-    # python3 "$INSTALL_DIR/scripts/docker_setup.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
+    python3 "$INSTALL_DIR/scripts/docker_setup.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 fi
 
 print_success "Installation complete!"
