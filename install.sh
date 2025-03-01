@@ -135,7 +135,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.2)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.3)     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
@@ -259,69 +259,73 @@ if ! command_exists git; then
 fi
 
 # Install Ollama if not present
-print_step "Checking for Ollama installation"
-if ! command_exists ollama; then
-    echo "Installing Ollama..."
-    brew install ollama
-    
-    # Configure Ollama service for startup
-    print_step "Configuring Ollama service"
-    brew services stop ollama 2>/dev/null  # Stop if running
-    brew services start ollama
-    
-    # Verify service is running
-    if brew services list | grep ollama | grep started >/dev/null; then
-        print_success "Ollama service started successfully"
-    else
-        print_error "Failed to start Ollama service"
-    fi
-    
-    # Pull the default model
-    print_step "Pulling default Ollama model (llama3.1:8b)"
-    ollama pull llama3.1:8b
-else
-    print_success "Ollama is already installed"
-    
-    # Check if Ollama is running through Homebrew services
-    if brew services list | grep ollama >/dev/null 2>&1; then
-        # Ollama is managed by Homebrew
-        if ! brew services list | grep ollama | grep started >/dev/null; then
-            print_step "Starting Ollama service via Homebrew"
-            brew services restart ollama
-            
-            # Verify service started successfully
-            if brew services list | grep ollama | grep started >/dev/null; then
-                print_success "Ollama service started successfully"
-            else
-                print_error "Failed to start Ollama service via Homebrew"
-            fi
+if [ "$HAS_SUFFICIENT_GPU_BUFFER" = true ]; then
+    print_step "Checking for Ollama installation"
+    if ! command_exists ollama; then
+        echo "Installing Ollama..."
+        brew install ollama
+        
+        # Configure Ollama service for startup
+        print_step "Configuring Ollama service"
+        brew services stop ollama 2>/dev/null  # Stop if running
+        brew services start ollama
+        
+        # Verify service is running
+        if brew services list | grep ollama | grep started >/dev/null; then
+            print_success "Ollama service started successfully"
+        else
+            print_error "Failed to start Ollama service"
         fi
+        
+        # Pull the default model
+        print_step "Pulling default Ollama model (llama3.1:8b)"
+        ollama pull llama3.1:8b
     else
-        # Ollama is installed via official installer
-        print_step "Starting Ollama service via systemctl"
-        if ! pgrep -x "ollama" >/dev/null; then
-            # Try starting Ollama using the official method
-            if [ -f "/Applications/Ollama.app/Contents/MacOS/ollama" ]; then
-                open -a Ollama
+        print_success "Ollama is already installed"
+        
+        # Check if Ollama is running through Homebrew services
+        if brew services list | grep ollama >/dev/null 2>&1; then
+            # Ollama is managed by Homebrew
+            if ! brew services list | grep ollama | grep started >/dev/null; then
+                print_step "Starting Ollama service via Homebrew"
+                brew services restart ollama
                 
-                # Wait for Ollama to start
-                COUNTER=0
-                while ! curl -s http://localhost:11434/api/version >/dev/null 2>&1; do
-                    if [ $COUNTER -ge 30 ]; then
-                        print_error "Failed to start Ollama service. Please start Ollama manually and try again."
-                    fi
-                    echo "Waiting for Ollama to start... ($COUNTER seconds)"
-                    sleep 2
-                    COUNTER=$((COUNTER + 2))
-                done
-                print_success "Ollama service started successfully"
-            else
-                print_error "Could not find Ollama application. Please start Ollama manually and try again."
+                # Verify service started successfully
+                if brew services list | grep ollama | grep started >/dev/null; then
+                    print_success "Ollama service started successfully"
+                else
+                    print_error "Failed to start Ollama service via Homebrew"
+                fi
             fi
         else
-            print_success "Ollama service is already running"
+            # Ollama is installed via official installer
+            print_step "Starting Ollama service via systemctl"
+            if ! pgrep -x "ollama" >/dev/null; then
+                # Try starting Ollama using the official method
+                if [ -f "/Applications/Ollama.app/Contents/MacOS/ollama" ]; then
+                    open -a Ollama
+                    
+                    # Wait for Ollama to start
+                    COUNTER=0
+                    while ! curl -s http://localhost:11434/api/version >/dev/null 2>&1; do
+                        if [ $COUNTER -ge 30 ]; then
+                            print_error "Failed to start Ollama service. Please start Ollama manually and try again."
+                        fi
+                        echo "Waiting for Ollama to start... ($COUNTER seconds)"
+                        sleep 2
+                        COUNTER=$((COUNTER + 2))
+                    done
+                    print_success "Ollama service started successfully"
+                else
+                    print_error "Could not find Ollama application. Please start Ollama manually and try again."
+                fi
+            else
+                print_success "Ollama service is already running"
+            fi
         fi
     fi
+else
+    print_info "Skipping Ollama installation as system will use remote processing"
 fi
 
 # Install Docker if not present
