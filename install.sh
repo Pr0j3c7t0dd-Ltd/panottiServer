@@ -498,9 +498,9 @@ fi
 # Run the Docker setup script
 print_step "Running Docker setup"
 if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
-    python3 "$INSTALL_DIR/scripts/docker_setup_no_ollama.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
+    # python3 "$INSTALL_DIR/scripts/docker_setup_no_ollama.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 else
-    python3 "$INSTALL_DIR/scripts/docker_setup.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
+    # python3 "$INSTALL_DIR/scripts/docker_setup.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 fi
 
 print_success "Installation complete!"
