@@ -44,6 +44,23 @@ confirm() {
     done
 }
 
+def setup_plugin_configs():
+    """Copy plugin.yaml.example files to plugin.yaml for each plugin"""
+    print_step("Setting up plugin configurations")
+    
+    root_dir = Path.cwd()
+    plugin_dir = root_dir / "app" / "plugins"
+    for example_file in plugin_dir.rglob("plugin.yaml.example"):
+        target_file = example_file.parent / "plugin.yaml"
+        if not target_file.exists():
+            shutil.copy2(example_file, target_file)
+            try:
+                rel_path = target_file.relative_to(root_dir)
+                print_success(f"Created {rel_path}")
+            except ValueError:
+                # Fallback to just the filename if relative_to fails
+                print_success(f"Created {target_file.name}")
+
 # Check system requirements using Swift
 check_system_requirements() {
     print_step "Checking system requirements"
@@ -135,7 +152,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.4)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v1.5)     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
@@ -454,6 +471,8 @@ if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
             echo "API key cannot be empty. Please try again."
         fi
     done
+
+    setup_plugin_configs
     
     # Update remote meeting notes plugin configuration
     if [ -f "$INSTALL_DIR/app/plugins/meeting_notes_remote/plugin.yaml" ]; then
