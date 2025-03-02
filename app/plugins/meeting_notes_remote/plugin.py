@@ -105,7 +105,10 @@ class MeetingNotesRemotePlugin(PluginBase):
 
             # Initialize clients with proper timeouts
             timeout = httpx.Timeout(timeout=self.timeout)
-            self.client = httpx.AsyncClient(timeout=timeout)
+            self.client = httpx.AsyncClient(
+                timeout=timeout,
+                verify=True  # Explicitly enable SSL verification
+            )
             
             if not hasattr(self.config, "config"):
                 raise ValueError("Plugin configuration is required")
@@ -121,7 +124,11 @@ class MeetingNotesRemotePlugin(PluginBase):
                 os.environ["OPENAI_API_KEY"] = config["openai"]["api_key"]
                 self.openai_client = AsyncOpenAI(
                     timeout=self.timeout,
-                    max_retries=3
+                    max_retries=3,
+                    http_client=httpx.AsyncClient(
+                        timeout=timeout,
+                        verify=True  # Explicitly enable SSL verification
+                    )
                 )
             elif self.provider == "anthropic":
                 if "anthropic" not in config or "api_key" not in config["anthropic"]:
