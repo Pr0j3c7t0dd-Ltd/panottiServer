@@ -1,14 +1,15 @@
 #!/bin/bash
 
+# Global variables
+VERSION="2.2"
+HAS_SUFFICIENT_GPU_BUFFER=true
+
 # ANSI color codes
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m'
-
-# Global variables
-HAS_SUFFICIENT_GPU_BUFFER=true
 
 # Print functions
 print_step() {
@@ -150,7 +151,7 @@ done
 
 # Welcome banner
 echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}     Welcome to Panotti Server Installation (v2.1)     ${NC}"
+echo -e "${BLUE}     Welcome to Panotti Server Installation (v${VERSION})     ${NC}"
 echo -e "${BLUE}================================================${NC}"
 
 echo -e "\n${YELLOW}⚠ IMPORTANT: User Responsibility Notice${NC}"
@@ -498,7 +499,7 @@ fi
 # Run the Docker setup script
 print_step "Running Docker setup"
 if [ "$HAS_SUFFICIENT_GPU_BUFFER" = false ]; then
-    python3 "$INSTALL_DIR/scripts/docker_setup_no_ollama.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
+    python3 "$INSTALL_DIR/scripts/docker_setup.py" --unattended --no-ollama --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 else
     python3 "$INSTALL_DIR/scripts/docker_setup.py" --unattended --api-key="${API_KEY}" --recordings-dir="${RECORDINGS_DIR}"
 fi

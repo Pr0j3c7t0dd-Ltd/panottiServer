@@ -57,6 +57,7 @@ def parse_args():
     parser.add_argument('--unattended', action='store_true', help='Run in unattended mode')
     parser.add_argument('--api-key', help='Panotti API Key')
     parser.add_argument('--recordings-dir', help='Path to recordings directory')
+    parser.add_argument('--no-ollama', action='store_true', help='Skip Ollama setup and configuration')
     return parser.parse_args()
 
 def check_docker(unattended=False):
@@ -390,7 +391,8 @@ def main():
     args = parse_args()
     
     check_docker(args.unattended)
-    check_ollama_setup(args.unattended)
+    if not args.no_ollama:
+        check_ollama_setup(args.unattended)
     setup_plugin_configs()
     setup_env_files()
     setup_admin_frontend()

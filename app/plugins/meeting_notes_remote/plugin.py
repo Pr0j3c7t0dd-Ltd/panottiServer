@@ -58,11 +58,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                 # Initialize provider-specific clients
                 if self.provider == "openai":
                     self.client = httpx.AsyncClient(timeout=httpx.Timeout(timeout=self.timeout))
-                    openai_api_key = os.getenv("OPENAI_API_KEY")
-                    if not openai_api_key:
-                        raise ValueError("OPENAI_API_KEY environment variable is not set")
+                    os.environ["OPENAI_API_KEY"] = config_dict["openai"]["api_key"]
                     self.openai_client = AsyncOpenAI(
-                        api_key=openai_api_key,
                         timeout=self.timeout,
                         max_retries=3
                     )
@@ -128,6 +125,7 @@ class MeetingNotesRemotePlugin(PluginBase):
             self.client = httpx.AsyncClient(timeout=timeout)
             
             if self.provider == "openai":
+                os.environ["OPENAI_API_KEY"] = config_dict["openai"]["api_key"]
                 self.openai_client = AsyncOpenAI(
                     timeout=self.timeout,
                     max_retries=3
