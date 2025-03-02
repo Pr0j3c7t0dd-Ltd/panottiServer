@@ -13,6 +13,8 @@ import google.generativeai as genai
 import httpx
 from anthropic import AsyncAnthropic  # Update import statement
 from openai import AsyncOpenAI
+import ssl
+import certifi
 
 from app.core.events import ConcreteEventBus as EventBus
 from app.core.events import Event, EventPriority
@@ -103,11 +105,14 @@ class MeetingNotesRemotePlugin(PluginBase):
             # Create output directory
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Initialize clients with proper timeouts
+            # Create SSL context with certifi certificates
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+            # Initialize clients with proper timeouts and SSL context
             timeout = httpx.Timeout(timeout=self.timeout)
             self.client = httpx.AsyncClient(
                 timeout=timeout,
-                verify=True  # Explicitly enable SSL verification
+                verify=certifi.where()  # Use certifi's certificate bundle
             )
             
             if not hasattr(self.config, "config"):
@@ -127,7 +132,8 @@ class MeetingNotesRemotePlugin(PluginBase):
                     max_retries=3,
                     http_client=httpx.AsyncClient(
                         timeout=timeout,
-                        verify=True  # Explicitly enable SSL verification
+                        verify=certifi.where(),  # Use certifi's certificate bundle
+                        trust_env=True  # Trust environment SSL certificates
                     )
                 )
             elif self.provider == "anthropic":
@@ -136,7 +142,11 @@ class MeetingNotesRemotePlugin(PluginBase):
                 self.anthropic_client = AsyncAnthropic(
                     api_key=config["anthropic"]["api_key"],
                     timeout=self.timeout,
-                    max_retries=3
+                    max_retries=3,
+                    http_client=httpx.AsyncClient(
+                        timeout=timeout,
+                        verify=certifi.where()  # Use certifi's certificate bundle
+                    )
                 )
             elif self.provider == "google":
                 if "google" not in config or "api_key" not in config["google"]:
