@@ -41,6 +41,7 @@ class MeetingNotesRemotePlugin(PluginBase):
         self.max_concurrent_tasks = 4
         self.timeout = 3600  # Increased to 1 hour
         self.provider: ProviderType = "openai"
+        self.model = "gpt-4o"  # Default model
 
         # Override with config values if available
         if config and hasattr(config, "config"):
@@ -55,30 +56,13 @@ class MeetingNotesRemotePlugin(PluginBase):
                 self.timeout = config_dict.get("timeout", self.timeout)
                 self.provider = config_dict.get("provider", self.provider)
 
-                # Initialize provider-specific clients
-                if self.provider == "openai":
-                    self.client = httpx.AsyncClient(timeout=httpx.Timeout(timeout=self.timeout))
-                    os.environ["OPENAI_API_KEY"] = config_dict["openai"]["api_key"]
-                    self.openai_client = AsyncOpenAI(
-                        timeout=self.timeout,
-                        max_retries=3
-                    )
-                    self.model = config_dict["openai"]["model"]
-                elif self.provider == "anthropic":
-                    # Anthropic SDK doesn't support custom http client configuration
-                    self.anthropic_client = AsyncAnthropic(
-                        api_key=config_dict["anthropic"]["api_key"],
-                        timeout=self.timeout,
-                        max_retries=3
-                    )
-                    self.model = config_dict["anthropic"]["model"]
-                elif self.provider == "google":
-                    # Standard configuration for Google GenerativeAI
-                    genai.configure(api_key=config_dict["google"]["api_key"])
-                    self.model = config_dict["google"]["model"]
-                    self.client = genai.GenerativeModel(self.model)
-                else:
-                    raise ValueError(f"Unsupported provider: {self.provider}")
+                # Set model based on provider
+                if self.provider == "openai" and "openai" in config_dict:
+                    self.model = config_dict["openai"].get("model", "gpt-4")
+                elif self.provider == "anthropic" and "anthropic" in config_dict:
+                    self.model = config_dict["anthropic"].get("model", "claude-3-sonnet-20240229")
+                elif self.provider == "google" and "google" in config_dict:
+                    self.model = config_dict["google"].get("model", "gemini-1.5-pro")
 
         # Initialize thread pool with configured max tasks
         self._executor = ThreadPoolExecutor(max_workers=self.max_concurrent_tasks)
@@ -113,7 +97,6 @@ class MeetingNotesRemotePlugin(PluginBase):
                     "model": self.model,
                     "output_dir": str(self.output_dir),
                     "provider": self.provider,
-                    "model": self.model,
                 },
             )
 
@@ -124,17 +107,37 @@ class MeetingNotesRemotePlugin(PluginBase):
             timeout = httpx.Timeout(timeout=self.timeout)
             self.client = httpx.AsyncClient(timeout=timeout)
             
+            if not hasattr(self.config, "config"):
+                raise ValueError("Plugin configuration is required")
+            
+            config = self.config.config
+            if not isinstance(config, dict):
+                raise ValueError("Plugin configuration must be a dictionary")
+
+            # Initialize provider-specific clients
             if self.provider == "openai":
-                os.environ["OPENAI_API_KEY"] = config_dict["openai"]["api_key"]
+                if "openai" not in config or "api_key" not in config["openai"]:
+                    raise ValueError("OpenAI API key is required")
+                os.environ["OPENAI_API_KEY"] = config["openai"]["api_key"]
                 self.openai_client = AsyncOpenAI(
                     timeout=self.timeout,
                     max_retries=3
                 )
             elif self.provider == "anthropic":
+                if "anthropic" not in config or "api_key" not in config["anthropic"]:
+                    raise ValueError("Anthropic API key is required")
                 self.anthropic_client = AsyncAnthropic(
+                    api_key=config["anthropic"]["api_key"],
                     timeout=self.timeout,
                     max_retries=3
                 )
+            elif self.provider == "google":
+                if "google" not in config or "api_key" not in config["google"]:
+                    raise ValueError("Google API key is required")
+                genai.configure(api_key=config["google"]["api_key"])
+                self.client = genai.GenerativeModel(self.model)
+            else:
+                raise ValueError(f"Unsupported provider: {self.provider}")
 
             # Subscribe to transcription completed event
             await self.event_bus.subscribe(
