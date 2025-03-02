@@ -34,7 +34,9 @@ For comprehensive documentation, tutorials, and best practices, visit our offici
 
 ## Quick Setup
 
-First, navigate to the directory where you want to install the server. Then open the Terminal app and run:
+The fastest way to get started is by using the Panotti Mac application, which will guide the set up and configure the server. Download the app and follow along with our Introduction and Setup video at [https://panotti.io/](https://panotti.io/).
+
+For manual installation, or to use the server without the Panotti Mac application, navigate to the directory where you want to install the server. Then open the Terminal app and run:
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Pr0j3c7t0dd-Ltd/panottiServer/refs/heads/main/install.sh)"
