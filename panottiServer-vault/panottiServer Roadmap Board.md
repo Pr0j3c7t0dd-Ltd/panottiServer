@@ -6,16 +6,17 @@ kanban-plugin: board
 
 ## To Do
 
+- [ ] Add support in the installer for multiple languages
 
 
 ## Doing
 
-- [ ] More test coverage
 
 
 ## Done
 
 **Complete**
+- [x] More test coverage
 - [x] Run another fresh install
 
 
